@@ -11,7 +11,8 @@ For this Project, we used clang/`llvm 16.0.1`
 
 ## Building
 
-Before Building with cmake, one may need to have a look at [openmpi-patch/CMakeLists.txt](openmpi-patch/CMakeLists.txt)
+Before Building with cmake, one may need to have a look
+at [openmpi-patch/CMakeLists.txt](use-cases/mpi-matching/openmpi-patch/CMakeLists.txt)
 and change the ``OMPI_CONFIGURE_FLAGS`` variable to fit their system.
 The variable is used to configure openmpi.
 After one had adjusted the openmpi configuration, building with cmake is quite straightforward:
@@ -39,7 +40,8 @@ The ``-fno-inline`` will be removed after the analysis, so that inlining does ha
 ## Build of MUrB example application
 
 Before building MUrB be sure to init the submodules (``git submodule update --init --recursive``) to download the
-prerequisite requirements; also refer to the [Readme](sample_apps/MUrB/README.md) in the MUrB directory.
+prerequisite requirements; also refer to the [Readme](use-cases/mpi-matching/sample_apps/MUrB/README.md) in the MUrB
+directory.
 MUrB can then be built using cmake, we used the following build settings with our Pass:
 
 ```
@@ -47,7 +49,8 @@ cmake .. -DCMAKE_CXX_COMPILER=$MPICXX -DCMAKE_CXX_FLAGS="-fopenmp -O3 -fno-inlin
 mpirun -n 2 ./bin/murb -v --im 100 -i 10 -n 100 # to test if it runs
 ```
 
-The file [sample_apps/scripts/showcase_experiment.sh](sample_apps/scripts/showcase_experiment.sh) details all steps
+The file [sample_apps/scripts/showcase_experiment.sh](use-cases/mpi-matching/sample_apps/scripts/showcase_experiment.sh)
+details all steps
 required to reproduce our measurements from [[1]](ref-1)
 
 #### References

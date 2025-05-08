@@ -1,0 +1,7 @@
+#!/bin/bash
+
+#to run in debug mode with address sanitizer
+export DEBUG_CLANG_WRAPPER=true
+# currently there are some memory leak reports that seem to be the result of the pass manager?
+export ASAN_OPTIONS=detect_leaks=0
+export TSAN_OPTIONS=ignore_noninstrumented_modules=1
