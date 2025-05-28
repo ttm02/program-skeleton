@@ -10,7 +10,7 @@ For this Project, we used clang/`llvm 16.0.1`
 
 Currently. There are two different use cases:
 
-* MPI Matching: Precalculation of MPI message envelopes. Camke Option: `MPI_USE_CASE`
+* Removed for anonymity
 * Thread Sanitizer: Skeleton based on Tsan Instrumentation without computation. Camke Option: `SANITIZER_USE_CASE`
   Use The Cmake Options to build them.
 
