@@ -6,7 +6,7 @@ instrumentation, leading to a program skeleton that has only the data race detec
 ## Prerequisites
 
 For this Project, we used clang/`llvm 16.0.1`
-The cmake configure step will download DataRaceBench REFERENZ? for testing
+The cmake configure step will download DataRaceBench for testing
 
 ## Building
 
@@ -43,18 +43,4 @@ In particular, `DRB185-barrier1-yes` fails 99% of the time due to a limitation i
 sample_apps/performance_evaluation contains the scripts ew used for performance evaluation.
 
 #### References
-
-TODO!
-<table style="border:0px">
-<tr>
-    <td valign="top"><a name="ref-1"></a>[1]</td>
-    <td>
-Tim Jammer, Tim Heldmann, Michael Blesel, Michael Kuhn, Christian Bischof, "Compiler-Based Precalculation of MPI Message Envelopes" To Appear In: ISC High Performance 2024 International Workshops
-      </td>
-</tr>
-<tr>
-    <td valign="top"><a name="ref-2"></a>[2]</td>
-    <td>Tim Jammer and Christian Bischof "Compiler-enabled optimization of persistent MPI Operations" In : 2022 IEEE/ACM International Workshop on Exascale MPI (ExaMPI) https://doi.org/10.1109/ExaMPI56604.2022.00006</td>
-</tr>
-
 
