@@ -79,6 +79,8 @@ def get_plot(df, name):
     ax2.set_xlabel("Number of Threads")
     ax2.set_ylabel("Time (s)")
     ax2.legend(title="Tsan Runtime")
+    ax2.yaxis.set_tick_params(labelbottom=True)
+    ax2.yaxis.tick_right()
 
     # Compute offset for label positions
     y_min, y_max = ax1.get_ylim()
