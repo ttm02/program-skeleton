@@ -21,12 +21,6 @@ add_subdirectory(precompute_runtime_lib)
 
 enable_testing()
 
-option(MPI_USE_CASE "Build the mpi usecase (precomputation of MPI message envelopes)" ON)
-
-if (MPI_USE_CASE)
-    add_subdirectory(use-cases/mpi-matching)
-endif ()
-
 option(SANITIZER_USE_CASE "Build the Thread sanitizer usecase" ON)
 if (SANITIZER_USE_CASE)
     add_subdirectory(use-cases/thread-sanitizer)
