@@ -1,4 +1,4 @@
-# TODO: Heading
+# Program skeletons for fast data race detecthin with ThreadSanitizer
 
 This Repository contains the llvm pass that removes computation from an application, while retaining the Tsan
 instrumentation, leading to a program skeleton that has only the data race detection.
