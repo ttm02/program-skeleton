@@ -111,7 +111,7 @@ bool is_func_from_std(llvm::Function *func) {
   }
 
   // openmp
-  if (is_omp_function(func)) {
+  if (is_thread_function(func)) {
     return true;
   }
   if (func == get_std_dummy_func(func->getParent())) {
@@ -195,6 +195,11 @@ bool is_func_from_std(llvm::Function *func) {
 
   // if std=c99 is supplied to the compiler
   if (func->getName().starts_with("__isoc99_")) {
+    return true;
+  }
+
+  // flang
+  if (func->getName().starts_with("_FortranAio")) {
     return true;
   }
 

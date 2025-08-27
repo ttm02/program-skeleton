@@ -39,6 +39,7 @@
 
 #include "llvm/Transforms/IPO/GlobalDCE.h"
 
+#include <llvm/IR/IRBuilder.h>
 #include <precalculation.h>
 
 using namespace llvm;
@@ -93,6 +94,19 @@ bool is_tsan_cleanup_block(llvm::BasicBlock *block) {
   return it == block->end();
 }
 
+// find compiler used in metadata
+bool is_compiled_with_flang(const Module &M) {
+  if (auto *NMD = M.getNamedMetadata("llvm.ident")) {
+    for (auto *Op : NMD->operands()) {
+      if (auto *MDStr = llvm::dyn_cast<llvm::MDString>(Op->getOperand(0))) {
+        return MDStr->getString().starts_with("flang");
+      }
+    }
+  }
+  errs() << "WARNING: Module contains no Metadata about compiler used!\n";
+  return false;
+}
+
 namespace {
 struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
@@ -115,12 +129,18 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
         (M.getFunction("__tsan_func_entry")->users().empty())) {
 
       Debug(errs() << "Run tsan pass\n");
+      bool is_fortran_code = is_compiled_with_flang(M);
       //  make sure TSAN pass runs
       auto *FAM =
           &AM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
       auto tsan_pass = ThreadSanitizerPass();
       for (auto it = M.begin(); it != M.end(); ++it) {
         Function *f = &*it;
+        if (is_fortran_code) {
+          f->addFnAttr(Attribute::SanitizeThread);
+          // work around for fortran, as fortran does currently not support
+          // -fsanitize=thread flag
+        }
         tsan_pass.run(*f, *FAM);
       }
     }
@@ -154,8 +174,8 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
               if (call->getCalledFunction() &&
                   // eiter tsan or omp function
                   // omp function necessary e.g. to keep synchronization
-                  (call->getCalledFunction()->getName().startswith("__tsan") ||
-                   is_omp_function(call->getCalledFunction()))) {
+                  (call->getCalledFunction()->getName().starts_with("__tsan") ||
+                   is_thread_function(call->getCalledFunction()))) {
                 if (call->getCalledFunction()->getName() ==
                     "__tsan_func_exit") {
                   if (dyn_cast<ResumeInst>(
@@ -189,6 +209,8 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
       }
     }
 
+    errs() << "Statistics: locations: " << precompute_locations.size()
+           << " values: " << to_precompute.size() << "\n";
     // no tsan found
     if (precompute_locations.empty()) {
       // no modification
@@ -293,17 +315,13 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
 } // namespace
 
-PassPluginLibraryInfo getPassPluginInfo() {
-  const auto callback = [](PassBuilder &PB) {
-    PB.registerOptimizerEarlyEPCallback([&](ModulePassManager &MPM, auto) {
-      MPM.addPass(SanitizerPrecomputePass());
-      return true;
-    });
-  };
-
-  return {LLVM_PLUGIN_API_VERSION, "sanitizer-precompute", "1.0.0", callback};
-};
-
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
-  return getPassPluginInfo();
+  return {LLVM_PLUGIN_API_VERSION, "sanitizer_precompute", "1.0.0",
+          [](PassBuilder &PB) {
+            PB.registerOptimizerEarlyEPCallback([&](ModulePassManager &MPM,
+                                                    OptimizationLevel Level,
+                                                    ThinOrFullLTOPhase Phase) {
+              MPM.addPass(SanitizerPrecomputePass());
+            });
+          }};
 }

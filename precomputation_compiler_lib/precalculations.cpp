@@ -370,17 +370,21 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
       if (isa<Constant>(v->v)) {
     // nothing to do for constant
     v->set_visited();
-  } else if (auto load = dyn_cast<LoadInst>(v->v)) {
+  }
+  else if (auto load = dyn_cast<LoadInst>(v->v)) {
     auto loaded_from = insert_tainted_value(load->getPointerOperand(), v);
     visit_load(v, loaded_from);
-  } else if (auto *alloc = dyn_cast<AllocaInst>(v->v)) {
+  }
+  else if (auto *alloc = dyn_cast<AllocaInst>(v->v)) {
     // visit_ptr_usages is called on all ptrs anyway
     // need to calculate allocation size
     insert_tainted_value(alloc->getArraySize(), v);
     v->set_visited();
-  } else if (auto store = dyn_cast<StoreInst>(v->v)) {
+  }
+  else if (auto store = dyn_cast<StoreInst>(v->v)) {
     visit_store(v, store->getPointerOperand(), store->getValueOperand());
-  } else if (auto *op = dyn_cast<BinaryOperator>(v->v)) {
+  }
+  else if (auto *op = dyn_cast<BinaryOperator>(v->v)) {
     // arithmetic
     // TODO do we need to exclude some opcodes?
     assert(op->getNumOperands() == 2);
@@ -388,20 +392,23 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
     insert_tainted_value(op->getOperand(0), v);
     insert_tainted_value(op->getOperand(1), v);
     v->set_visited();
-  } else if (auto *uop = dyn_cast<UnaryOperator>(v->v)) {
+  }
+  else if (auto *uop = dyn_cast<UnaryOperator>(v->v)) {
     // arithmetic
     // TODO do we need to exclude some opcodes?
     assert(uop->getNumOperands() == 1);
     assert(not uop->getType()->isPointerTy());
     insert_tainted_value(uop->getOperand(0), v);
     v->set_visited();
-  } else if (auto *cmp = dyn_cast<CmpInst>(v->v)) {
+  }
+  else if (auto *cmp = dyn_cast<CmpInst>(v->v)) {
     // cmp
     assert(cmp->getNumOperands() == 2);
     insert_tainted_value(cmp->getOperand(0), v);
     insert_tainted_value(cmp->getOperand(1), v);
     v->set_visited();
-  } else if (auto *select = dyn_cast<SelectInst>(v->v)) {
+  }
+  else if (auto *select = dyn_cast<SelectInst>(v->v)) {
     insert_tainted_value(select->getCondition(), v);
     auto true_val = insert_tainted_value(select->getTrueValue(), v);
     auto false_val = insert_tainted_value(select->getFalseValue(), v);
@@ -413,13 +420,17 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
       v->ptr_info->add_ptr_info_user(false_val);
     }
     v->set_visited();
-  } else if (isa<Argument>(v->v)) {
+  }
+  else if (isa<Argument>(v->v)) {
     visit_arg(v);
-  } else if (isa<CallBase>(v->v)) {
+  }
+  else if (isa<CallBase>(v->v)) {
     visit_call(v);
-  } else if (isa<PHINode>(v->v)) {
+  }
+  else if (isa<PHINode>(v->v)) {
     visit_phi(v);
-  } else if (auto *cast = dyn_cast<CastInst>(v->v)) {
+  }
+  else if (auto *cast = dyn_cast<CastInst>(v->v)) {
     // cast TO ptr is not allowed
     assert(not cast->getType()->isPointerTy() &&
            "Casting an integer to a ptr is not supported");
@@ -428,11 +439,13 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
 
     insert_tainted_value(cast->getOperand(0), v);
     v->set_visited();
-  } else if (auto *gep = dyn_cast<GetElementPtrInst>(v->v)) {
+  }
+  else if (auto *gep = dyn_cast<GetElementPtrInst>(v->v)) {
     visit_gep(v);
     assert(is_tainted(gep->getPointerOperand()));
     v->set_visited();
-  } else if (auto *br = dyn_cast<BranchInst>(v->v)) {
+  }
+  else if (auto *br = dyn_cast<BranchInst>(v->v)) {
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     v->set_visited();
     if (br->isConditional()) {
@@ -440,58 +453,70 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
     } else {
       // nothing to do
     }
-  } else if (auto *sw = dyn_cast<SwitchInst>(v->v)) {
+  }
+  else if (auto *sw = dyn_cast<SwitchInst>(v->v)) {
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     v->set_visited();
     insert_tainted_value(sw->getCondition(), v);
-  } else if (auto *resume = dyn_cast<ResumeInst>(v->v)) {
+  }
+  else if (auto *resume = dyn_cast<ResumeInst>(v->v)) {
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     // resume exception: nothing to do just keep it
     insert_tainted_value(resume->getOperand(0), v);
     v->set_visited();
-  } else if (auto *ret = dyn_cast<ReturnInst>(v->v)) {
+  }
+  else if (auto *ret = dyn_cast<ReturnInst>(v->v)) {
     insert_tainted_value(ret->getOperand(0), v);
     v->set_visited();
-  } else if (isa<LandingPadInst>(v->v)) {
+  }
+  else if (isa<LandingPadInst>(v->v)) {
     // nothing to do, just keep around
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     v->set_visited();
-  } else if (auto *ext = dyn_cast<ExtractValueInst>(v->v)) {
+  }
+  else if (auto *ext = dyn_cast<ExtractValueInst>(v->v)) {
     insert_tainted_value(ext->getAggregateOperand(), v);
     v->set_visited();
-  } else if (auto *ptoi = dyn_cast<PtrToIntInst>(v->v)) {
+  }
+  else if (auto *ptoi = dyn_cast<PtrToIntInst>(v->v)) {
     // conversion of ptr TO int e.g. for comparison or alignment check is
     // allowed
     insert_tainted_value(ptoi->getPointerOperand(), v);
     v->set_visited();
-  } else if (isa<ShuffleVectorInst>(v->v) || isa<ExtractElementInst>(v->v) ||
-             isa<InsertElementInst>(v->v)) {
+  }
+  else if (isa<ShuffleVectorInst>(v->v) || isa<ExtractElementInst>(v->v) ||
+           isa<InsertElementInst>(v->v)) {
     for (auto *operand : llvm::cast<Instruction>(v->v)->operand_values()) {
       insert_tainted_value(operand, v);
     }
     v->set_visited();
-  } else if (auto *atomic = dyn_cast<AtomicRMWInst>(v->v)) {
+  }
+  else if (auto *atomic = dyn_cast<AtomicRMWInst>(v->v)) {
     // a load and store to ptr
     visit_store(v, atomic->getPointerOperand(), atomic->getValOperand());
     visit_load(v, get_taint_info(atomic->getPointerOperand()));
-  } else if (auto *insertvalue = dyn_cast<InsertValueInst>(v->v)) {
+  }
+  else if (auto *insertvalue = dyn_cast<InsertValueInst>(v->v)) {
     // a load and store to ptr
     insert_tainted_value(insertvalue->getAggregateOperand(), v);
     insert_tainted_value(insertvalue->getInsertedValueOperand(), v);
     // indices are constants
     // I mean an integral part of the instruction, not even llvm::ConstantInt
     v->set_visited();
-  } else if (auto *insertelem = dyn_cast<InsertElementInst>(v->v)) {
+  }
+  else if (auto *insertelem = dyn_cast<InsertElementInst>(v->v)) {
     // a load and store to ptr
     insert_tainted_value(insertelem->getOperand(0), v); // vector
     insert_tainted_value(insertelem->getOperand(1), v); // insterted elem
     insert_tainted_value(insertelem->getOperand(2), v); // index
     v->set_visited();
-  } else if (auto *freeze = dyn_cast<FreezeInst>(v->v)) {
+  }
+  else if (auto *freeze = dyn_cast<FreezeInst>(v->v)) {
     // essentially a no-op on valid values
     insert_tainted_value(freeze->getOperand(0), v);
     v->set_visited();
-  } else {
+  }
+  else {
 
     errs() << "Support for analyzing this Value is not implemented yet\n";
     v->v->dump();
@@ -958,7 +983,16 @@ void PrecalculationAnalysis::visit_arg(
         // will be set by omp runtime: nothing to do
       } else if (arg->getArgNo() == 1) {
         assert(arg->getType()->isPointerTy());
-        // alias all relevant shared values
+        auto in_serial_vec =
+            fun_to_precalc->parallel_region->get_value_in_serial(arg);
+        for (auto *in_serial : in_serial_vec) {
+          auto serial_info = insert_tainted_value(in_serial, arg_info);
+          // create another ptr alias
+          if (arg->getType()->isPointerTy()) {
+            serial_info->ptr_info->merge_with(arg_info->ptr_info);
+          }
+        }
+        // and directly alias all relevant shared values
         for (auto *parallel_v : fun_to_precalc->parallel_region
                                     ->get_shared_variables_in_parallel()) {
           assert(parallel_v->getType()->isPointerTy());
@@ -1020,7 +1054,7 @@ bool PrecalculationAnalysis::is_ptr_usage_in_std_read(
   assert(ptr_arg_info->ptr_info);
   assert(is_call_to_std(call) || call->getCalledFunction()->isIntrinsic());
 
-  if (is_omp_fork_call(call)) {
+  if (is_thread_fork_call(call)) {
     // TODO determine if parallel region actually reads from shared var
     return true;
   }
@@ -1063,7 +1097,7 @@ bool PrecalculationAnalysis::is_ptr_usage_in_std_write(
   assert(ptr_arg_info->ptr_info);
   assert(call->getCalledFunction()->isIntrinsic() || is_call_to_std(call));
 
-  if (is_omp_fork_call(call)) {
+  if (is_thread_fork_call(call)) {
     // TODO determine if parallel region actually writes to shared var
     return true;
   }
@@ -1108,9 +1142,11 @@ bool PrecalculationAnalysis::is_ptr_usage_in_std_indirect(
     return true;
   }
 
-  if (is_omp_function(call->getCalledFunction())) {
-    return false; // openmp does not do that for relevant ptrs
-    // the ptrs where it does are managed by omp runtime anyway
+  if (is_thread_function(call->getCalledFunction())) {
+    return true;
+    // return
+    // call->getCalledFunction()!=get_omp_functions(*call->getModule())->kmpc_omp_task_with_deps;
+    //  other ptrs are managed by omp runtime anyway
   }
   if (call->getCalledFunction()->isIntrinsic()) {
     return false;
@@ -1201,12 +1237,14 @@ void PrecalculationAnalysis::visit_call(
     include_value_in_precompute(func_ptr_info);
   }
 
+
   // analyze if call to str read/writes ptr
-  if (is_call_to_std(call) && !is_omp_fork_call(call)) {
+  if (is_call_to_std(call) && !is_thread_fork_call(call)) {
     for (auto &arg : call->args()) {
       if (auto *v = dyn_cast<Value>(&arg)) {
         if (is_tainted(v) && v->getType()->isPointerTy()) {
           if (is_ptr_usage_in_std_write(call, get_taint_info(v))) {
+            get_taint_info(v)->ptr_info->setIsWrittenTo(call, this);
             get_function_analysis(call->getFunction())
                 ->add_ptr_write(get_taint_info(v)->ptr_info);
             // std may write to derived ptrs
@@ -1215,6 +1253,7 @@ void PrecalculationAnalysis::visit_call(
             }
           }
           if (is_ptr_usage_in_std_read(call, get_taint_info(v))) {
+            get_taint_info(v)->ptr_info->setIsReadFrom(call, this);
             get_function_analysis(call->getFunction())
                 ->add_ptr_read(get_taint_info(v)->ptr_info);
             // std may read derived ptrs
@@ -1227,7 +1266,7 @@ void PrecalculationAnalysis::visit_call(
     }
   }
 
-  if (is_omp_fork_call(call)) {
+  if (is_thread_fork_call(call)) {
     visit_call_to_parallel(call_info);
   }
 
@@ -1242,7 +1281,7 @@ void PrecalculationAnalysis::visit_call(
 void PrecalculationAnalysis::visit_call_to_parallel(
     const std::shared_ptr<TaintedValue> &call_info) {
   auto *call = cast<CallInst>(call_info->v);
-  assert(is_omp_fork_call(call));
+  assert(is_thread_fork_call(call));
 
   // need to include all calls to omp runtime that set the settings for this
   // parallel region these calls can only be inside of the same BB before this
@@ -1433,7 +1472,9 @@ void PrecalculationAnalysis::visit_call_from_ptr(
     if (func == mpi_func->mpi_send || func == mpi_func->mpi_Isend ||
         func == mpi_func->mpi_recv || func == mpi_func->mpi_Irecv) {
       assert(ptr_given_as_arg.size() == 1);
-      if (*ptr_given_as_arg.begin() == 0) {
+      if (*ptr_given_as_arg.begin() == 0 &&
+          is_store_important(call, ptr->ptr_info)) {
+        // if communication result is not used, it is not important
         ptr->v->dump();
         call->dump();
         assert(false &&
@@ -1514,17 +1555,25 @@ void PrecalculationAnalysis::visit_call_from_ptr(
         is_func_from_std(func)) {
       if (is_ptr_usage_in_std_write(call, ptr)) {
         ptr->ptr_info->setIsWrittenTo(call, this);
+        ptr->ptr_info->setDerivedPtrIsRelevant(
+            true); // we dont know what part of the ptr is written to by std
+                   // func
         if (is_store_important(call, ptr->ptr_info)) {
           auto call_info = insert_tainted_value(call, ptr, false);
           include_call_to_std(call_info);
           assert(ptr->ptr_info->isWrittenTo());
         }
       }
+      if (is_ptr_usage_in_std_read(call, ptr)) {
+        ptr->ptr_info->setIsReadFrom(call, this);
+        ptr->ptr_info->setDerivedPtrIsRelevant(
+            true); // we dont know what part of the ptr is read by std
+      }
       return;
     }
   }
 
-  if (is_omp_fork_call(call)) {
+  if (is_thread_fork_call(call)) {
     // find parallel region
     auto parallel_func = cast<Function>(call->getArgOperand(2));
     auto parallel_region_info =
@@ -1559,7 +1608,7 @@ void PrecalculationAnalysis::visit_call_from_ptr(
       for (auto arg_num : ptr_given_as_arg) {
         if (arg_num < func->getFunctionType()->getNumParams()) {
           auto *arg = func->getArg(arg_num);
-          if (arg->hasAttribute(Attribute::NoCapture) &&
+          if (!arg->hasAttribute(Attribute::Captures) &&
               arg->hasAttribute(Attribute::ReadOnly)) {
             continue; // nothing to do: reading the val is allowed
             // TODO has foo( int ** array){ array[0][0]=0;} also readonly? as
@@ -1998,16 +2047,17 @@ bool PrecalculationAnalysis::is_store_important(
   assert(isa<StoreInst>(inst) || isa<AtomicRMWInst>(inst) ||
          isa<CallBase>(inst));
 
-  bool interesting = false;
+  /*
+  bool interesting = true;
   if (auto *store = dyn_cast<StoreInst>(inst)) {
-    /*interesting = store->getValueOperand()->getName() == "tn.addr";
+    //interesting = store->getValueOperand()->getName() == "tn.addr";
     if (interesting) {
       errs() << "INTERESTING ACCESS:\n";
       store->dump();
       errs() << "IN: " << store->getFunction()->getName() << "\n";
       ptr_info->dump();
-    }*/
-  }
+    }
+  }*/
 
   if (not ptr_info->isReadFrom()) {
     // errs() << "NOT READ\n";

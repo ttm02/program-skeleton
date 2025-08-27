@@ -5,8 +5,8 @@ instrumentation, leading to a program skeleton that has only the data race detec
 
 ## Prerequisites
 
-For this Project, we used clang/`llvm 16.0.1`
-The cmake configure step will download DataRaceBench for testing
+For this Project, we used clang/`llvm 21.1.0`
+The cmake configure step will download DataRaceBench (https://github.com/LLNL/dataracebench) for testing
 
 ## Building
 
@@ -42,5 +42,4 @@ In particular, `DRB185-barrier1-yes` fails 99% of the time due to a limitation i
 
 sample_apps/performance_evaluation contains the scripts ew used for performance evaluation.
 
-#### References
 
