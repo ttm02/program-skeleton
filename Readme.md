@@ -4,7 +4,7 @@ This Repository contains the llvm pass that computes a program skeleton needed t
 
 ## Prerequisites
 
-For this Project, we used clang/`llvm 16.0.1`
+For this Project, we used clang/`llvm 21.1.0`
 
 ## Building / Usage
 
