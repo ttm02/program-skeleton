@@ -121,20 +121,30 @@ PrecalculationFunctionAnalysis::PrecalculationFunctionAnalysis(
       }
     }
   }
-  // new calls in func.users if aliases arte replaced
+  // new calls in func.users if aliases are replaced
   for (auto *u : func->users()) {
     if (auto call = llvm::dyn_cast<llvm::CallBase>(u)) {
       if (call->getCalledFunction() != func) {
-        if (is_omp_fork_call(call)) {
+        if (is_thread_fork_call(call)) {
           //  call to openmp
-          if (!is_openmp_parallel) {
-            is_openmp_parallel = true;
+
+          is_openmp_parallel = true;
+          if (!parallel_region) {
             parallel_region = std::make_shared<ParallelRegion>(func);
           }
-        } else if (call->getCalledFunction() ==
-                   get_omp_functions(*call->getModule())->kmpc_omp_task_alloc) {
+
+        } else if (call->getCalledFunction() &&
+                   call->getCalledFunction() ==
+                       get_omp_functions(*call->getModule())
+                           ->kmpc_omp_task_alloc) {
+
           is_openmp_task = true;
+          if (!parallel_region) {
+            parallel_region = std::make_shared<ParallelRegion>(func);
+          }
+
           task_alloc_calls.push_back(call);
+
         } else {
           is_func_ptr_captured = true;
         }
@@ -225,7 +235,7 @@ void PrecalculationFunctionAnalysis::re_visit_callsites() {
   for (auto *c : callsites) {
     if (precalculatioanalysis->is_tainted(c)) {
       auto ti = precalculatioanalysis->get_taint_info(c);
-      ti->visited = false;
+      ti->set_need_visit();
     }
   }
 }

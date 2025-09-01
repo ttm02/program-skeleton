@@ -17,6 +17,9 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Casting.h"
+#ifndef NDEBUG
+#include <boost/stacktrace/stacktrace.hpp>
+#endif
 #include <memory>
 
 #ifndef MACH_TAINTED_VALUE_H
@@ -51,12 +54,16 @@ enum TaintReason : int {
 };
 
 struct TaintedValue {
-  TaintedValue(llvm::Value *v) : v(v){};
+  TaintedValue(llvm::Value *v) : v(v) {};
   llvm::Value *v = nullptr;
 
 private:
   int _reason = OTHER;
   bool _include_in_precompute = false;
+  bool _visited = false;
+#ifndef NDEBUG
+  int visit_count = 0;
+#endif
 
 public:
   int getReason() const { return _reason; }
@@ -92,12 +99,32 @@ public:
       _reason = _reason | INCLUDED;
       _include_in_precompute = true;
       // TODO do I rly need to re-visit it?
-      visited = false;
+      _visited = false;
     }
   }
 
 public:
-  bool visited = false;
+  // visited=true
+  void set_visited() {
+    _visited = true;
+#ifndef NDEBUG
+    visit_count++;
+#endif
+  }
+  // visited = false
+  void set_need_visit() {
+    _visited = false;
+#ifndef NDEBUG
+    if (visit_count > 50) {
+      llvm::errs() << "Possible endless loop visiting\n";
+      v->dump();
+      llvm::errs() << "Re visit triggered by:\n";
+      llvm::errs() << to_string(boost::stacktrace::stacktrace());
+      assert(false);
+    }
+#endif
+  }
+  bool is_visited() const { return _visited; }
 
   // one can have multiple children and parents e.g. one call with several args
   // whose return value is used multiple times

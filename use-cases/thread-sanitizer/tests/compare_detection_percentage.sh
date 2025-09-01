@@ -47,38 +47,41 @@ else
 fi
 
 
+
+ORIGINAL_RACES=0
+MODIFIED_RACES=0
+
 # execution
 if [[ -x "./a.out" ]]; then
     # a.out exists
+    for i in {1..100} ; do
+    echo "Run $i"
+
     if ./a.out_original 2>&1 | grep -qF "$GREP_STRING"; then
         # original sanitizer found data race
-
-        if ./a.out 2>&1 | grep -qF "$GREP_STRING"; then
-          # success
-          echo "both versions found the datarace"
-            exit 0
-        else
-            echo "Original sanitizer found the data race but precomputed not"
-            exit -1
-        fi
-    else
-        #echo "Original sanitizer found no race"
-        if ./a.out 2>&1 | grep -qF "$GREP_STRING"; then
-                  echo "Original sanitizer found no race but precomputed did"
-                    exit -1
-                else
-                  #success
-                    echo "both versions found no race"
-                    exit 0
-                fi
+        ((ORIGINAL_RACES++))
     fi
+
+      if ./a.out 2>&1 | grep -qF "$GREP_STRING"; then
+        # modified found the race
+        ((MODIFIED_RACES++))
+      fi
+
+done
 else
     echo "Compilation fail"
     exit -2
 fi
 
-# should never reach this
-exit -1
+echo "Detection Statistics"
+echo "ORIGINAL: $ORIGINAL_RACES"
+echo "Modified: $MODIFIED_RACES"
+echo "of 100 executions"
+
+
+
+
+
 
 
 

@@ -111,7 +111,7 @@ bool is_func_from_std(llvm::Function *func) {
   }
 
   // openmp
-  if (is_omp_function(func)) {
+  if (is_thread_function(func)) {
     return true;
   }
   if (func == get_std_dummy_func(func->getParent())) {
@@ -131,7 +131,7 @@ bool is_func_from_std(llvm::Function *func) {
   // errs() << "Test if in std:\n" << func->getName() <<demangled_fname <<
   // "\n";
 
-  for (auto prefix : allowed_function_prefixes) {
+  for (const auto &prefix : allowed_function_prefixes) {
     if (demangled_fname.rfind(prefix, 0) == 0) {
       return true;
     }
@@ -179,12 +179,17 @@ bool is_func_from_std(llvm::Function *func) {
       // it in precompute
       func->getName() == "getrusage" || func->getName() == "time" ||
       func->getName() == "localtime" || func->getName() == "clock_gettime" ||
-      func->getName() == "isspace" || func->getName() == "isalpha" ||
-      func->getName() == "isalnum" || func->getName() == "isdigit" ||
+      func->getName() == "strftime" || func->getName() == "isspace" ||
+      func->getName() == "isalpha" || func->getName() == "isalnum" ||
+      func->getName() == "isdigit" ||
 
       // from gnu
       func->getName() == "__getdelim") {
 
+    return true;
+  }
+  if (func->getName().starts_with("__ctype_")) {
+    // from ctype.h
     return true;
   }
 

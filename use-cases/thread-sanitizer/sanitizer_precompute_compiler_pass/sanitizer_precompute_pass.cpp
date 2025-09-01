@@ -23,6 +23,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 
+#include "LoopOptimize.h"
 #include "precalculation.h"
 
 #include <cassert>
@@ -35,6 +36,8 @@
 #include "std_funcs.h"
 
 #include "llvm/Transforms/IPO/ModuleInliner.h"
+
+#include "llvm/Transforms/IPO/GlobalDCE.h"
 
 #include <precalculation.h>
 
@@ -54,11 +57,19 @@ void remove_noinline_from_module(llvm::Module &M) {
 }
 
 void run_optimization_passes(llvm::Module &M, ModuleAnalysisManager &AM) {
-  errs() << "Run inliner Pass\n";
 
+  errs() << "Run inliner Pass\n";
   auto inliner = llvm::ModuleInlinerPass();
   inliner.run(M, AM);
 
+  errs() << "Run Global DCE Pass\n";
+  auto dce = llvm::GlobalDCEPass();
+  dce.run(M, AM);
+
+#ifndef NDEBUG
+  auto has_error = verifyModule(M, &errs(), nullptr);
+  assert(!has_error);
+#endif
   // M.dump();
 }
 
@@ -144,7 +155,7 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
                   // eiter tsan or omp function
                   // omp function necessary e.g. to keep synchronization
                   (call->getCalledFunction()->getName().startswith("__tsan") ||
-                   is_omp_function(call->getCalledFunction()))) {
+                   is_thread_function(call->getCalledFunction()))) {
                 if (call->getCalledFunction()->getName() ==
                     "__tsan_func_exit") {
                   if (dyn_cast<ResumeInst>(
@@ -178,6 +189,8 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
       }
     }
 
+    errs() << "Statistics: locations: " << precompute_locations.size()
+           << " values: " << to_precompute.size() << "\n";
     // no tsan found
     if (precompute_locations.empty()) {
       // no modification
@@ -218,20 +231,25 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     builder.CreateCall(precomputed_main, args);
     builder.CreateRet(Constant::getNullValue(main_func->getReturnType()));
 
-    // TODO remove other non-precompute functions now? or let a later run of DCE
-    // do that
-
     remove_noinline_from_module(M);
 
+    // remove other non-precompute functions now
+    std::vector<Function *> to_delete;
     for (auto it_f = M.begin(); it_f != M.end(); ++it_f) {
       Function *f = &*it_f;
       if (precalcuation->is_func_part_of_precompute_phase(f)) {
         // the tsan calls are already part of precompute, no need to instrumente
         // them again
         f->removeFnAttr(Attribute::SanitizeThread);
+      } else if ((not f->isDeclaration()) && f != main_func &&
+                 (not f->getName().starts_with("__tsan")) &&
+                 (not is_func_from_std(f))) {
+        // not used: remove
+        if (f->hasExternalLinkage())
+          f->setLinkage(GlobalValue::InternalLinkage);
+        // this will prompt GlobalDCE to remove
       }
     }
-    delete analysis_results;
 
     Debug(errs() << "After Modification:\n"; M.dump();
           errs() << "END MODULE\n";);
@@ -250,9 +268,26 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     // elems are undef)
 #endif
 
-    errs() << "Successfully executed the pass\n\n";
+    errs() << "Successfully computed the precomputation\n\n";
 
     run_optimization_passes(M, AM);
+
+    delete analysis_results;
+
+    return PreservedAnalyses::none();
+
+    errs() << "Optimize Loops\n\n";
+    Optimize_loops(M);
+
+#ifndef NDEBUG
+    has_error = verifyModule(M, &errs(), nullptr);
+    assert(!has_error);
+#endif
+
+    /* Debug(errs() << "After Modification:\n"; M.dump();
+           errs() << "END MODULE\n";);*/
+
+    delete analysis_results;
 
     return PreservedAnalyses::none();
   }

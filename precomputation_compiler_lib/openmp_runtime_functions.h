@@ -23,17 +23,37 @@ inline bool is_omp_function(const llvm::Function *func) {
          func->getName().starts_with("omp_");
 }
 
+inline bool is_pthread_function(const llvm::Function *func) {
+  return func->getName().starts_with("pthread_");
+}
+
+inline bool is_thread_function(const llvm::Function *func) {
+  return is_omp_function(func) || is_pthread_function(func);
+}
+
+inline bool is_pthread_create(llvm::CallBase *call) {
+  return (not call->isIndirectCall()) &&
+         (call->getCalledFunction() &&
+          call->getCalledFunction()->getName() == "pthread_create");
+}
+
 inline bool is_omp_fork_call(llvm::CallBase *call) {
   return (not call->isIndirectCall()) &&
-         (call->getCalledFunction() ==
-          get_omp_functions(*call->getModule())->kmpc_fork_call);
+         (call->getCalledFunction() &&
+          call->getCalledFunction() ==
+              get_omp_functions(*call->getModule())->kmpc_fork_call);
+}
+
+inline bool is_thread_fork_call(llvm::CallBase *call) {
+  return is_omp_fork_call(call) || is_pthread_create(call);
 }
 
 // get the call that actually schedules the task
-inline llvm::CallBase *get_task_scheduling_call(llvm::CallBase *alloc_call) {
+inline std::vector<llvm::CallBase *>
+get_task_scheduling_calls(llvm::CallBase *alloc_call) {
   assert(alloc_call->getCalledFunction() ==
          get_omp_functions(*alloc_call->getModule())->kmpc_omp_task_alloc);
-  llvm::CallBase *sched_call = nullptr;
+  std::vector<llvm::CallBase *> sched_calls;
   for (auto *u : alloc_call->users()) {
     if (auto *call = llvm::dyn_cast<llvm::CallBase>(u)) {
       if (call->getCalledFunction() &&
@@ -43,18 +63,17 @@ inline llvm::CallBase *get_task_scheduling_call(llvm::CallBase *alloc_call) {
            call->getCalledFunction()->getName() == "__kmpc_taskloop" ||
            call->getCalledFunction()->getName() ==
                "__kmpc_omp_task_begin_if0")) {
-        assert(sched_call == nullptr);
 
-        sched_call = call;
+        sched_calls.push_back(call);
+        assert(call->getFunction() == alloc_call->getFunction());
       }
     }
   }
-  if (!sched_call) {
+  if (sched_calls.empty()) {
     alloc_call->dump();
   }
-  assert(sched_call);
-  assert(sched_call->getFunction() == alloc_call->getFunction());
-  return sched_call;
+  assert(!sched_calls.empty());
+  return sched_calls;
 }
 
 #endif /* MACH_OMP_FUNCS_H_ */
