@@ -52,7 +52,9 @@ VtableManager::get_vtable_from_ptr_user(llvm::User *vtable_value) {
     // we will just use the normal initializers
     // as everything of this will be called before main actually starts
     assert(current_level_of_definition->getName().equals("llvm.global_ctors") ||
-           current_level_of_definition->getName().equals("llvm.global_dtors"));
+           current_level_of_definition->getName().equals("llvm.global_dtors") ||
+           current_level_of_definition->getName().equals(
+               "llvm.global.annotations"));
     return nullptr;
   }
 
