@@ -602,9 +602,8 @@ const std::set<llvm::Instruction *> &PtrUsageInfo::getLoads() const {
   return loads;
 }
 
-template <>
-bool std::operator==(const std::shared_ptr<PtrUsageInfo> &lhs,
-                     const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
+bool operator==(const std::shared_ptr<PtrUsageInfo> &lhs,
+                const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
 
   auto ll = lhs;
   if (ll) {
@@ -621,9 +620,8 @@ bool std::operator==(const std::shared_ptr<PtrUsageInfo> &lhs,
   return ll.get() == rr.get();
 }
 
-template <>
-bool std::operator!=(const std::shared_ptr<PtrUsageInfo> &lhs,
-                     const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
+bool operator!=(const std::shared_ptr<PtrUsageInfo> &lhs,
+                const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
 
   auto ll = lhs;
   if (ll) {
@@ -640,9 +638,8 @@ bool std::operator!=(const std::shared_ptr<PtrUsageInfo> &lhs,
   return ll.get() != rr.get();
 }
 
-template <>
-bool std::operator<(const std::shared_ptr<PtrUsageInfo> &lhs,
-                    const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
+bool operator<(const std::shared_ptr<PtrUsageInfo> &lhs,
+               const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
 
   auto ll = lhs;
   if (ll) {
@@ -659,9 +656,8 @@ bool std::operator<(const std::shared_ptr<PtrUsageInfo> &lhs,
   return ll.get() < rr.get();
 }
 
-template <>
-bool std::operator>(const std::shared_ptr<PtrUsageInfo> &lhs,
-                    const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
+bool operator>(const std::shared_ptr<PtrUsageInfo> &lhs,
+               const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
 
   auto ll = lhs;
   if (ll) {
@@ -678,9 +674,8 @@ bool std::operator>(const std::shared_ptr<PtrUsageInfo> &lhs,
   return ll.get() > rr.get();
 }
 
-template <>
-bool std::operator<=(const std::shared_ptr<PtrUsageInfo> &lhs,
-                     const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
+bool operator<=(const std::shared_ptr<PtrUsageInfo> &lhs,
+                const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
 
   auto ll = lhs;
   if (ll) {
@@ -697,9 +692,8 @@ bool std::operator<=(const std::shared_ptr<PtrUsageInfo> &lhs,
   return ll.get() <= rr.get();
 }
 
-template <>
-bool std::operator>=(const std::shared_ptr<PtrUsageInfo> &lhs,
-                     const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
+bool operator>=(const std::shared_ptr<PtrUsageInfo> &lhs,
+                const std::shared_ptr<PtrUsageInfo> &rhs) noexcept {
 
   auto ll = lhs;
   if (ll) {

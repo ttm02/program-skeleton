@@ -38,21 +38,16 @@ class PtrUsageInfo;
 template <>
 bool std::operator==(const std::shared_ptr<PtrUsageInfo> &lhs,
                      const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
-template <>
-bool std::operator!=(const std::shared_ptr<PtrUsageInfo> &lhs,
-                     const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
-template <>
-bool std::operator<(const std::shared_ptr<PtrUsageInfo> &lhs,
-                    const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
-template <>
-bool std::operator>(const std::shared_ptr<PtrUsageInfo> &lhs,
-                    const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
-template <>
-bool std::operator<=(const std::shared_ptr<PtrUsageInfo> &lhs,
-                     const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
-template <>
-bool std::operator>=(const std::shared_ptr<PtrUsageInfo> &lhs,
-                     const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+bool operator!=(const std::shared_ptr<PtrUsageInfo> &lhs,
+                const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+bool operator<(const std::shared_ptr<PtrUsageInfo> &lhs,
+               const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+bool operator>(const std::shared_ptr<PtrUsageInfo> &lhs,
+               const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+bool operator<=(const std::shared_ptr<PtrUsageInfo> &lhs,
+                const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+bool operator>=(const std::shared_ptr<PtrUsageInfo> &lhs,
+                const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
 
 class PtrUsageInfo : public std::enable_shared_from_this<PtrUsageInfo> {
 public:
@@ -249,22 +244,18 @@ private:
   // ptr info)
 
   // friend the comparison operators
-  friend bool
-  std::operator==(const std::shared_ptr<PtrUsageInfo> &lhs,
-                  const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
-  friend bool
-  std::operator!=(const std::shared_ptr<PtrUsageInfo> &lhs,
-                  const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
-  friend bool std::operator<(const std::shared_ptr<PtrUsageInfo> &lhs,
-                             const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
-  friend bool std::operator>(const std::shared_ptr<PtrUsageInfo> &lhs,
-                             const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
-  friend bool
-  std::operator<=(const std::shared_ptr<PtrUsageInfo> &lhs,
-                  const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
-  friend bool
-  std::operator>=(const std::shared_ptr<PtrUsageInfo> &lhs,
-                  const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+  friend bool operator==(const std::shared_ptr<PtrUsageInfo> &lhs,
+                         const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+  friend bool operator!=(const std::shared_ptr<PtrUsageInfo> &lhs,
+                         const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+  friend bool operator<(const std::shared_ptr<PtrUsageInfo> &lhs,
+                        const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+  friend bool operator>(const std::shared_ptr<PtrUsageInfo> &lhs,
+                        const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+  friend bool operator<=(const std::shared_ptr<PtrUsageInfo> &lhs,
+                         const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+  friend bool operator>=(const std::shared_ptr<PtrUsageInfo> &lhs,
+                         const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
 };
 
 #endif // MACH_PTR_INFO_H_
