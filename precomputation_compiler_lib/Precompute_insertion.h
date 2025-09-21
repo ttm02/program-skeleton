@@ -24,14 +24,32 @@ Licensed under the Apache License, Version 2.0 (the "License");
 class PrecalculationAnalysis; // such that include order doesn't matter
 class PrecalculationFunctionAnalysis;
 
-
 #include <llvm/IR/Module.h>
 
-class PrecalculationFunctionCopy;
+class PrecalculationFunctionCopy {
+public:
+  // Replacement Part
+  explicit PrecalculationFunctionCopy(
+      const std::shared_ptr<PrecalculationFunctionAnalysis> &analysis_result)
+      : analysis_result(analysis_result), F_orig(analysis_result->func) {
+    initialize_copy();
+  }
+
+  std::shared_ptr<PrecalculationFunctionAnalysis> analysis_result;
+  llvm::Function *F_orig;
+  llvm::Function *F_copy = nullptr;
+  llvm::ValueToValueMapTy old_new_map;
+  std::map<llvm::Value *, llvm::Value *> new_to_old_map;
+  llvm::ClonedCodeInfo *cloned_code_info = nullptr; // currently we don't use it
+
+private:
+  void initialize_copy();
+};
 
 class PrecomputeInsertion {
 public:
-  PrecomputeInsertion(llvm::Module &M,
+  PrecomputeInsertion(
+      llvm::Module &M,
       const std::shared_ptr<PrecalculationAnalysis> &precompute_analyis_result,
       bool replace_allocation = true)
       : M(M), precompute_analyis_result(precompute_analyis_result),
@@ -72,7 +90,6 @@ private:
   // precompute backend library
   bool replace_allocation;
 
-
   llvm::Function *precompute_main;
 
   std::map<llvm::Value *, llvm::Value *> precomputed_values_map;
@@ -95,26 +112,6 @@ private:
   std::shared_ptr<PrecalculationFunctionCopy>
   is_in_a_precompute_copy_func(llvm::Instruction *inst);
   void build_precomputed_values_map();
-};
-
-class PrecalculationFunctionCopy {
-public:
-  // Replacement Part
-  explicit PrecalculationFunctionCopy(
-      const std::shared_ptr<PrecalculationFunctionAnalysis> &analysis_result)
-      : analysis_result(analysis_result), F_orig(analysis_result->func) {
-    initialize_copy();
-  }
-
-  std::shared_ptr<PrecalculationFunctionAnalysis> analysis_result;
-  llvm::Function *F_orig;
-  llvm::Function *F_copy = nullptr;
-  llvm::ValueToValueMapTy old_new_map;
-  std::map<llvm::Value *, llvm::Value *> new_to_old_map;
-  llvm::ClonedCodeInfo *cloned_code_info = nullptr; // currently we don't use it
-
-private:
-  void initialize_copy();
 };
 
 #endif // MPI_ASSERTION_CHECKING_PRECOMPUTE_INSERTION_H
