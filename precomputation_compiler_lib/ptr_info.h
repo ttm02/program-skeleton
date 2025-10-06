@@ -24,6 +24,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #include <set>
 #include <utility>
 
+
 #include "llvm/IR/Module.h"
 
 #define WILDCARD_IDX std::numeric_limits<unsigned int>::max()
@@ -37,7 +38,7 @@ class PtrUsageInfo;
 // merged and are only shallow objs dispatching to another instance
 
 bool operator==(const std::shared_ptr<PtrUsageInfo> &lhs,
-                     const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+                const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
 bool operator!=(const std::shared_ptr<PtrUsageInfo> &lhs,
                 const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
 bool operator<(const std::shared_ptr<PtrUsageInfo> &lhs,
@@ -48,6 +49,11 @@ bool operator<=(const std::shared_ptr<PtrUsageInfo> &lhs,
                 const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
 bool operator>=(const std::shared_ptr<PtrUsageInfo> &lhs,
                 const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
+
+//for c++20 and beyond one may want to add this instead of != < > <= >=
+// my old compiler cannot #include <compare> currently, but == is the only important operator anyhow
+//std::strong_ordering operator<=>( const std::shared_ptr<PtrUsageInfo>& lhs,
+//                                  const std::shared_ptr<PtrUsageInfo>& rhs ) noexcept;
 
 class PtrUsageInfo : public std::enable_shared_from_this<PtrUsageInfo> {
 public:

@@ -709,3 +709,25 @@ bool operator>=(const std::shared_ptr<PtrUsageInfo> &lhs,
   }
   return ll.get() >= rr.get();
 }
+
+// for c++20 and beyond
+/*
+std::strong_ordering operator<=>( const std::shared_ptr<PtrUsageInfo>& lhs,
+                                  const std::shared_ptr<PtrUsageInfo>& rhs ) noexcept;
+{
+  auto ll = lhs;
+  if (ll) {
+    while (ll->merged_with) {
+      ll = ll->merged_with;
+    }
+  }
+  auto rr = rhs;
+  if (rr) {
+    while (rr->merged_with) {
+      rr = rr->merged_with;
+    }
+  }
+
+  return std::compare_three_way{}(x.get(), y.get())
+}
+*/
