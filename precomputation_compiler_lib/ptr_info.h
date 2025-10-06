@@ -35,8 +35,8 @@ class PtrUsageInfo;
 
 // specialized comparison operators that include the fact that objects may be
 // merged and are only shallow objs dispatching to another instance
-template <>
-bool std::operator==(const std::shared_ptr<PtrUsageInfo> &lhs,
+
+bool operator==(const std::shared_ptr<PtrUsageInfo> &lhs,
                      const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
 bool operator!=(const std::shared_ptr<PtrUsageInfo> &lhs,
                 const std::shared_ptr<PtrUsageInfo> &rhs) noexcept;
