@@ -1,3 +1,6 @@
+# requires Nix package manager with Flake enabled
+# see https://nixos.org/download/
+# and https://wiki.nixos.org/wiki/Flakes
 {
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-24.11";
@@ -36,6 +39,7 @@
     crt-path = compiler-rt-sym + "/lib";
   in
   {
+    # nix develop
     devShells.x86_64-linux.default = pkgs.mkShell.override {
       # set the Clang/LLVM toolchain as default
       stdenv = pkgs."llvmPackages_${LLVM_VER}".stdenv;
@@ -43,6 +47,7 @@
       packages = with pkgs; [
         # cmake and compiler
         cmake
+        ninja
         pkgs."llvmPackages_${LLVM_VER}".libllvm
         pkgs."llvmPackages_${LLVM_VER}".bintools
         pkgs."clang_${LLVM_VER}"
@@ -53,8 +58,6 @@
         pkgs."llvmPackages_${LLVM_VER}".openmp
       ];
       shellHook = ''
-        export ASAN_OPTIONS=detect_leaks=0
-        export LIBRARY_PATH=${crt-path}
         export LD_LIBRARY_PATH=${crt-path}
       '';
     };

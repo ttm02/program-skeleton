@@ -3,22 +3,25 @@
 This Repository contains the llvm pass that removes computation from an application, while retaining the Tsan
 instrumentation, leading to a program skeleton that has only the data race detection.
 
+All commands in code blocks below are executed in the root directory of this repository.
+ut not all files or directories meantioned in the text are relativ that. Some are relativ to the directory where this ReadMe is located in.
+
 ## Prerequisites
 
+A C/C++ compiler with `libclang-rt`(asan) and `openmp` support and possibly `boost`.
+
 For this Project, we used clang/`llvm 16.0.1`
-The cmake configure step will download DataRaceBench REFERENZ? for testing
+The `cmake` configure step will download [DataRaceBench](https://github.com/LLNL/dataracebench) for testing
 
 ## Building
 
 Building with cmake is straight forward:
-
+```bash
+cmake -B 'build' -S . -G 'Ninja' -DMPI_USE_CASE='off'
+cmake --build build
 ```
-mkdir build && cd build
-cmake ..
-make -j
-source setup_env.sh
-ctest --timeout 3 # run the tests to check if build was successful
-```
+Without `-G` it defaults to "Unix Makefiles", but "Ninja" is the hot shit to use with LLVM.
+If you want to also use the MPI usecase, do not disable it (`MPI_USE_CASE`).
 
 ## Usage
 
@@ -37,6 +40,27 @@ The ``-fno-inline`` will be removed after the analysis, so that inlining does ha
 The ctest tests check the detection accuracy against the original tsan implementation.
 As the data race affected testcases include nondeterministic behaviour, it is expected, that some tests may fail.
 In particular, `DRB185-barrier1-yes` fails 99% of the time due to a limitation in the Tsan implementation.
+
+Just running the tests:
+```bash
+cmake --build build -- test
+```
+This equivilent to running
+```bash
+ctest --test-dir build
+```
+Optionally add `--timeout 3` to the arguments
+
+Rerun and check why tests failed:
+```bash
+ctest --test-dir build --timeout 3 --rerun-failed --output-on-failure
+```
+If reason "Timeout" remove the arguments. 
+
+Run single test:
+```bash
+ctest --test-dir build -R "DRB027-taskdependmissing-orig-yes"
+```
 
 ## Performance
 
