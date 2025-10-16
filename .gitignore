@@ -41,3 +41,5 @@ cache.csv
 .idea
 .cache
 
+# Nix result links
+result*
