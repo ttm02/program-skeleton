@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # builds the job_scipts and submits them for the given configuration script
 

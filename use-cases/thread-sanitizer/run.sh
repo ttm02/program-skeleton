@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 
 DEFAULT_CFLAGS="-O2 -g -fopenmp -fsanitize=thread ${INCLUDE}"

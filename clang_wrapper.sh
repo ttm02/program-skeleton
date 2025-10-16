@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 # wrapper to invoke clang for compilation with the as using multiple object files
 compiler=clang++
 #compiler= variable needs to be set on line 3 as it will be replaced with clang or clang++ depending if c or cpp wrapper is generated

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 STYLEARG="--style=llvm"
 

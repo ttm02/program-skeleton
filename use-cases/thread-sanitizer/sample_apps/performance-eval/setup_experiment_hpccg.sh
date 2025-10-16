@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 
 OUTPUT_DIR="/work/scratch/tj75qeje/precompute/hpccg"

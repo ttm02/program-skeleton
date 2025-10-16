@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 #prerequisites: llvm/16
 # the configuration I used:

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # wrapper to debug clang invocations with more complicated build systems
 

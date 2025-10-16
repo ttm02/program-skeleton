@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # same as -n
 #SBATCH --ntasks 1

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 
 INSTALL_PATH=/home/tj75qeje/mpi-comp-match_sample_codes

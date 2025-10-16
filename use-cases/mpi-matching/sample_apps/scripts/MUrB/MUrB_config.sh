@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 
 export APPLICATION_NAME=MUrB

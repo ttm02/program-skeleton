@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # call with llvm-reduce -j 6 --test test_lulesh.sh full_ir.bc
 

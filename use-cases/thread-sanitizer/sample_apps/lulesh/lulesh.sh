@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # location of this script
 # this is the location where tha path file to introduce a datarace is

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 #CFLAGS="-std=c11 -O3 ${INCLUDE}"
 CFLAGS="-std=c11 -O1 -g ${INCLUDE}"

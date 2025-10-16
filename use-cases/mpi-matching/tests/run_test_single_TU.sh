@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 echo $(pwd)
 # where the wrappers are found
 BINARY_DIR=$1
