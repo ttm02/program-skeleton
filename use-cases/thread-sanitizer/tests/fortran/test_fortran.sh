@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 echo $(pwd)
 # where the wrappers are found
@@ -40,6 +40,3 @@ fi
 
 # should never reach this
 exit -1
-
-
-
