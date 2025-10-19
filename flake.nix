@@ -3,7 +3,9 @@
 # and https://wiki.nixos.org/wiki/Flakes
 {
   inputs = {
-    nixpkgs.url = "nixpkgs/nixos-24.11";
+    # update by running `nix flake update nixpkgs`
+    # last update on 19.10.2025
+    nixpkgs.url = "nixpkgs/nixos-unstable";
   };
 
   outputs = {
@@ -14,7 +16,7 @@
     pkgs = import nixpkgs { system = "x86_64-linux"; };
     inherit (pkgs) lib;
 
-    LLVM_VER = "16";
+    LLVM_VER = "21";
 
     # symlink all `libclang_rt.*-x86_64.so` as libclang_rt.*.so
     compiler-rt-orig = pkgs."llvmPackages_${LLVM_VER}".compiler-rt;
