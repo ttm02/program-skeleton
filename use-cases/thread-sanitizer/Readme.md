@@ -1,4 +1,4 @@
-# TODO: Heading
+# Program skeletons for fast data race detecthin with ThreadSanitizer
 
 This Repository contains the llvm pass that removes computation from an application, while retaining the Tsan
 instrumentation, leading to a program skeleton that has only the data race detection.
@@ -10,7 +10,7 @@ ut not all files or directories meantioned in the text are relativ that. Some ar
 
 A C/C++ compiler with `libclang-rt`(asan) and `openmp` support and possibly `boost`.
 
-For this Project, we used clang/`llvm 16.0.1`
+For this Project, we used clang/`llvm 21.1.0`
 The `cmake` configure step will download [DataRaceBench](https://github.com/LLNL/dataracebench) for testing
 
 ## Building

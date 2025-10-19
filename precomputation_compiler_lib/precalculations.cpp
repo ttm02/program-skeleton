@@ -983,7 +983,16 @@ void PrecalculationAnalysis::visit_arg(
         // will be set by omp runtime: nothing to do
       } else if (arg->getArgNo() == 1) {
         assert(arg->getType()->isPointerTy());
-        // alias all relevant shared values
+        auto in_serial_vec =
+            fun_to_precalc->parallel_region->get_value_in_serial(arg);
+        for (auto *in_serial : in_serial_vec) {
+          auto serial_info = insert_tainted_value(in_serial, arg_info);
+          // create another ptr alias
+          if (arg->getType()->isPointerTy()) {
+            serial_info->ptr_info->merge_with(arg_info->ptr_info);
+          }
+        }
+        // and directly alias all relevant shared values
         for (auto *parallel_v : fun_to_precalc->parallel_region
                                     ->get_shared_variables_in_parallel()) {
           assert(parallel_v->getType()->isPointerTy());
@@ -1134,8 +1143,10 @@ bool PrecalculationAnalysis::is_ptr_usage_in_std_indirect(
   }
 
   if (is_thread_function(call->getCalledFunction())) {
-    return false; // openmp does not do that for relevant ptrs
-    // the ptrs where it does are managed by omp runtime anyway
+    return true;
+    // return
+    // call->getCalledFunction()!=get_omp_functions(*call->getModule())->kmpc_omp_task_with_deps;
+    //  other ptrs are managed by omp runtime anyway
   }
   if (call->getCalledFunction()->isIntrinsic()) {
     return false;
@@ -1226,12 +1237,14 @@ void PrecalculationAnalysis::visit_call(
     include_value_in_precompute(func_ptr_info);
   }
 
+
   // analyze if call to str read/writes ptr
   if (is_call_to_std(call) && !is_thread_fork_call(call)) {
     for (auto &arg : call->args()) {
       if (auto *v = dyn_cast<Value>(&arg)) {
         if (is_tainted(v) && v->getType()->isPointerTy()) {
           if (is_ptr_usage_in_std_write(call, get_taint_info(v))) {
+            get_taint_info(v)->ptr_info->setIsWrittenTo(call, this);
             get_function_analysis(call->getFunction())
                 ->add_ptr_write(get_taint_info(v)->ptr_info);
             // std may write to derived ptrs
@@ -1240,6 +1253,7 @@ void PrecalculationAnalysis::visit_call(
             }
           }
           if (is_ptr_usage_in_std_read(call, get_taint_info(v))) {
+            get_taint_info(v)->ptr_info->setIsReadFrom(call, this);
             get_function_analysis(call->getFunction())
                 ->add_ptr_read(get_taint_info(v)->ptr_info);
             // std may read derived ptrs
@@ -1550,6 +1564,11 @@ void PrecalculationAnalysis::visit_call_from_ptr(
           assert(ptr->ptr_info->isWrittenTo());
         }
       }
+      if (is_ptr_usage_in_std_read(call, ptr)) {
+        ptr->ptr_info->setIsReadFrom(call, this);
+        ptr->ptr_info->setDerivedPtrIsRelevant(
+            true); // we dont know what part of the ptr is read by std
+      }
       return;
     }
   }
@@ -1589,7 +1608,7 @@ void PrecalculationAnalysis::visit_call_from_ptr(
       for (auto arg_num : ptr_given_as_arg) {
         if (arg_num < func->getFunctionType()->getNumParams()) {
           auto *arg = func->getArg(arg_num);
-          if (arg->hasAttribute(Attribute::NoCapture) &&
+          if (!arg->hasAttribute(Attribute::Captures) &&
               arg->hasAttribute(Attribute::ReadOnly)) {
             continue; // nothing to do: reading the val is allowed
             // TODO has foo( int ** array){ array[0][0]=0;} also readonly? as
@@ -2028,16 +2047,17 @@ bool PrecalculationAnalysis::is_store_important(
   assert(isa<StoreInst>(inst) || isa<AtomicRMWInst>(inst) ||
          isa<CallBase>(inst));
 
-  bool interesting = false;
+  /*
+  bool interesting = true;
   if (auto *store = dyn_cast<StoreInst>(inst)) {
-    /*interesting = store->getValueOperand()->getName() == "tn.addr";
+    //interesting = store->getValueOperand()->getName() == "tn.addr";
     if (interesting) {
       errs() << "INTERESTING ACCESS:\n";
       store->dump();
       errs() << "IN: " << store->getFunction()->getName() << "\n";
       ptr_info->dump();
-    }*/
-  }
+    }
+  }*/
 
   if (not ptr_info->isReadFrom()) {
     // errs() << "NOT READ\n";
