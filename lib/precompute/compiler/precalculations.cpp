@@ -246,7 +246,9 @@ void PrecalculationAnalysis::find_all_tainted_vals() {
   } while (!to_visit.empty());
   // done calculating
 
+#ifdef VERBOSE_DEBUG_PRINTING
   print_analysis_result_remarks();
+#endif
 
   // if tags or control flow depend on argc or argv MPI_Init will be tainted
   // (as it writes argc and argv)
@@ -362,7 +364,6 @@ void PrecalculationAnalysis::visit_phi(
 }
 
 void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
-  Debug(errs() << "Visit\n"; v->v->dump();)
 
       // TODO clang tidy repeated branch body (the v->visited = true part)
 

@@ -112,11 +112,12 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
   // Pass starts here
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
+    Debug(errs() << "\n");
 
     if (M.getFunction("__tsan_func_entry") == nullptr ||
         (M.getFunction("__tsan_func_entry")->users().empty())) {
 
-      Debug(errs() << "Run tsan pass\n");
+      Debug(errs() << "Run TSAN pass\n\n");
       bool is_fortran_code = is_compiled_with_flang(M);
       //  make sure TSAN pass runs
       auto *FAM =
@@ -133,8 +134,10 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
       }
     }
 
+#ifdef VERBOSE_DEBUG_PRINTING
     Debug(errs() << "Before Modification:\n"; M.dump();
           errs() << "END MODULE\n";);
+#endif
     auto has_error2 = verifyModule(M, &errs(), nullptr);
     assert(!has_error2);
 
@@ -197,8 +200,10 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
       }
     }
 
+    errs() << "\n";
     errs() << "Statistics: locations: " << precompute_locations.size()
-           << " values: " << to_precompute.size() << "\n";
+           << " values: " << to_precompute.size() << "\n\n";
+
     // no tsan found
     if (precompute_locations.empty()) {
       // no modification
@@ -259,8 +264,10 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
       }
     }
 
+#ifdef VERBOSE_DEBUG_PRINTING
     Debug(errs() << "After Modification:\n"; M.dump();
           errs() << "END MODULE\n";);
+#endif
 
 #ifndef NDEBUG
     auto has_error = verifyModule(M, &errs(), nullptr);

@@ -347,14 +347,12 @@ void PrecomputeInsertion::replace_calls_in_copy(
         assert(is_func_from_std(callee) || is_mpi_function(callee) ||
                callee->isIntrinsic());
         if (callee == get_omp_functions(M)->kmpc_fork_call) {
-          call->dump();
           auto old_parallel_region = cast<Function>(call->getArgOperand(2));
           auto new_parallel_region =
               functions_copied.at(old_parallel_region)->F_copy;
           call->setArgOperand(2, new_parallel_region);
         }
         if (callee == get_omp_functions(M)->kmpc_omp_task_alloc) {
-          call->dump();
           auto old_task = cast<Function>(call->getArgOperand(5));
           auto new_task = functions_copied.at(old_task)->F_copy;
           call->setArgOperand(5, new_task);
@@ -526,7 +524,6 @@ void PrecomputeInsertion::prune_function_copy(
     }
   }
 
-  func->F_copy->dump();
   // assert that no new undefs are introduced into func
   //  not assert == as we could remove some undefs
   // TODO handle OPENMP properly

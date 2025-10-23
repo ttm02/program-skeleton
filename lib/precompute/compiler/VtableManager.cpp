@@ -148,7 +148,6 @@ void VtableManager::perform_vtable_change_in_copies() {
       auto *from = std::get<1>(triple);
       auto *to = std::get<2>(triple);
       inst->replaceUsesOfWith(from, to);
-      inst->dump();
     }
 
   } // end for each vtable
@@ -170,9 +169,11 @@ VtableManager::get_replaced_vtable(llvm::User *vtable_value_as_use) {
   // new_vtable_global->setInitializer(nullptr);
 
   std::vector<Constant *> new_vtable;
+#ifdef VERBOSE_DEBUG_PRINTING
   errs() << "old vtable:\n";
   vtable_global->dump();
   vtable_global->getType()->dump();
+#endif
 
   for (unsigned int i = 0; i < vtable_value->getNumOperands(); ++i) {
     auto vtable_entry = vtable_value->getOperand(i);
@@ -204,9 +205,11 @@ VtableManager::get_replaced_vtable(llvm::User *vtable_value_as_use) {
 
   new_vtable_global->copyAttributesFrom(vtable_global);
 
+#ifdef VERBOSE_DEBUG_PRINTING
   errs() << "new vtable:\n";
   new_vtable_global->dump();
   new_vtable_global->getType()->dump();
+#endif
 
   return new_vtable_global;
 }

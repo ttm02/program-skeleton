@@ -160,7 +160,6 @@ void sort_parallel_gep_indices(
 }
 void ParallelRegion::get_shared_vars_in_task() {
   assert(_is_task);
-  _function->dump();
   auto arg = _function->getArg(1);   // struct address
   LoadInst *load_parallel = nullptr; // load struct to shared vars
   for (auto u : arg->users()) {
@@ -236,7 +235,6 @@ void ParallelRegion::get_shared_vars_in_task() {
         Value *shared_var_0_serial = nullptr;
         std::vector<std::pair<GetElementPtrInst *, Value *>> serial_geps;
         for (auto *uu : load_serial->users()) {
-          uu->dump();
           if (auto *gep_serial = dyn_cast<GetElementPtrInst>(uu)) {
             for (auto uuu : gep_serial->users()) {
               if (auto *store_shared_var = dyn_cast<StoreInst>(uuu)) {
@@ -279,12 +277,14 @@ void ParallelRegion::get_shared_vars_in_task() {
             _to_parallel_map[shared_var_0_serial] = shared_var_0;
           }
 
+#ifdef VERBOSE_DEBUG_PRINTING
           errs() << "serial:\n";
           for (auto p : serial_geps)
             p.first->dump();
           errs() << "parallel:\n";
           for (auto p : parallel_geps)
             p.first->dump();
+#endif
 
           assert(serial_geps.size() == parallel_geps.size());
 
