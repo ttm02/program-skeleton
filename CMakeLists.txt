@@ -29,8 +29,8 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 link_directories(${LLVM_LIBRARY_DIRS})
 
-add_subdirectory(precomputation_compiler_lib)
-add_subdirectory(precompute_runtime_lib)
+add_subdirectory(lib/precompute/compiler)
+add_subdirectory(lib/precompute/runtime)
 
 enable_testing()
 
