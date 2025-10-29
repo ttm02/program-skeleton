@@ -27,9 +27,9 @@ mkdir skeleton
 export USE_COMPILER_PASS=true
 # compile
 
-
-$CLANG_WRAP_CC $CFLAGS -o ./original/a.out $ENABLE_ALLOC_TRACKING_ARG $2
-$CLANG_WRAP_CC $CFLAGS -o ./skeleton/a.out $ENABLE_ALLOC_TRACKING_ARG $SLICE_ALLOC_ARG $2
+# all testcases are c
+clang -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS $CFLAGS -o ./original/a.out $ENABLE_ALLOC_TRACKING_ARG $2/*.c
+clang -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS $CFLAGS -o ./skeleton/a.out $ENABLE_ALLOC_TRACKING_ARG $SLICE_ALLOC_ARG $2/*.c
 
 
 # execution
