@@ -51,9 +51,11 @@ public:
   PrecomputeInsertion(
       llvm::Module &M,
       const std::shared_ptr<PrecalculationAnalysis> &precompute_analyis_result,
+      bool use_precompute_backend_library = true,
       bool replace_allocation = true)
       : M(M), precompute_analyis_result(precompute_analyis_result),
-        replace_allocation(replace_allocation) {
+        replace_allocation(replace_allocation),
+        use_precompute_backend_library(use_precompute_backend_library) {
     insert_precomputation();
   };
 
@@ -89,6 +91,8 @@ private:
   // true if allocations should be managed (and freed after precompute) by
   // precompute backend library
   bool replace_allocation;
+
+  bool use_precompute_backend_library;
 
   llvm::Function *precompute_main;
 

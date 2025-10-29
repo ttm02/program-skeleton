@@ -554,9 +554,13 @@ llvm::Function *PrecomputeInsertion::create_precompute_main(
   for (auto &arg : result->args()) {
     args.push_back(&arg);
   }
-  builder.CreateCall(precompute_funcs->init_precompute_lib);
+  if (use_precompute_backend_library) {
+    builder.CreateCall(precompute_funcs->init_precompute_lib);
+  }
   auto *real_main = builder.CreateCall(entry_function->F_copy, args);
-  builder.CreateCall(precompute_funcs->finish_precomputation);
+  if (use_precompute_backend_library) {
+    builder.CreateCall(precompute_funcs->finish_precomputation);
+  }
   auto *re_init_fun = get_global_re_init_function();
   builder.CreateCall(re_init_fun);
   builder.CreateRet(real_main);
