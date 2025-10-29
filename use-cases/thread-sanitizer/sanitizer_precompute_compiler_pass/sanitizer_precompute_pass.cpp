@@ -292,6 +292,7 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
 #ifdef PRECOMPUTE_TSAN_OPTIMIZE_LOOPS
     run_optimization_passes(M, AM, Optimize_loops);
+    run_optimization_passes(M, AM, reduce_tsan_calls);
 #endif
 
     delete analysis_results;

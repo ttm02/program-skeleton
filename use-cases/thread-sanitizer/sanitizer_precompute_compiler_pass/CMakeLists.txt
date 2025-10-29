@@ -2,6 +2,7 @@ add_library(sanitizer_precompute_pass MODULE
         # List your source files here.
         LoopOptimize.cpp
         sanitizer_precompute_pass.cpp
+        tsan_combine.cpp
 )
 
 #set(Boost_USE_STATIC_LIBS OFF)
