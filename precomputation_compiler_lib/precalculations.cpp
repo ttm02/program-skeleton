@@ -2251,8 +2251,8 @@ void PrecalculationAnalysis::add_all_MPI_Bcasts_to_slice(
           // Merge communication buffers
           auto buffer_tv = insert_tainted_value(buffer_V, ptr);
           ptr->ptr_info->merge_with(buffer_tv->ptr_info);
-                }
-            }
         }
+      }
     }
+  }
 }
