@@ -33,6 +33,8 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #include "debug.h"
 #include "openmp_runtime_functions.h"
 
+#include "alloc_tracking_utils.h"
+
 // for more scrutiny under testing:
 // the order of visiting the values should make no difference
 // #define SHUFFLE_VALUES_FOR_TESTING
@@ -1455,20 +1457,65 @@ void PrecalculationAnalysis::visit_call_from_ptr(
   // call->dump();
 
   if (not call->isIndirectCall()) {
-    if (func == mpi_func->mpi_send || func == mpi_func->mpi_Isend ||
-        func == mpi_func->mpi_recv || func == mpi_func->mpi_Irecv) {
-      assert(ptr_given_as_arg.size() == 1);
-      if (*ptr_given_as_arg.begin() == 0 &&
-          is_store_important(call, ptr->ptr_info)) {
-        // if communication result is not used, it is not important
-        ptr->v->dump();
-        call->dump();
-        assert(false &&
-               "Tracking Communication to get the envelope is currently "
-               "not supported");
-      } else {
-        // we know that the other arguments are not important e.g. not written
-        // to like if the communicator is used
+    if (!ignore_MPI_communication && !add_all_MPI_communication) {
+      // default case: trigger assertion as originally
+
+      // TODO add other MPI funcs such as bcast basically everything that has a
+      // buffer
+      if (func == mpi_func->mpi_send || func == mpi_func->mpi_Isend ||
+          func == mpi_func->mpi_recv || func == mpi_func->mpi_Irecv) {
+        assert(ptr_given_as_arg.size() == 1);
+        if (*ptr_given_as_arg.begin() == 0 &&
+            is_store_important(call, ptr->ptr_info)) {
+          // if communication result is not used, it is not important
+          ptr->v->dump();
+          call->dump();
+          assert(false &&
+                 "Tracking Communication to get the envelope is currently "
+                 "not supported");
+        } else {
+          // we know that the other arguments are not important e.g. not written
+          // to like if the communicator is used
+          return;
+        }
+      }
+    } else if (ignore_MPI_communication) {
+      // This is the first option to deal with MPI Communication.
+      // We want to ignore the MPI communication operation and flag the
+      // problematic call as invalid.
+      if (func &&
+          (func->getName() == "MPI_Recv" || func->getName() == "MPI_Irecv" ||
+           func->getName() == "MPI_Bcast")) {
+        assert(ptr_given_as_arg.size() == 1);
+        if (*ptr_given_as_arg.begin() == 0) {
+          if (ptr->ptr_info->isReadFrom() &&
+              is_store_important(call, ptr->ptr_info)) {
+            llvm::errs() << "\t[AllocTrackerLTOPass::Precompute] ==== TRACKING "
+                            "COMMUNICATION ASSERTION WOULD TRIGGER ====\n";
+
+            ptr->v->dump();
+            call->dump();
+
+            at_utils_collect_problematic_calls(call, ptr, problematic_calls);
+            return;
+          }
+        } else {
+          // we know that the other arguments are not important e.g. not written
+          // to like if the communicator is used
+          return;
+        }
+      }
+    } else if (add_all_MPI_communication) {
+      // This is the second option to deal with MPI Communication.
+      // We want to add all the desired MPI communication operations to the
+      // slice.
+      if (func &&
+          (func->getName() == "MPI_Send" || func->getName() == "MPI_Recv")) {
+        add_all_MPI_Send_and_Recv_to_slice(call, ptr);
+        return;
+      }
+      if (func && func->getName() == "MPI_Bcast") {
+        add_all_MPI_Bcasts_to_slice(call, ptr);
         return;
       }
     }
@@ -1526,7 +1573,12 @@ void PrecalculationAnalysis::visit_call_from_ptr(
       // but needs to be tainted so it will be replaced later
       auto call_info = insert_tainted_value(call, ptr, false);
 
-      assert(false && "a ptr given into an allocation call???");
+      if (func->getName() == "realloc") {
+        assert(func->arg_size() == 2 && "realloc should have two arguments!");
+        ptr->ptr_info->merge_with(call_info->ptr_info);
+      } else {
+        assert(false && "a ptr given into an allocation call?");
+      }
       return;
     }
 
@@ -1947,18 +1999,45 @@ PrecalculationAnalysis::get_possible_call_targets(llvm::CallBase *call) const {
     return possible_targets;
   }
 
+  // functionType operator == does not work with varargs for our context, so we
+  // have this additional check
+  auto do_types_match = [](FunctionType *FT1, FunctionType *FT2) {
+    if (FT1->getReturnType() != FT2->getReturnType())
+      return false;
+    if (FT1->getNumParams() != FT2->getNumParams())
+      return false;
+
+    for (unsigned int i = 0; i < FT1->getNumParams(); ++i) {
+      if (FT1->getParamType(i) != FT2->getParamType(i))
+        return false;
+    }
+
+    return true;
+  };
+
   if (possible_targets.empty()) {
     // can call any function with same type that we get a ptr of somewhere
     for (const auto &pair : function_analysis) {
       auto func = pair.second;
       if (func->is_func_ptr_captured) {
-        if (func->func->getFunctionType() == call->getFunctionType())
+        if (func->func->getFunctionType() == call->getFunctionType() ||
+            do_types_match(func->func->getFunctionType(),
+                           call->getFunctionType()))
           possible_targets.push_back(func->func);
       }
     }
     // TODO can we check that we will not be able to get a ptr to a function
     // outside of the module?
   }
+
+  /*
+   If a function pointer is never initialized, e.g. a struct member but never
+   set to point to a concrete function, no potential call targets will be found
+   here and the following assert will be triggered. This is a limitation of the
+   approach. In theory, one could search for such cases beforehand and set the
+   function pointer to NULL then the analysis should be able to handle these
+   cases.
+*/
 
   if (possible_targets.empty()) {
     call->dump();
@@ -2107,4 +2186,73 @@ bool PrecalculationAnalysis::store_happens_after_all_loads(
     }
   }
   return true;
+}
+
+void PrecalculationAnalysis::add_all_MPI_Send_and_Recv_to_slice(
+    llvm::CallBase *call, const std::shared_ptr<TaintedValue> &ptr) {
+  ptr->ptr_info->setIsWrittenTo(call, this);
+  ptr->ptr_info->setIsReadFrom(call, this);
+
+  if (is_store_important(call, ptr->ptr_info)) {
+    // llvm::errs() << "[AllocTrackerLTOPass::visit_call_from_ptr] Handling all
+    // MPI_Send or MPI_Recv\n";
+
+    auto call_info = insert_tainted_value(call, ptr, false);
+    include_value_in_precompute(call_info);
+
+    // For all arguments: mark as tainted and add to precompute
+    for (unsigned int i = 0; i < call->arg_size(); ++i) {
+      auto info = insert_tainted_value(call->getArgOperand(i), call_info);
+      include_value_in_precompute(info);
+    }
+
+    // Merge all buffers of all MPI_Bcasts in the application
+    for (auto *to_precompute_I : to_precompute_cfg) {
+      if (auto *call_B = llvm::dyn_cast<llvm::CallBase>(to_precompute_I)) {
+        auto *called_F = call_B->getCalledFunction();
+        if (called_F && (called_F->getName() == "MPI_Send" ||
+                         called_F->getName() == "MPI_Recv")) {
+          auto *buffer_V = call_B->getArgOperand(0);
+
+          // Merge communication buffers
+          auto buffer_tv = insert_tainted_value(buffer_V, ptr);
+          ptr->ptr_info->merge_with(buffer_tv->ptr_info);
+        }
+      }
+    }
+  }
+}
+
+void PrecalculationAnalysis::add_all_MPI_Bcasts_to_slice(
+    llvm::CallBase *call, const std::shared_ptr<TaintedValue> &ptr) {
+  ptr->ptr_info->setIsWrittenTo(call, this);
+  ptr->ptr_info->setIsReadFrom(call, this);
+
+  if (is_store_important(call, ptr->ptr_info)) {
+    // llvm::errs() << "[AllocTrackerLTOPass::visit_call_from_ptr] Handling all
+    // MPI_Bcast\n";
+
+    auto call_info = insert_tainted_value(call, ptr, false);
+    include_value_in_precompute(call_info);
+
+    // For all arguments: mark as tainted and add to precompute
+    for (unsigned int i = 0; i < call->arg_size(); ++i) {
+      auto info = insert_tainted_value(call->getArgOperand(i), call_info);
+      include_value_in_precompute(info);
+    }
+
+    // Merge all buffers of all MPI_Bcasts in the application
+    for (auto *to_precompute_I : to_precompute_cfg) {
+      if (auto *call_B = llvm::dyn_cast<llvm::CallBase>(to_precompute_I)) {
+        auto *called_F = call_B->getCalledFunction();
+        if (called_F && called_F->getName() == "MPI_Bcast") {
+          auto *buffer_V = call_B->getArgOperand(0); // before: call
+
+          // Merge communication buffers
+          auto buffer_tv = insert_tainted_value(buffer_V, ptr);
+          ptr->ptr_info->merge_with(buffer_tv->ptr_info);
+                }
+            }
+        }
+    }
 }

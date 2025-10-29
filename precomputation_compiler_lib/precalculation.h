@@ -42,10 +42,16 @@ class PrecalculationAnalysis
 public:
   PrecalculationAnalysis(llvm::Module &M, llvm::Function *entry_point,
                          std::vector<llvm::Value *> to_precompute_value,
-                         std::vector<llvm::Instruction *> to_precompute_cfg)
+                         std::vector<llvm::Instruction *> to_precompute_cfg,
+                         std::vector<llvm::Instruction *> &problematic_calls,
+                         bool ignore_MPI_communication,
+                         bool add_all_MPI_communication)
       : mpi_func(get_mpi_functions(M)), M(M), entry_point(entry_point),
         to_precompute_value(std::move(to_precompute_value)),
-        to_precompute_cfg(std::move(to_precompute_cfg)) {
+        to_precompute_cfg(std::move(to_precompute_cfg)),
+        problematic_calls(problematic_calls),
+        ignore_MPI_communication(ignore_MPI_communication),
+        add_all_MPI_communication(add_all_MPI_communication) {
 
     analyze();
   };
@@ -137,6 +143,16 @@ private:
 
   std::vector<llvm::Value *> to_precompute_value;
   std::vector<llvm::Instruction *> to_precompute_cfg;
+
+  std::vector<llvm::Instruction *> &problematic_calls;
+  bool ignore_MPI_communication;
+  bool add_all_MPI_communication;
+
+  void
+  add_all_MPI_Send_and_Recv_to_slice(llvm::CallBase *call,
+                                     const std::shared_ptr<TaintedValue> &ptr);
+  void add_all_MPI_Bcasts_to_slice(llvm::CallBase *call,
+                                   const std::shared_ptr<TaintedValue> &ptr);
 
   std::set<std::shared_ptr<TaintedValue>> tainted_values;
 
