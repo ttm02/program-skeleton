@@ -137,6 +137,11 @@ std::string reduce_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
             // TODO
             // DRB058 has `call ptr @__tsan_memset(ptr %20, i32 0, i64 %14)`
             // DRB058 has `call ptr @__tsan_memcpy(ptr %39, ptr %38, i64 %32)`
+          } else if (func_name.starts_with("__tsan_vptr")) {
+            // TODO
+            // HPCCG has `call void @__tsan_vptr_update(ptr nonnull %3,
+            // ptr nonnull getelementptr inbounds nuw inrange(-16, 16)
+            // (i8, ptr @_ZTVSt9basic_iosIcSt11char_traitsIcEE, i64 16))`
           } else {
             call->dump();
             llvm_unreachable("TSAN Combiner: only read or write call expected");
