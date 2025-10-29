@@ -103,7 +103,7 @@ if [ "$has_o_files" == true ]; then
     #-x ir - : read ir from stdin
     COMPILER_INVOCATION="$compiler -x ir -"
     if [[ "$USE_COMPILER_PASS" == true ]]; then
-        COMPILER_INVOCATION="$COMPILER_INVOCATION -fpass-plugin=$COMPILER_PASS -lprecompute"
+        COMPILER_INVOCATION="$COMPILER_INVOCATION -fpass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS -lprecompute"
     fi
     LLVM_LINK_INVOCATION="llvm-link"
     for arg in "$@"; do
@@ -145,7 +145,7 @@ if [ $has_multiple_src_file"" == true ]; then
 fi
 COMPILER_INVOCATION="$compiler"
 if [[ "$USE_COMPILER_PASS" == true ]]; then
-    COMPILER_INVOCATION="$COMPILER_INVOCATION -fpass-plugin=$COMPILER_PASS -lprecompute"
+    COMPILER_INVOCATION="$COMPILER_INVOCATION -fpass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS -lprecompute"
 fi
 for arg in "$@"; do
     COMPILER_INVOCATION="$COMPILER_INVOCATION $arg"
