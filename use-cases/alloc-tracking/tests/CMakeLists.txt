@@ -8,3 +8,73 @@ endfunction()
 
 add_compare_test(000_direct_call_constant)
 add_compare_test(001_direct_call)
+add_compare_test(002_direct_call_var)
+add_compare_test(003_function)
+add_compare_test(004_function_param)
+add_compare_test(005_wrapper_function)
+add_compare_test(006_wrapper_function_macro)
+add_compare_test(007_wrapper_function_macro2)
+#TODO testcase not portable as execution dir is hardcoded
+#add_compare_test(008_from_file)
+add_compare_test(009_from_cmd_args)
+add_compare_test(010_nested_function)
+add_compare_test(011_struct_data)
+add_compare_test(012_struct)
+add_compare_test(013_function_recursive)
+add_compare_test(014_pointer)
+add_compare_test(015_function_pointer)
+add_compare_test(016_if)
+add_compare_test(017_for_loop)
+add_compare_test(018_recursive_tree)
+add_compare_test(019_linked_list)
+add_compare_test(020_preprocessor)
+add_compare_test(021_realloc)
+add_compare_test(022_calloc)
+add_compare_test(023_aligned_alloc)
+add_compare_test(024_switch)
+add_compare_test(025_while_loop)
+add_compare_test(026_from_function)
+add_compare_test(027_zero_bytes)
+add_compare_test(028_multiple_allocations)
+add_compare_test(029_global_var)
+add_compare_test(030_function_pointer_complex)
+#TODO add_MPI testcases
+#add_compare_test(031_mpi_bcast_ignore_mpi_comm)
+#add_compare_test(032_mpi_bcast_add_all_mpi_comm)
+#add_compare_test(033_mpi_send_recv_ignore_mpi_comm)
+#add_compare_test(034_mpi_send_recv_add_all_mpi_comm)
+#TODO testcase not portable as execution dir is hardcoded
+#add_compare_test(035_c_functions)
+add_compare_test(036_heat_eq)
+add_compare_test(037_matrix)
+add_compare_test(038_function_ptr_2)
+add_compare_test(039_triple_pointer_needs_inline)
+add_compare_test(039_triple_pointer_needs_inline2)
+#TODO testcase is known to fail, need explicit pointer initialization
+#add_compare_test(040_n_nody_problem)
+add_compare_test(041_n_body_problem_isolate)
+#TODO is MPI test case
+#add_compare_test(042_poisson_mpi)
+#add_compare_test(043_wave_mpi)
+add_compare_test(044_walsh_haar)
+add_compare_test(045_hypersphere_monte_carlo)
+add_compare_test(046_dependent_allocations)
+# TODO is MPI
+#add_compare_test(047_mpi_comm_dependent_allocations)
+#add_compare_test(048_mpi_heat_eq_solver)
+#add_compare_test(048_mpi_heat_eq_solver2)
+#add_compare_test(048_mpi_heat_eq_solver3)
+#add_compare_test(048_mpi_heat_eq_solver4)
+#add_compare_test(048_mpi_heat_eq_solver5)
+#add_compare_test(048_mpi_heat_eq_solver6)
+add_compare_test(049_thesis_example_function_ptr)
+add_compare_test(050_thesis_example_required_allocation)
+add_compare_test(051_thesis_example_implementation)
+add_compare_test(052_thesis_example_aborts)
+
+
+
+
+
+
+
