@@ -50,6 +50,13 @@ inline bool is_allocation(llvm::Function *func) {
   if (func->getName() == "calloc") {
     return true;
   }
+  if (func->getName() == "realloc") {
+    return true;
+  }
+  // NOTE: AllocTracking CHANGE =========
+  if (func->getName() == "aligned_alloc") {
+    return true;
+  }
   return false;
 }
 
