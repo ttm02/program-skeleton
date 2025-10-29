@@ -11,6 +11,8 @@ DRB_DIR=$(dirname $TEST_CASE)
 
 source ${BINARY_DIR}/setup_env.sh
 
+export OMP_NUM_THREADS=2
+
 #compares standard thread sanitizer with the precomputed one
 
 GREP_STRING="WARNING: ThreadSanitizer: data race"
