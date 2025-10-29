@@ -15,11 +15,17 @@ source ${BINARY_DIR}/setup_env.sh
 
 GREP_STRING="WARNING: ThreadSanitizer: data race"
 
-rm ./a.out ./a.out_original
+
 
 CFLAGS="-O2 -g -fopenmp -fsanitize=thread"
 PASS_FLAGS="-fuse-ld=lld -flto -fwhole-program-vtables -fno-inline"
 
+RUNDIR=$(mktemp -d)
+trap "rm -rf $RUNDIR" EXIT
+# make sure the tempdir is removed on script exit
+
+#rm ./a.out ./a.out_original
+cd $RUNDIR
 
 # compile
 if grep -q 'PolyBench' "$TEST_CASE"; then
