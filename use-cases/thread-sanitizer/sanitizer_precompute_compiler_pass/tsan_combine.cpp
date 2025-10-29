@@ -20,8 +20,11 @@ using namespace llvm;
 static inline bool map_base_ptr_to_tsan_call(
     DenseMap<Instruction *, DenseSet<CallBase *>> &base_ptr_to_call,
     CallBase *tsan_call, Instruction *inst) {
-  if (isa<PHINode>(inst) || isa<CallBase>(inst) || isa<LoadInst>(inst))
+  // value is uncertain -> avoid these DFG values
+  if (isa<PHINode>(inst) || isa<CallBase>(inst) || isa<LoadInst>(inst) ||
+      isa<SelectInst>(inst))
     return false;
+  // Do not readd to list
   if (base_ptr_to_call.contains(inst))
     return true;
 
