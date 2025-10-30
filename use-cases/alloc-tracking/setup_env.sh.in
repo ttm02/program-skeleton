@@ -1,0 +1,8 @@
+#!/bin/bash
+
+#to run in debug mode with address sanitizer
+export DEBUG_CLANG_WRAPPER=true
+
+export ENABLE_ALLOC_TRACKING_ARG="-Wl,-mllvm=-at-pass-enable-logging=true -lalloc_tracking_runtime_lib"
+export SLICE_ALLOC_ARG="-Wl,-mllvm=-at-pass-enable-slicing=true"
+
