@@ -18,7 +18,8 @@
 using namespace llvm;
 
 static inline void collect_base_ptr_to_tsan_call(
-    DenseMap<Instruction *, DenseSet<CallBase *>> &base_ptr_to_call,
+    DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
+    DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr,
     CallBase *tsan_call, Instruction *inst) {
   // value is uncertain -> do not map these DFG values to TSAN call
   if (isa<PHINode>(inst) || isa<CallBase>(inst) || isa<LoadInst>(inst) ||
@@ -34,12 +35,14 @@ static inline void collect_base_ptr_to_tsan_call(
 
   for (auto &u : inst->operands())
     if (auto useGep = dyn_cast<Instruction>(u.get()))
-      collect_base_ptr_to_tsan_call(base_ptr_to_call, tsan_call, useGep);
+      collect_base_ptr_to_tsan_call(base_ptr_to_call, call_to_base_ptr,
+                                    tsan_call, useGep);
 
   base_ptr_to_call[inst].insert(tsan_call);
+  call_to_base_ptr[tsan_call].insert(inst);
 }
 
-static inline void removeInst(Instruction *Inst) {
+static inline void remove_inst_from_func(Instruction *Inst) {
   if (!Inst->use_empty())
     Inst->replaceAllUsesWith(UndefValue::get(Inst->getType()));
   Inst->eraseFromParent();
@@ -50,16 +53,18 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls) {
     return 0;
 
   unsigned removed_tsan_calls = 0;
-  DenseMap<Instruction *, DenseSet<CallBase *>> base_ptr_to_call;
+  DenseMap<Instruction *, SmallDenseSet<CallBase *>> base_ptr_to_call;
+  DenseMap<CallBase *, SmallDenseSet<Instruction *>> call_to_base_ptr;
 
   for (auto ts : tsan_calls) {
     auto arg0 = ts->getArgOperand(0);
     if (Instruction *inst0 = dyn_cast<Instruction>(arg0))
-      collect_base_ptr_to_tsan_call(base_ptr_to_call, ts, inst0);
+      collect_base_ptr_to_tsan_call(base_ptr_to_call, call_to_base_ptr, ts,
+                                    inst0);
   }
 
-  for (auto bp : base_ptr_to_call) {
-    auto call_list = bp.getSecond();
+  for (auto bp2call : base_ptr_to_call) {
+    auto call_list = bp2call.getSecond();
     if (call_list.size() < 2)
       continue;
 
@@ -82,7 +87,10 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls) {
           tsan_writes.empty() ? *call_list.begin() : *tsan_writes.begin();
       for (auto call : call_list) {
         if (call != keep_inst) {
-          removeInst(call);
+          remove_inst_from_func(call);
+          for (auto bp : call_to_base_ptr[call])
+            if (bp != bp2call.getFirst())
+              base_ptr_to_call[bp].erase(call);
           removed_tsan_calls++;
         }
       }
