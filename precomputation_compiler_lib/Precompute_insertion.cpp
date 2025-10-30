@@ -79,7 +79,7 @@ llvm::Function *PrecomputeInsertion::get_global_re_init_function() {
             // is raised
             errs() << "Global without initializer:\n";
             global.dump();
-            assert(is_global_from_std(&global));
+            assert(is_global_from_std(&global) || is_mpi_global(&global));
           }
           // collect the necessary __cxx_global_var_init function that
           // initializes this variable
