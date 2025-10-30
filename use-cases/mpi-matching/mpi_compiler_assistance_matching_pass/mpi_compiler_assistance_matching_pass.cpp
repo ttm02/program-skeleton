@@ -267,10 +267,11 @@ struct MPICompilerAssistanceMatchingPass
 
 PassPluginLibraryInfo getPassPluginInfo() {
   const auto callback = [](PassBuilder &PB) {
-    PB.registerOptimizerEarlyEPCallback([&](ModulePassManager &MPM, auto) {
-      MPM.addPass(MPICompilerAssistanceMatchingPass());
-      return true;
-    });
+    PB.registerFullLinkTimeOptimizationEarlyEPCallback(
+        [&](ModulePassManager &MPM, OptimizationLevel Level) {
+          MPM.addPass(MPICompilerAssistanceMatchingPass());
+          return true;
+        });
   };
 
   return {LLVM_PLUGIN_API_VERSION, "mpi-matching", "1.0.0", callback};
