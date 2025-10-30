@@ -6,6 +6,10 @@ BINARY_DIR=$1
 # the testcase to use
 TEST_CASE=$2
 
+# flags about MPI usage
+MPI_USAGE=$3
+MPI_MODE=$4
+
 # the python script used to compare teh output
 SCRIPT_DIR=$(dirname "$0")
 COMPARE_SCRIPT=$SCRIPT_DIR/validate_logging_and_test_output.py
@@ -27,19 +31,40 @@ mkdir skeleton
 export USE_COMPILER_PASS=true
 # compile
 
+CC=clang
+
+if [[ "$MPI_USAGE" == "USE_MPI" ]]; then
+  CC=mpicc
+  export OMPI_CC=clang
+  if [[ "$MPI_MODE" == "IGNORE_MPI_COMMUNICATION" ]]; then
+    CFLAGS="$CFLAGS -Wl,-mllvm=-at-pass-ignore-mpi-communication=true"
+  elif [[ "$MPI_MODE" == "ADD_ALL_MPI_COMMUNICATION" ]]; then
+    CFLAGS="$CFLAGS -Wl,-mllvm=-at-pass-add-all-mpi-communication=true"
+  fi
+fi
+
 # all testcases are c
-clang -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS $CFLAGS -o ./original/a.out $ENABLE_ALLOC_TRACKING_ARG $2/*.c
-clang -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS $CFLAGS -o ./skeleton/a.out $ENABLE_ALLOC_TRACKING_ARG $SLICE_ALLOC_ARG $2/*.c
+echo "$CC -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS $CFLAGS -o ./original/a.out $ENABLE_ALLOC_TRACKING_ARG $2/*.c"
+$CC -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS $CFLAGS -o ./original/a.out $ENABLE_ALLOC_TRACKING_ARG $2/*.c
+$CC -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS $CFLAGS -o ./skeleton/a.out $ENABLE_ALLOC_TRACKING_ARG $SLICE_ALLOC_ARG $2/*.c
 
 
 # execution
 if [[ -x "./skeleton/a.out" ]]; then
     # skeletonization successfull
-    cd original
-    ./a.out
-    cd ../skeleton
-    ./a.out
-    cd ..
+    if [[ "$MPI_USAGE" == "USE_MPI" ]]; then
+          cd original
+          mpirun -n 2 ./a.out
+          cd ../skeleton
+          mpirun -n 2 ./a.out
+          cd ..
+    else
+      cd original
+      ./a.out
+      cd ../skeleton
+      ./a.out
+      cd ..
+    fi
 else
     echo "Compilation fail"
     exit -2
