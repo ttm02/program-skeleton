@@ -17,16 +17,13 @@
 
 using namespace llvm;
 
-static inline bool map_base_ptr_to_tsan_call(
+static inline void collect_base_ptr_to_tsan_call(
     DenseMap<Instruction *, DenseSet<CallBase *>> &base_ptr_to_call,
     CallBase *tsan_call, Instruction *inst) {
-  // value is uncertain -> avoid these DFG values
+  // value is uncertain -> do not map these DFG values to TSAN call
   if (isa<PHINode>(inst) || isa<CallBase>(inst) || isa<LoadInst>(inst) ||
       isa<SelectInst>(inst))
-    return false;
-  // Do not readd to list
-  if (base_ptr_to_call.contains(inst))
-    return true;
+    return;
 
   if (not(isa<GetElementPtrInst>(inst) || isa<AllocaInst>(inst) ||
           isa<IntToPtrInst>(inst) || isa<CastInst>(inst) ||
@@ -37,11 +34,9 @@ static inline bool map_base_ptr_to_tsan_call(
 
   for (auto &u : inst->operands())
     if (auto useGep = dyn_cast<Instruction>(u.get()))
-      if (not map_base_ptr_to_tsan_call(base_ptr_to_call, tsan_call, useGep))
-        return false;
+      collect_base_ptr_to_tsan_call(base_ptr_to_call, tsan_call, useGep);
 
   base_ptr_to_call[inst].insert(tsan_call);
-  return true;
 }
 
 static inline void removeInst(Instruction *Inst) {
@@ -60,7 +55,7 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls) {
   for (auto ts : tsan_calls) {
     auto arg0 = ts->getArgOperand(0);
     if (Instruction *inst0 = dyn_cast<Instruction>(arg0))
-      map_base_ptr_to_tsan_call(base_ptr_to_call, ts, inst0);
+      collect_base_ptr_to_tsan_call(base_ptr_to_call, ts, inst0);
   }
 
   for (auto bp : base_ptr_to_call) {
@@ -72,10 +67,11 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls) {
     DenseSet<CallBase *> tsan_writes;
 
     for (auto call : call_list) {
-      ptr_values.insert(call->getArgOperand(0));
+      auto arg0 = call->getArgOperand(0);
+      ptr_values.insert(arg0);
 
       auto func_name = call->getCalledFunction()->getName();
-      if (func_name.starts_with("tsan_write")) {
+      if (func_name.starts_with("__tsan_write")) {
         assert(not func_name.ends_with("_range"));
         tsan_writes.insert(call);
       }
