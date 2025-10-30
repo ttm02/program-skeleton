@@ -12,7 +12,7 @@ COMPARE_SCRIPT=$SCRIPT_DIR/validate_logging_and_test_output.py
 
 source ${BINARY_DIR}/setup_env.sh
 
-CFLAGS="-O2 -g -fuse-ld=lld -flto -fwhole-program-vtables -fno-inline"
+CFLAGS="-O2 -g -fuse-ld=lld -flto -fwhole-program-vtables -fno-inline -lm"
 
 RUNDIR=$(mktemp -d)
 trap "rm -rf $RUNDIR" EXIT
