@@ -42,13 +42,64 @@ static inline void collect_base_ptr_to_tsan_call(
   call_to_base_ptr[tsan_call].insert(inst);
 }
 
-static inline void remove_inst_from_func(Instruction *Inst) {
-  if (!Inst->use_empty())
-    Inst->replaceAllUsesWith(UndefValue::get(Inst->getType()));
-  Inst->eraseFromParent();
+static inline void remove_inst_from_func(
+    CallBase *call, Instruction *base_ptr,
+    DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
+    DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr) {
+  if (!call->use_empty())
+    call->replaceAllUsesWith(UndefValue::get(call->getType()));
+  call->eraseFromParent();
+
+  // remove from all other lists to avoid segmentation fault
+  for (auto bp : call_to_base_ptr[call])
+    if (bp != base_ptr)
+      base_ptr_to_call[bp].erase(call);
 }
 
-static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls) {
+static inline StructType *getGEPstructTy(const GetElementPtrInst *gep) {
+  auto *elemTy = gep->getSourceElementType();
+  // getelementptr inbounds nuw [N x %struct.s], ptr %a, i64 0, i64 %b
+  // [N x %struct.s]
+  if (auto *ArrayTy = dyn_cast<ArrayType>(elemTy)) {
+    assert(gep->getNumIndices() == 2); // i64 0, i64 %b
+    auto idx0 = gep->indices().begin()->get();
+    assert(idx0);
+    if (auto *CI = dyn_cast<ConstantInt>(idx0)) {
+      if (not CI->isZero()) // i64 0
+        return nullptr;
+    } else
+      return nullptr;
+    // [N x %struct.s] -> %struct.s
+    elemTy = ArrayTy->getElementType();
+  }
+  // getelementptr inbounds %struct.s, ptr %a, i64 %b
+  // %struct.s
+  if (auto *STy = dyn_cast<StructType>(elemTy)) {
+    assert(elemTy != gep->getSourceElementType() || gep->getNumIndices() == 1);
+    return STy;
+  }
+  return nullptr;
+}
+
+static inline void createTSANrange(Module &M, Instruction *base_ptr,
+                                   const unsigned struct_size,
+                                   const bool isWrite) {
+  auto *ctx = &M.getContext();
+  auto ptrTy = PointerType::get(*ctx, 0);
+  auto voidTy = Type::getVoidTy(*ctx);
+  auto int64Ty = Type::getInt64Ty(*ctx);
+
+  auto func_name = isWrite ? "__tsan_write_range" : "__tsan_read_range";
+  auto tsan_func = M.getOrInsertFunction(func_name, voidTy, ptrTy, int64Ty);
+
+  assert(base_ptr->getNextNode());
+  IRBuilder<> builder(base_ptr->getNextNode());
+  Value *ssv = ConstantInt::get(Type::getInt64Ty(*ctx), struct_size, false);
+  builder.CreateCall(tsan_func, {base_ptr, ssv});
+}
+
+static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls,
+                                          Module &M) {
   if (tsan_calls.empty())
     return 0;
 
@@ -56,7 +107,7 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls) {
   DenseMap<Instruction *, SmallDenseSet<CallBase *>> base_ptr_to_call;
   DenseMap<CallBase *, SmallDenseSet<Instruction *>> call_to_base_ptr;
 
-  for (auto ts : tsan_calls) {
+  for (auto *ts : tsan_calls) {
     auto arg0 = ts->getArgOperand(0);
     if (Instruction *inst0 = dyn_cast<Instruction>(arg0))
       collect_base_ptr_to_tsan_call(base_ptr_to_call, call_to_base_ptr, ts,
@@ -69,32 +120,111 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls) {
       continue;
 
     DenseSet<Value *> ptr_values;
-    DenseSet<CallBase *> tsan_writes;
+    DenseSet<CallBase *> tsan_writes, tsan_reads;
 
     for (auto call : call_list) {
       auto arg0 = call->getArgOperand(0);
       ptr_values.insert(arg0);
 
       auto func_name = call->getCalledFunction()->getName();
-      if (func_name.starts_with("__tsan_write")) {
-        assert(not func_name.ends_with("_range"));
+      if (func_name.ends_with("_range"))
+        continue;
+
+      if (func_name.starts_with("__tsan_write"))
         tsan_writes.insert(call);
-      }
+      else if (func_name.starts_with("__tsan_read"))
+        tsan_reads.insert(call);
     }
 
     if (ptr_values.size() == 1) {
+      // keep only one (write) version of of identical TSAN calls
       CallBase *keep_inst =
           tsan_writes.empty() ? *call_list.begin() : *tsan_writes.begin();
       for (auto call : call_list) {
         if (call != keep_inst) {
-          remove_inst_from_func(call);
-          for (auto bp : call_to_base_ptr[call])
-            if (bp != bp2call.getFirst())
-              base_ptr_to_call[bp].erase(call);
+          remove_inst_from_func(call, bp2call.getFirst(), base_ptr_to_call,
+                                call_to_base_ptr);
           removed_tsan_calls++;
         }
       }
+    } else if (auto *base_ptr =
+                   dyn_cast<GetElementPtrInst>(bp2call.getFirst())) {
+      // combine contingous address range to TSAN range call
+      SmallVector<const GetElementPtrInst *, 10> offset_ptrs;
+      const auto STy = getGEPstructTy(base_ptr);
+      if (!STy)
+        continue;
+
+      // TODO allow partial ranges of only read or only write
+      // Both might create false positives/negatives because only one member of
+      // the struct is written to.
+      if (not tsan_writes.empty() && not tsan_reads.empty())
+        continue;
+
+      for (auto ptr : ptr_values) {
+        if (auto offset_gep = dyn_cast<GetElementPtrInst>(ptr)) {
+          auto base_gep_op = offset_gep->getPointerOperand();
+          if (base_ptr != base_gep_op)
+            continue;
+          assert(offset_gep->getNumIndices() == 1);
+          auto idx0 = offset_gep->indices().begin()->get();
+          assert(idx0);
+          // TODO Scalar Evolution possible?
+          if (not isa<ConstantInt>(idx0))
+            continue;
+          offset_ptrs.push_back(offset_gep);
+        }
+      }
+
+      // TODO are they always sorted -> unnecessary?
+      auto byOffset = [&](const GetElementPtrInst *LHS,
+                          const GetElementPtrInst *RHS) {
+        assert(LHS && RHS);
+        auto LHS_idx0 = cast<ConstantInt>(LHS->indices().begin()->get());
+        auto RHS_idx0 = cast<ConstantInt>(RHS->indices().begin()->get());
+        assert(not LHS_idx0->isNegative());
+        assert(not RHS_idx0->isNegative());
+        return LHS_idx0->getZExtValue() < RHS_idx0->getZExtValue();
+      };
+      sort(offset_ptrs, byOffset);
+
+      auto bit2bytes = [&](unsigned bits) { return (bits + 7) / 8; };
+      unsigned byte_offset = 0;
+      assert(not STy->elements().empty());
+      auto elemTy = STy->elements().consume_front();
+      byte_offset += bit2bytes(elemTy->getIntegerBitWidth());
+      assert(not offset_ptrs.empty());
+      for (auto *offPtr : offset_ptrs) {
+        elemTy = STy->elements().consume_front();
+        auto idx0 = cast<ConstantInt>(offPtr->indices().begin()->get());
+        // struct offset == ptr byte offset * size_of(byte)
+        if (byte_offset != idx0->getZExtValue())
+          goto bp2call; // no contingous range
+        byte_offset += bit2bytes(elemTy->getIntegerBitWidth());
+      }
+
+      // TODO allow partial ranges of only read or only write
+      createTSANrange(M, base_ptr, byte_offset, tsan_reads.empty());
+
+      // cleanup replaced TSAN calls
+      for (auto call : bp2call.getSecond()) {
+        auto arg0 = call->getArgOperand(0);
+        if (arg0 == base_ptr) {
+          remove_inst_from_func(call, bp2call.getFirst(), base_ptr_to_call,
+                                call_to_base_ptr);
+          removed_tsan_calls++;
+        } else {
+          for (auto *offPtr : offset_ptrs) {
+            if (arg0 == offPtr) {
+              remove_inst_from_func(call, bp2call.getFirst(), base_ptr_to_call,
+                                    call_to_base_ptr);
+              removed_tsan_calls++;
+            }
+          }
+        }
+      }
     }
+  bp2call:;
   }
 
   return removed_tsan_calls;
@@ -154,7 +284,7 @@ std::string reduce_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
       }
     }
 
-    removed_tsan_calls += remove_tsan_calls_in_func(tsan_calls);
+    removed_tsan_calls += remove_tsan_calls_in_func(tsan_calls, M);
   }
 
   // print statistics
