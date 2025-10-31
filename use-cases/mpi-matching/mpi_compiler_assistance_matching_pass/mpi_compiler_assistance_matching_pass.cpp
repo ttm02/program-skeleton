@@ -269,10 +269,9 @@ struct MPICompilerAssistanceMatchingPass
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
   return {LLVM_PLUGIN_API_VERSION, "mpi-matching", "1.0.0",
           [](PassBuilder &PB) {
-            PB.registerFullLinkTimeOptimizationEarlyEPCallback([&](ModulePassManager &MPM,
-                                                    OptimizationLevel Level,
-                                                    ThinOrFullLTOPhase Phase) {
-              MPM.addPass(MPICompilerAssistanceMatchingPass());
-            });
+            PB.registerFullLinkTimeOptimizationEarlyEPCallback(
+                [&](ModulePassManager &MPM, OptimizationLevel Level) {
+                  MPM.addPass(MPICompilerAssistanceMatchingPass());
+                });
           }};
 }
