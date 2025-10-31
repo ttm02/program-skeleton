@@ -78,8 +78,10 @@ add_compare_test(049_thesis_example_function_ptr)
 add_compare_test(050_thesis_example_required_allocation)
 add_compare_test(051_thesis_example_implementation)
 add_compare_test(052_thesis_example_aborts)
-
-
+# fortran testcase
+add_test(NAME "alloc-053_simple_fortran"
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/053_simple_fortran/compare.sh ${USECASE_ALLOC_TRACKING_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/053_simple_fortran
+)
 
 
 
