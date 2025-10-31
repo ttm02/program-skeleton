@@ -227,7 +227,6 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
     remove_noinline_from_module(M);
 
-    // remove other non-precompute functions now
     std::vector<Function *> to_delete;
     for (auto it_f = M.begin(); it_f != M.end(); ++it_f) {
       Function *f = &*it_f;
@@ -235,13 +234,6 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
         // the tsan calls are already part of precompute, no need to instrumente
         // them again
         f->removeFnAttr(Attribute::SanitizeThread);
-      } else if ((not f->isDeclaration()) && f != main_func &&
-                 (not f->getName().starts_with("__tsan")) &&
-                 (not is_func_from_std(f))) {
-        // not used: remove
-        if (f->hasExternalLinkage())
-          f->setLinkage(GlobalValue::InternalLinkage);
-        // this will prompt GlobalDCE to remove
       }
     }
 
