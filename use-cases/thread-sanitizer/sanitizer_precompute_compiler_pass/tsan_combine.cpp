@@ -61,7 +61,9 @@ static inline StructType *getGEPstructTy(const GetElementPtrInst *gep) {
   // getelementptr inbounds nuw [N x %struct.s], ptr %a, i64 0, i64 %b
   // [N x %struct.s]
   if (auto *ArrayTy = dyn_cast<ArrayType>(elemTy)) {
-    assert(gep->getNumIndices() == 2); // i64 0, i64 %b
+    auto numIdx = gep->getNumIndices();
+    if (numIdx != 2 && numIdx != 3) // i64 0, i64 %b
+      return nullptr;
     auto idx0 = gep->indices().begin()->get();
     assert(idx0);
     if (auto *CI = dyn_cast<ConstantInt>(idx0)) {
