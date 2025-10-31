@@ -773,7 +773,9 @@ void DevirtModule::scanTypeTestUsers(
 }
 
 void DevirtModule::scanTypeCheckedLoadUsers(Function *TypeCheckedLoadFunc) {
-  Function *TypeTestFunc = Intrinsic::getDeclaration(&M, Intrinsic::type_test);
+  Function *TypeTestFunc =
+      Intrinsic::getDeclarationIfExists(&M, Intrinsic::type_test);
+  assert(TypeTestFunc != nullptr);
 
   for (Use &U : llvm::make_early_inc_range(TypeCheckedLoadFunc->uses())) {
     auto *CI = dyn_cast<CallInst>(U.getUser());
@@ -802,7 +804,8 @@ void DevirtModule::scanTypeCheckedLoadUsers(Function *TypeCheckedLoadFunc) {
     IRBuilder<> LoadB(
         (LoadedPtrs.size() == 1 && !HasNonCallUses) ? LoadedPtrs[0] : CI);
     Value *GEP = LoadB.CreateGEP(Int8Ty, Ptr, Offset);
-    Value *GEPPtr = LoadB.CreateBitCast(GEP, PointerType::getUnqual(Int8PtrTy));
+    Value *GEPPtr =
+        LoadB.CreateBitCast(GEP, PointerType::getUnqual(M.getContext()));
     Value *LoadedValue = LoadB.CreateLoad(Int8PtrTy, GEPPtr);
 
     for (Instruction *LoadedPtr : LoadedPtrs) {
