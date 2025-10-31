@@ -79,7 +79,7 @@ llvm::Function *PrecomputeInsertion::get_global_re_init_function() {
             // is raised
             errs() << "Global without initializer:\n";
             global.dump();
-            assert(is_global_from_std(&global));
+            assert(is_global_from_std(&global) || is_mpi_global(&global));
           }
           // collect the necessary __cxx_global_var_init function that
           // initializes this variable
@@ -554,9 +554,13 @@ llvm::Function *PrecomputeInsertion::create_precompute_main(
   for (auto &arg : result->args()) {
     args.push_back(&arg);
   }
-  builder.CreateCall(precompute_funcs->init_precompute_lib);
+  if (use_precompute_backend_library) {
+    builder.CreateCall(precompute_funcs->init_precompute_lib);
+  }
   auto *real_main = builder.CreateCall(entry_function->F_copy, args);
-  builder.CreateCall(precompute_funcs->finish_precomputation);
+  if (use_precompute_backend_library) {
+    builder.CreateCall(precompute_funcs->finish_precomputation);
+  }
   auto *re_init_fun = get_global_re_init_function();
   builder.CreateCall(re_init_fun);
   builder.CreateRet(real_main);

@@ -198,6 +198,29 @@ bool is_func_from_std(llvm::Function *func) {
     return true;
   }
 
+  // scanf functions
+  if (func->getName().ends_with("scanf") ||
+      func->getName().ends_with("fscanf") ||
+      func->getName().ends_with("sscanf")) {
+    return true;
+  }
+
+  if (func->getName() == "nan") {
+    return true;
+  }
+
+  // complex number exponential std func in C
+  if (func->getName() == "cexp") {
+    return true;
+  }
+
+  // compiler-rt (compiler runtime) helper functions for complex number
+  // operations
+  if (func->getName() == "__divdc3" || func->getName() == "__adddc3" ||
+      func->getName() == "__subdc3" || func->getName() == "__muldc3") {
+    return true;
+  }
+
   // flang
   if (func->getName().starts_with("_FortranAio")) {
     return true;

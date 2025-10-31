@@ -87,6 +87,10 @@ inline bool is_mpi_call(llvm::CallBase *call) {
 
 bool is_mpi_initialized();
 
+inline bool is_mpi_global(llvm::GlobalVariable *global) {
+  return global->getName().starts_with("ompi_mpi_");
+}
+
 bool is_send_function(llvm::Function *f);
 
 bool is_recv_function(llvm::Function *f);

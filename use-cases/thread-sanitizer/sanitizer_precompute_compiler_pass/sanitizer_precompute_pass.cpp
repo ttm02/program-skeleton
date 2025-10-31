@@ -217,21 +217,15 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
       return PreservedAnalyses::all();
     }
 
+    std::vector<Instruction *> problematic;
     auto precalcuation = std::make_shared<PrecomputeInsertion>(
         M,
         std::make_shared<PrecalculationAnalysis>(M, main_func, to_precompute,
-                                                 precompute_locations),
-        false);
+                                                 precompute_locations,
+                                                 problematic, false, false),
+        false, false);
 
     // do NOT call clean_precompute() as we want the tsan calls to stick around
-
-    // we don't need the management stuff, we directly replace our program with
-    // precomputed one
-    auto precompute_main = precalcuation->get_precompute_main();
-    auto it = precompute_main->begin()->begin();
-    ++it; // second instruction is call to precomputed main
-    auto *call = cast<CallBase>(it);
-    auto precomputed_main = call->getCalledFunction();
 
     // remove old main
     auto orig_linkeage = main_func->getLinkage();
@@ -247,13 +241,12 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     for (auto &arg : main_func->args()) {
       args.push_back(&arg);
     }
-
-    builder.CreateCall(precomputed_main, args);
+    // call precompute main
+    builder.CreateCall(precalcuation->get_precompute_main(), args);
     builder.CreateRet(Constant::getNullValue(main_func->getReturnType()));
 
     remove_noinline_from_module(M);
 
-    // remove other non-precompute functions now
     std::vector<Function *> to_delete;
     for (auto it_f = M.begin(); it_f != M.end(); ++it_f) {
       Function *f = &*it_f;
@@ -261,13 +254,6 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
         // the tsan calls are already part of precompute, no need to instrumente
         // them again
         f->removeFnAttr(Attribute::SanitizeThread);
-      } else if ((not f->isDeclaration()) && f != main_func &&
-                 (not f->getName().starts_with("__tsan")) &&
-                 (not is_func_from_std(f))) {
-        // not used: remove
-        if (f->hasExternalLinkage())
-          f->setLinkage(GlobalValue::InternalLinkage);
-        // this will prompt GlobalDCE to remove
       }
     }
 
@@ -315,10 +301,11 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
 } // namespace
 
+
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
   return {LLVM_PLUGIN_API_VERSION, "sanitizer_precompute", "1.0.0",
           [](PassBuilder &PB) {
-            PB.registerOptimizerEarlyEPCallback([&](ModulePassManager &MPM,
+            PB.registerFullLinkTimeOptimizationEarlyEPCallback([&](ModulePassManager &MPM,
                                                     OptimizationLevel Level,
                                                     ThinOrFullLTOPhase Phase) {
               MPM.addPass(SanitizerPrecomputePass());

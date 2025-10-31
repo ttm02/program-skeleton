@@ -1,0 +1,1565 @@
+HPC Test Suite Analysis Summary
+==================================================
+
+Test Case: 036_heat_eq
+------------------------------
+Binary Sizes:
+  Slicing OFF: 20448 bytes (20.45 KB, 0.0204 MB)
+  Slicing ON: 14248 bytes (14.25 KB, 0.0142 MB)
+
+LLVM Module Lines:
+  Original module: 788
+  Slice module: 136
+
+Slicing Time: 0.005343 seconds (5.343 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 0.018416 seconds (18.416 ms)
+    Total allocated memory: 102912 bytes (102.91 KB, 0.1029 MB)
+    Allocation calls:
+      malloc: 404
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 404
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 404
+    Required calls memory: 102912 bytes (102.91 KB, 0.1029 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+
+    Per-process allocation data:
+      unknown_0:
+        Total allocated memory: 102912 bytes (102.91 KB, 0.1029 MB)
+        Allocation calls: total=404 (malloc=404, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 404 (memory=102912 bytes (102.91 KB, 0.1029 MB))
+        Execution time (this log): 0.018416 seconds (18.416 ms)
+  Slicing ON:
+    Max execution time: 0.014563 seconds (14.563 ms)
+    Total allocated memory: 102912 bytes (102.91 KB, 0.1029 MB)
+    Allocation calls:
+      malloc: 404
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 404
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 200
+    Required calls memory: 33600 bytes (33.60 KB, 0.0336 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 49.50%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 32.65%
+
+    Per-process allocation data:
+      unknown_0:
+        Total allocated memory: 102912 bytes (102.91 KB, 0.1029 MB)
+        Allocation calls: total=404 (malloc=404, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 200 (memory=33600 bytes (33.60 KB, 0.0336 MB))
+        Execution time (this log): 0.014563 seconds (14.563 ms)
+
+==================================================
+
+Test Case: 037_matrix
+------------------------------
+Binary Sizes:
+  Slicing OFF: 19976 bytes (19.98 KB, 0.0200 MB)
+  Slicing ON: 15768 bytes (15.77 KB, 0.0158 MB)
+
+LLVM Module Lines:
+  Original module: 1071
+  Slice module: 688
+
+Slicing Time: 0.008349 seconds (8.349 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 0.004405 seconds (4.405 ms)
+    Total allocated memory: 4160 bytes (4.16 KB, 0.0042 MB)
+    Allocation calls:
+      malloc: 30
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 30
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 30
+    Required calls memory: 4160 bytes (4.16 KB, 0.0042 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+
+    Per-process allocation data:
+      unknown_0:
+        Total allocated memory: 4160 bytes (4.16 KB, 0.0042 MB)
+        Allocation calls: total=30 (malloc=30, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 30 (memory=4160 bytes (4.16 KB, 0.0042 MB))
+        Execution time (this log): 0.004405 seconds (4.405 ms)
+  Slicing ON:
+    Max execution time: 0.003318 seconds (3.318 ms)
+    Total allocated memory: 4160 bytes (4.16 KB, 0.0042 MB)
+    Allocation calls:
+      malloc: 30
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 30
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 30
+    Required calls memory: 4160 bytes (4.16 KB, 0.0042 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+
+    Per-process allocation data:
+      unknown_0:
+        Total allocated memory: 4160 bytes (4.16 KB, 0.0042 MB)
+        Allocation calls: total=30 (malloc=30, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 30 (memory=4160 bytes (4.16 KB, 0.0042 MB))
+        Execution time (this log): 0.003318 seconds (3.318 ms)
+
+==================================================
+
+Test Case: 042_poisson_mpi
+------------------------------
+Binary Sizes:
+  Slicing OFF: 22664 bytes (22.66 KB, 0.0227 MB)
+  Slicing ON: 15352 bytes (15.35 KB, 0.0154 MB)
+
+LLVM Module Lines:
+  Original module: 1314
+  Slice module: 149
+
+Slicing Time: 0.004308 seconds (4.308 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 0.413636 seconds (413.636 ms)
+    Total allocated memory: 111776 bytes (111.78 KB, 0.1118 MB)
+    Allocation calls:
+      malloc: 32
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 32
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 32
+    Required calls memory: 111776 bytes (111.78 KB, 0.1118 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+    Number of processes: 4
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 27944 bytes (27.94 KB, 0.0279 MB)
+        Allocation calls: total=8 (malloc=8, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 8 (memory=27944 bytes (27.94 KB, 0.0279 MB))
+        Execution time (this rank): 0.413636 seconds (413.636 ms)
+      Rank 1:
+        Total allocated memory: 27944 bytes (27.94 KB, 0.0279 MB)
+        Allocation calls: total=8 (malloc=8, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 8 (memory=27944 bytes (27.94 KB, 0.0279 MB))
+        Execution time (this rank): 0.413100 seconds (413.100 ms)
+      Rank 2:
+        Total allocated memory: 27944 bytes (27.94 KB, 0.0279 MB)
+        Allocation calls: total=8 (malloc=8, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 8 (memory=27944 bytes (27.94 KB, 0.0279 MB))
+        Execution time (this rank): 0.410109 seconds (410.109 ms)
+      Rank 3:
+        Total allocated memory: 27944 bytes (27.94 KB, 0.0279 MB)
+        Allocation calls: total=8 (malloc=8, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 8 (memory=27944 bytes (27.94 KB, 0.0279 MB))
+        Execution time (this rank): 0.407506 seconds (407.506 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 27944 bytes (27.94 KB, 0.0279 MB)
+      Allocation calls (rank 0): 8
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 8 (memory=27944 bytes (27.94 KB, 0.0279 MB))
+      Execution time (rank 0): 0.413636 seconds (413.636 ms)
+  Slicing ON:
+    Max execution time: 0.356993 seconds (356.993 ms)
+    Total allocated memory: 111776 bytes (111.78 KB, 0.1118 MB)
+    Allocation calls:
+      malloc: 32
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 32
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 0
+    Required calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 0.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 0.00%
+    Number of processes: 4
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 27944 bytes (27.94 KB, 0.0279 MB)
+        Allocation calls: total=8 (malloc=8, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Execution time (this rank): 0.350656 seconds (350.656 ms)
+      Rank 1:
+        Total allocated memory: 27944 bytes (27.94 KB, 0.0279 MB)
+        Allocation calls: total=8 (malloc=8, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Execution time (this rank): 0.343517 seconds (343.517 ms)
+      Rank 2:
+        Total allocated memory: 27944 bytes (27.94 KB, 0.0279 MB)
+        Allocation calls: total=8 (malloc=8, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Execution time (this rank): 0.356993 seconds (356.993 ms)
+      Rank 3:
+        Total allocated memory: 27944 bytes (27.94 KB, 0.0279 MB)
+        Allocation calls: total=8 (malloc=8, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Execution time (this rank): 0.354714 seconds (354.714 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 27944 bytes (27.94 KB, 0.0279 MB)
+      Allocation calls (rank 0): 8
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Execution time (rank 0): 0.350656 seconds (350.656 ms)
+
+==================================================
+
+Test Case: 043_wave_mpi
+------------------------------
+Binary Sizes:
+  Slicing OFF: 20248 bytes (20.25 KB, 0.0202 MB)
+  Slicing ON: 14984 bytes (14.98 KB, 0.0150 MB)
+
+LLVM Module Lines:
+  Original module: 759
+  Slice module: 259
+
+Slicing Time: 0.005634 seconds (5.634 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 0.378734 seconds (378.734 ms)
+    Total allocated memory: 12976 bytes (12.98 KB, 0.0130 MB)
+    Allocation calls:
+      malloc: 13
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 13
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 13
+    Required calls memory: 12976 bytes (12.98 KB, 0.0130 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+    Number of processes: 4
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 5632 bytes (5.63 KB, 0.0056 MB)
+        Allocation calls: total=4 (malloc=4, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 4 (memory=5632 bytes (5.63 KB, 0.0056 MB))
+        Execution time (this rank): 0.362614 seconds (362.614 ms)
+      Rank 1:
+        Total allocated memory: 2448 bytes (2.45 KB, 0.0024 MB)
+        Allocation calls: total=3 (malloc=3, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 3 (memory=2448 bytes (2.45 KB, 0.0024 MB))
+        Execution time (this rank): 0.378734 seconds (378.734 ms)
+      Rank 2:
+        Total allocated memory: 2448 bytes (2.45 KB, 0.0024 MB)
+        Allocation calls: total=3 (malloc=3, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 3 (memory=2448 bytes (2.45 KB, 0.0024 MB))
+        Execution time (this rank): 0.374699 seconds (374.699 ms)
+      Rank 3:
+        Total allocated memory: 2448 bytes (2.45 KB, 0.0024 MB)
+        Allocation calls: total=3 (malloc=3, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 3 (memory=2448 bytes (2.45 KB, 0.0024 MB))
+        Execution time (this rank): 0.371595 seconds (371.595 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 5632 bytes (5.63 KB, 0.0056 MB)
+      Allocation calls (rank 0): 4
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 4 (memory=5632 bytes (5.63 KB, 0.0056 MB))
+      Execution time (rank 0): 0.362614 seconds (362.614 ms)
+  Slicing ON:
+    Max execution time: 0.352208 seconds (352.208 ms)
+    Total allocated memory: 12976 bytes (12.98 KB, 0.0130 MB)
+    Allocation calls:
+      malloc: 13
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 13
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 0
+    Required calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 0.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 0.00%
+    Number of processes: 4
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 5632 bytes (5.63 KB, 0.0056 MB)
+        Allocation calls: total=4 (malloc=4, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Execution time (this rank): 0.352208 seconds (352.208 ms)
+      Rank 1:
+        Total allocated memory: 2448 bytes (2.45 KB, 0.0024 MB)
+        Allocation calls: total=3 (malloc=3, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Execution time (this rank): 0.338666 seconds (338.666 ms)
+      Rank 2:
+        Total allocated memory: 2448 bytes (2.45 KB, 0.0024 MB)
+        Allocation calls: total=3 (malloc=3, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Execution time (this rank): 0.337786 seconds (337.786 ms)
+      Rank 3:
+        Total allocated memory: 2448 bytes (2.45 KB, 0.0024 MB)
+        Allocation calls: total=3 (malloc=3, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Execution time (this rank): 0.348032 seconds (348.032 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 5632 bytes (5.63 KB, 0.0056 MB)
+      Allocation calls (rank 0): 4
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Execution time (rank 0): 0.352208 seconds (352.208 ms)
+
+==================================================
+
+Test Case: 044_walsh_haar
+------------------------------
+Binary Sizes:
+  Slicing OFF: 29808 bytes (29.81 KB, 0.0298 MB)
+  Slicing ON: 15568 bytes (15.57 KB, 0.0156 MB)
+
+LLVM Module Lines:
+  Original module: 2743
+  Slice module: 329
+
+Slicing Time: 0.022884 seconds (22.884 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 0.004386 seconds (4.386 ms)
+    Total allocated memory: 5440 bytes (5.44 KB, 0.0054 MB)
+    Allocation calls:
+      malloc: 48
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 48
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 48
+    Required calls memory: 5440 bytes (5.44 KB, 0.0054 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+
+    Per-process allocation data:
+      unknown_0:
+        Total allocated memory: 5440 bytes (5.44 KB, 0.0054 MB)
+        Allocation calls: total=48 (malloc=48, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 48 (memory=5440 bytes (5.44 KB, 0.0054 MB))
+        Execution time (this log): 0.004386 seconds (4.386 ms)
+  Slicing ON:
+    Max execution time: 0.003948 seconds (3.948 ms)
+    Total allocated memory: 5440 bytes (5.44 KB, 0.0054 MB)
+    Allocation calls:
+      malloc: 48
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 48
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 0
+    Required calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 0.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 0.00%
+
+    Per-process allocation data:
+      unknown_0:
+        Total allocated memory: 5440 bytes (5.44 KB, 0.0054 MB)
+        Allocation calls: total=48 (malloc=48, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Execution time (this log): 0.003948 seconds (3.948 ms)
+
+==================================================
+
+Test Case: 045_hypersphere_monte_carlo
+------------------------------
+Binary Sizes:
+  Slicing OFF: 25616 bytes (25.62 KB, 0.0256 MB)
+  Slicing ON: 15448 bytes (15.45 KB, 0.0154 MB)
+
+LLVM Module Lines:
+  Original module: 1470
+  Slice module: 400
+
+Slicing Time: 0.010166 seconds (10.166 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 0.104233 seconds (104.233 ms)
+    Total allocated memory: 33554184 bytes (33554.18 KB, 33.5542 MB)
+    Allocation calls:
+      malloc: 306
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 306
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 306
+    Required calls memory: 33554184 bytes (33554.18 KB, 33.5542 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+
+    Per-process allocation data:
+      unknown_0:
+        Total allocated memory: 33554184 bytes (33554.18 KB, 33.5542 MB)
+        Allocation calls: total=306 (malloc=306, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 306 (memory=33554184 bytes (33554.18 KB, 33.5542 MB))
+        Execution time (this log): 0.104233 seconds (104.233 ms)
+  Slicing ON:
+    Max execution time: 0.014739 seconds (14.739 ms)
+    Total allocated memory: 33554184 bytes (33554.18 KB, 33.5542 MB)
+    Allocation calls:
+      malloc: 306
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 306
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 34
+    Required calls memory: 9437112 bytes (9437.11 KB, 9.4371 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 11.11%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 28.12%
+
+    Per-process allocation data:
+      unknown_0:
+        Total allocated memory: 33554184 bytes (33554.18 KB, 33.5542 MB)
+        Allocation calls: total=306 (malloc=306, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 34 (memory=9437112 bytes (9437.11 KB, 9.4371 MB))
+        Execution time (this log): 0.014739 seconds (14.739 ms)
+
+==================================================
+
+Test Case: 048_mpi_heat_eq_solver
+------------------------------
+Binary Sizes:
+  Slicing OFF: 29856 bytes (29.86 KB, 0.0299 MB)
+  Slicing ON: 15680 bytes (15.68 KB, 0.0157 MB)
+
+LLVM Module Lines:
+  Original module: 2268
+  Slice module: 996
+
+Slicing Time: 0.016110 seconds (16.110 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 0.584672 seconds (584.672 ms)
+    Total allocated memory: 586048 bytes (586.05 KB, 0.5860 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 121
+    Required calls memory: 586048 bytes (586.05 KB, 0.5860 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 80256 bytes (80.26 KB, 0.0803 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 16 (memory=80256 bytes (80.26 KB, 0.0803 MB))
+        Execution time (this rank): 0.573027 seconds (573.027 ms)
+      Rank 1:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=72256 bytes (72.26 KB, 0.0723 MB))
+        Execution time (this rank): 0.571978 seconds (571.978 ms)
+      Rank 2:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=72256 bytes (72.26 KB, 0.0723 MB))
+        Execution time (this rank): 0.584672 seconds (584.672 ms)
+      Rank 3:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=72256 bytes (72.26 KB, 0.0723 MB))
+        Execution time (this rank): 0.582762 seconds (582.762 ms)
+      Rank 4:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=72256 bytes (72.26 KB, 0.0723 MB))
+        Execution time (this rank): 0.572820 seconds (572.820 ms)
+      Rank 5:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=72256 bytes (72.26 KB, 0.0723 MB))
+        Execution time (this rank): 0.576844 seconds (576.844 ms)
+      Rank 6:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=72256 bytes (72.26 KB, 0.0723 MB))
+        Execution time (this rank): 0.563807 seconds (563.807 ms)
+      Rank 7:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=72256 bytes (72.26 KB, 0.0723 MB))
+        Execution time (this rank): 0.580263 seconds (580.263 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 80256 bytes (80.26 KB, 0.0803 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 16 (memory=80256 bytes (80.26 KB, 0.0803 MB))
+      Execution time (rank 0): 0.573027 seconds (573.027 ms)
+  Slicing ON:
+    Max execution time: 0.543585 seconds (543.585 ms)
+    Total allocated memory: 586048 bytes (586.05 KB, 0.5860 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 8
+    Required calls memory: 373248 bytes (373.25 KB, 0.3732 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 6.61%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 63.69%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 80256 bytes (80.26 KB, 0.0803 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=46656 bytes (46.66 KB, 0.0467 MB))
+        Execution time (this rank): 0.542990 seconds (542.990 ms)
+      Rank 1:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=46656 bytes (46.66 KB, 0.0467 MB))
+        Execution time (this rank): 0.527094 seconds (527.094 ms)
+      Rank 2:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=46656 bytes (46.66 KB, 0.0467 MB))
+        Execution time (this rank): 0.532828 seconds (532.828 ms)
+      Rank 3:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=46656 bytes (46.66 KB, 0.0467 MB))
+        Execution time (this rank): 0.543585 seconds (543.585 ms)
+      Rank 4:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=46656 bytes (46.66 KB, 0.0467 MB))
+        Execution time (this rank): 0.538390 seconds (538.390 ms)
+      Rank 5:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=46656 bytes (46.66 KB, 0.0467 MB))
+        Execution time (this rank): 0.530652 seconds (530.652 ms)
+      Rank 6:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=46656 bytes (46.66 KB, 0.0467 MB))
+        Execution time (this rank): 0.526515 seconds (526.515 ms)
+      Rank 7:
+        Total allocated memory: 72256 bytes (72.26 KB, 0.0723 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=46656 bytes (46.66 KB, 0.0467 MB))
+        Execution time (this rank): 0.529916 seconds (529.916 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 80256 bytes (80.26 KB, 0.0803 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 1 (memory=46656 bytes (46.66 KB, 0.0467 MB))
+      Execution time (rank 0): 0.542990 seconds (542.990 ms)
+
+==================================================
+
+Test Case: 048_mpi_heat_eq_solver2
+------------------------------
+Binary Sizes:
+  Slicing OFF: 30256 bytes (30.26 KB, 0.0303 MB)
+  Slicing ON: 15680 bytes (15.68 KB, 0.0157 MB)
+
+LLVM Module Lines:
+  Original module: 2394
+  Slice module: 996
+
+Slicing Time: 0.017710 seconds (17.710 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 1.049088 seconds (1049.088 ms)
+    Total allocated memory: 89116672 bytes (89116.67 KB, 89.1167 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 121
+    Required calls memory: 89116672 bytes (89116.67 KB, 89.1167 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 12123840 bytes (12123.84 KB, 12.1238 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 16 (memory=12123840 bytes (12123.84 KB, 12.1238 MB))
+        Execution time (this rank): 1.042122 seconds (1042.122 ms)
+      Rank 1:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=10998976 bytes (10998.98 KB, 10.9990 MB))
+        Execution time (this rank): 1.042082 seconds (1042.082 ms)
+      Rank 2:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=10998976 bytes (10998.98 KB, 10.9990 MB))
+        Execution time (this rank): 1.037292 seconds (1037.292 ms)
+      Rank 3:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=10998976 bytes (10998.98 KB, 10.9990 MB))
+        Execution time (this rank): 1.027467 seconds (1027.467 ms)
+      Rank 4:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=10998976 bytes (10998.98 KB, 10.9990 MB))
+        Execution time (this rank): 1.046557 seconds (1046.557 ms)
+      Rank 5:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=10998976 bytes (10998.98 KB, 10.9990 MB))
+        Execution time (this rank): 1.039646 seconds (1039.646 ms)
+      Rank 6:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=10998976 bytes (10998.98 KB, 10.9990 MB))
+        Execution time (this rank): 1.049088 seconds (1049.088 ms)
+      Rank 7:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=10998976 bytes (10998.98 KB, 10.9990 MB))
+        Execution time (this rank): 1.044496 seconds (1044.496 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 12123840 bytes (12123.84 KB, 12.1238 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 16 (memory=12123840 bytes (12123.84 KB, 12.1238 MB))
+      Execution time (rank 0): 1.042122 seconds (1042.122 ms)
+  Slicing ON:
+    Max execution time: 0.562265 seconds (562.265 ms)
+    Total allocated memory: 89116672 bytes (89116.67 KB, 89.1167 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 8
+    Required calls memory: 67917312 bytes (67917.31 KB, 67.9173 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 6.61%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 76.21%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 12123840 bytes (12123.84 KB, 12.1238 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=8489664 bytes (8489.66 KB, 8.4897 MB))
+        Execution time (this rank): 0.562150 seconds (562.150 ms)
+      Rank 1:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=8489664 bytes (8489.66 KB, 8.4897 MB))
+        Execution time (this rank): 0.546207 seconds (546.207 ms)
+      Rank 2:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=8489664 bytes (8489.66 KB, 8.4897 MB))
+        Execution time (this rank): 0.562265 seconds (562.265 ms)
+      Rank 3:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=8489664 bytes (8489.66 KB, 8.4897 MB))
+        Execution time (this rank): 0.550306 seconds (550.306 ms)
+      Rank 4:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=8489664 bytes (8489.66 KB, 8.4897 MB))
+        Execution time (this rank): 0.557215 seconds (557.215 ms)
+      Rank 5:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=8489664 bytes (8489.66 KB, 8.4897 MB))
+        Execution time (this rank): 0.530155 seconds (530.155 ms)
+      Rank 6:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=8489664 bytes (8489.66 KB, 8.4897 MB))
+        Execution time (this rank): 0.560431 seconds (560.431 ms)
+      Rank 7:
+        Total allocated memory: 10998976 bytes (10998.98 KB, 10.9990 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=8489664 bytes (8489.66 KB, 8.4897 MB))
+        Execution time (this rank): 0.554476 seconds (554.476 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 12123840 bytes (12123.84 KB, 12.1238 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 1 (memory=8489664 bytes (8489.66 KB, 8.4897 MB))
+      Execution time (rank 0): 0.562150 seconds (562.150 ms)
+
+==================================================
+
+Test Case: 048_mpi_heat_eq_solver3
+------------------------------
+Binary Sizes:
+  Slicing OFF: 30320 bytes (30.32 KB, 0.0303 MB)
+  Slicing ON: 15680 bytes (15.68 KB, 0.0157 MB)
+
+LLVM Module Lines:
+  Original module: 2404
+  Slice module: 996
+
+Slicing Time: 0.016800 seconds (16.800 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 2.239346 seconds (2239.346 ms)
+    Total allocated memory: 183052864 bytes (183052.86 KB, 183.0529 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 121
+    Required calls memory: 183052864 bytes (183052.86 KB, 183.0529 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 24894080 bytes (24894.08 KB, 24.8941 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 16 (memory=24894080 bytes (24894.08 KB, 24.8941 MB))
+        Execution time (this rank): 2.223334 seconds (2223.334 ms)
+      Rank 1:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=22594112 bytes (22594.11 KB, 22.5941 MB))
+        Execution time (this rank): 2.222083 seconds (2222.083 ms)
+      Rank 2:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=22594112 bytes (22594.11 KB, 22.5941 MB))
+        Execution time (this rank): 2.235375 seconds (2235.375 ms)
+      Rank 3:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=22594112 bytes (22594.11 KB, 22.5941 MB))
+        Execution time (this rank): 2.239346 seconds (2239.346 ms)
+      Rank 4:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=22594112 bytes (22594.11 KB, 22.5941 MB))
+        Execution time (this rank): 2.207752 seconds (2207.752 ms)
+      Rank 5:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=22594112 bytes (22594.11 KB, 22.5941 MB))
+        Execution time (this rank): 2.225979 seconds (2225.979 ms)
+      Rank 6:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=22594112 bytes (22594.11 KB, 22.5941 MB))
+        Execution time (this rank): 2.210548 seconds (2210.548 ms)
+      Rank 7:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=22594112 bytes (22594.11 KB, 22.5941 MB))
+        Execution time (this rank): 2.235099 seconds (2235.099 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 24894080 bytes (24894.08 KB, 24.8941 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 16 (memory=24894080 bytes (24894.08 KB, 24.8941 MB))
+      Execution time (rank 0): 2.223334 seconds (2223.334 ms)
+  Slicing ON:
+    Max execution time: 0.561393 seconds (561.393 ms)
+    Total allocated memory: 183052864 bytes (183052.86 KB, 183.0529 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 8
+    Required calls memory: 140608000 bytes (140608.00 KB, 140.6080 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 6.61%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 76.81%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 24894080 bytes (24894.08 KB, 24.8941 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=17576000 bytes (17576.00 KB, 17.5760 MB))
+        Execution time (this rank): 0.561393 seconds (561.393 ms)
+      Rank 1:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=17576000 bytes (17576.00 KB, 17.5760 MB))
+        Execution time (this rank): 0.555135 seconds (555.135 ms)
+      Rank 2:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=17576000 bytes (17576.00 KB, 17.5760 MB))
+        Execution time (this rank): 0.553814 seconds (553.814 ms)
+      Rank 3:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=17576000 bytes (17576.00 KB, 17.5760 MB))
+        Execution time (this rank): 0.560123 seconds (560.123 ms)
+      Rank 4:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=17576000 bytes (17576.00 KB, 17.5760 MB))
+        Execution time (this rank): 0.549072 seconds (549.072 ms)
+      Rank 5:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=17576000 bytes (17576.00 KB, 17.5760 MB))
+        Execution time (this rank): 0.552442 seconds (552.442 ms)
+      Rank 6:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=17576000 bytes (17576.00 KB, 17.5760 MB))
+        Execution time (this rank): 0.560125 seconds (560.125 ms)
+      Rank 7:
+        Total allocated memory: 22594112 bytes (22594.11 KB, 22.5941 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=17576000 bytes (17576.00 KB, 17.5760 MB))
+        Execution time (this rank): 0.556829 seconds (556.829 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 24894080 bytes (24894.08 KB, 24.8941 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 1 (memory=17576000 bytes (17576.00 KB, 17.5760 MB))
+      Execution time (rank 0): 0.561393 seconds (561.393 ms)
+
+==================================================
+
+Test Case: 048_mpi_heat_eq_solver4
+------------------------------
+Binary Sizes:
+  Slicing OFF: 30640 bytes (30.64 KB, 0.0306 MB)
+  Slicing ON: 15680 bytes (15.68 KB, 0.0157 MB)
+
+LLVM Module Lines:
+  Original module: 2484
+  Slice module: 996
+
+Slicing Time: 0.018554 seconds (18.554 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 8.196505 seconds (8196.505 ms)
+    Total allocated memory: 602666560 bytes (602666.56 KB, 602.6666 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 121
+    Required calls memory: 602666560 bytes (602666.56 KB, 602.6666 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 81921664 bytes (81921.66 KB, 81.9217 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 16 (memory=81921664 bytes (81921.66 KB, 81.9217 MB))
+        Execution time (this rank): 8.196505 seconds (8196.505 ms)
+      Rank 1:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=74392128 bytes (74392.13 KB, 74.3921 MB))
+        Execution time (this rank): 8.183387 seconds (8183.387 ms)
+      Rank 2:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=74392128 bytes (74392.13 KB, 74.3921 MB))
+        Execution time (this rank): 8.175749 seconds (8175.749 ms)
+      Rank 3:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=74392128 bytes (74392.13 KB, 74.3921 MB))
+        Execution time (this rank): 8.180881 seconds (8180.881 ms)
+      Rank 4:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=74392128 bytes (74392.13 KB, 74.3921 MB))
+        Execution time (this rank): 8.184301 seconds (8184.301 ms)
+      Rank 5:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=74392128 bytes (74392.13 KB, 74.3921 MB))
+        Execution time (this rank): 8.192343 seconds (8192.343 ms)
+      Rank 6:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=74392128 bytes (74392.13 KB, 74.3921 MB))
+        Execution time (this rank): 8.151136 seconds (8151.136 ms)
+      Rank 7:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=74392128 bytes (74392.13 KB, 74.3921 MB))
+        Execution time (this rank): 8.192456 seconds (8192.456 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 81921664 bytes (81921.66 KB, 81.9217 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 16 (memory=81921664 bytes (81921.66 KB, 81.9217 MB))
+      Execution time (rank 0): 8.196505 seconds (8196.505 ms)
+  Slicing ON:
+    Max execution time: 0.550269 seconds (550.269 ms)
+    Total allocated memory: 602666560 bytes (602666.56 KB, 602.6666 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 8
+    Required calls memory: 467288576 bytes (467288.58 KB, 467.2886 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 6.61%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 77.54%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 81921664 bytes (81921.66 KB, 81.9217 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=58411072 bytes (58411.07 KB, 58.4111 MB))
+        Execution time (this rank): 0.542944 seconds (542.944 ms)
+      Rank 1:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=58411072 bytes (58411.07 KB, 58.4111 MB))
+        Execution time (this rank): 0.538629 seconds (538.629 ms)
+      Rank 2:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=58411072 bytes (58411.07 KB, 58.4111 MB))
+        Execution time (this rank): 0.550269 seconds (550.269 ms)
+      Rank 3:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=58411072 bytes (58411.07 KB, 58.4111 MB))
+        Execution time (this rank): 0.536196 seconds (536.196 ms)
+      Rank 4:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=58411072 bytes (58411.07 KB, 58.4111 MB))
+        Execution time (this rank): 0.542831 seconds (542.831 ms)
+      Rank 5:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=58411072 bytes (58411.07 KB, 58.4111 MB))
+        Execution time (this rank): 0.547218 seconds (547.218 ms)
+      Rank 6:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=58411072 bytes (58411.07 KB, 58.4111 MB))
+        Execution time (this rank): 0.523691 seconds (523.691 ms)
+      Rank 7:
+        Total allocated memory: 74392128 bytes (74392.13 KB, 74.3921 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=58411072 bytes (58411.07 KB, 58.4111 MB))
+        Execution time (this rank): 0.534169 seconds (534.169 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 81921664 bytes (81921.66 KB, 81.9217 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 1 (memory=58411072 bytes (58411.07 KB, 58.4111 MB))
+      Execution time (rank 0): 0.542944 seconds (542.944 ms)
+
+==================================================
+
+Test Case: 048_mpi_heat_eq_solver5
+------------------------------
+Binary Sizes:
+  Slicing OFF: 30000 bytes (30.00 KB, 0.0300 MB)
+  Slicing ON: 15680 bytes (15.68 KB, 0.0157 MB)
+
+LLVM Module Lines:
+  Original module: 2287
+  Slice module: 1023
+
+Slicing Time: 0.017435 seconds (17.435 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 13.631452 seconds (13631.452 ms)
+    Total allocated memory: 925363720 bytes (925363.72 KB, 925.3637 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 121
+    Required calls memory: 925363720 bytes (925363.72 KB, 925.3637 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 125770744 bytes (125770.74 KB, 125.7707 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 16 (memory=125770744 bytes (125770.74 KB, 125.7707 MB))
+        Execution time (this rank): 13.599482 seconds (13599.482 ms)
+      Rank 1:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=114227568 bytes (114227.57 KB, 114.2276 MB))
+        Execution time (this rank): 13.603948 seconds (13603.948 ms)
+      Rank 2:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=114227568 bytes (114227.57 KB, 114.2276 MB))
+        Execution time (this rank): 13.621837 seconds (13621.837 ms)
+      Rank 3:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=114227568 bytes (114227.57 KB, 114.2276 MB))
+        Execution time (this rank): 13.618154 seconds (13618.154 ms)
+      Rank 4:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=114227568 bytes (114227.57 KB, 114.2276 MB))
+        Execution time (this rank): 13.631452 seconds (13631.452 ms)
+      Rank 5:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=114227568 bytes (114227.57 KB, 114.2276 MB))
+        Execution time (this rank): 13.628745 seconds (13628.745 ms)
+      Rank 6:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=114227568 bytes (114227.57 KB, 114.2276 MB))
+        Execution time (this rank): 13.617496 seconds (13617.496 ms)
+      Rank 7:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=114227568 bytes (114227.57 KB, 114.2276 MB))
+        Execution time (this rank): 13.629970 seconds (13629.970 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 125770744 bytes (125770.74 KB, 125.7707 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 16 (memory=125770744 bytes (125770.74 KB, 125.7707 MB))
+      Execution time (rank 0): 13.599482 seconds (13599.482 ms)
+  Slicing ON:
+    Max execution time: 0.572362 seconds (572.362 ms)
+    Total allocated memory: 925363720 bytes (925363.72 KB, 925.3637 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 8
+    Required calls memory: 719323136 bytes (719323.14 KB, 719.3231 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 6.61%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 77.73%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 125770744 bytes (125770.74 KB, 125.7707 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=89915392 bytes (89915.39 KB, 89.9154 MB))
+        Execution time (this rank): 0.558106 seconds (558.106 ms)
+      Rank 1:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=89915392 bytes (89915.39 KB, 89.9154 MB))
+        Execution time (this rank): 0.549252 seconds (549.252 ms)
+      Rank 2:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=89915392 bytes (89915.39 KB, 89.9154 MB))
+        Execution time (this rank): 0.572362 seconds (572.362 ms)
+      Rank 3:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=89915392 bytes (89915.39 KB, 89.9154 MB))
+        Execution time (this rank): 0.556120 seconds (556.120 ms)
+      Rank 4:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=89915392 bytes (89915.39 KB, 89.9154 MB))
+        Execution time (this rank): 0.559969 seconds (559.969 ms)
+      Rank 5:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=89915392 bytes (89915.39 KB, 89.9154 MB))
+        Execution time (this rank): 0.557000 seconds (557.000 ms)
+      Rank 6:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=89915392 bytes (89915.39 KB, 89.9154 MB))
+        Execution time (this rank): 0.565517 seconds (565.517 ms)
+      Rank 7:
+        Total allocated memory: 114227568 bytes (114227.57 KB, 114.2276 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=89915392 bytes (89915.39 KB, 89.9154 MB))
+        Execution time (this rank): 0.560371 seconds (560.371 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 125770744 bytes (125770.74 KB, 125.7707 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 1 (memory=89915392 bytes (89915.39 KB, 89.9154 MB))
+      Execution time (rank 0): 0.558106 seconds (558.106 ms)
+
+==================================================
+
+Test Case: 048_mpi_heat_eq_solver6
+------------------------------
+Binary Sizes:
+  Slicing OFF: 29904 bytes (29.90 KB, 0.0299 MB)
+  Slicing ON: 15680 bytes (15.68 KB, 0.0157 MB)
+
+LLVM Module Lines:
+  Original module: 2278
+  Slice module: 1017
+
+Slicing Time: 0.017985 seconds (17.985 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 28.281110 seconds (28281.110 ms)
+    Total allocated memory: 1410875968 bytes (1410875.97 KB, 1410.8760 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 121
+    Required calls memory: 1410875968 bytes (1410875.97 KB, 1410.8760 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 191738496 bytes (191738.50 KB, 191.7385 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 16 (memory=191738496 bytes (191738.50 KB, 191.7385 MB))
+        Execution time (this rank): 28.271206 seconds (28271.206 ms)
+      Rank 1:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=174162496 bytes (174162.50 KB, 174.1625 MB))
+        Execution time (this rank): 28.273058 seconds (28273.058 ms)
+      Rank 2:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=174162496 bytes (174162.50 KB, 174.1625 MB))
+        Execution time (this rank): 28.267577 seconds (28267.577 ms)
+      Rank 3:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=174162496 bytes (174162.50 KB, 174.1625 MB))
+        Execution time (this rank): 28.277139 seconds (28277.139 ms)
+      Rank 4:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=174162496 bytes (174162.50 KB, 174.1625 MB))
+        Execution time (this rank): 28.281110 seconds (28281.110 ms)
+      Rank 5:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=174162496 bytes (174162.50 KB, 174.1625 MB))
+        Execution time (this rank): 28.274629 seconds (28274.629 ms)
+      Rank 6:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=174162496 bytes (174162.50 KB, 174.1625 MB))
+        Execution time (this rank): 28.262215 seconds (28262.215 ms)
+      Rank 7:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 15 (memory=174162496 bytes (174162.50 KB, 174.1625 MB))
+        Execution time (this rank): 28.269003 seconds (28269.003 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 191738496 bytes (191738.50 KB, 191.7385 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 16 (memory=191738496 bytes (191738.50 KB, 191.7385 MB))
+      Execution time (rank 0): 28.271206 seconds (28271.206 ms)
+  Slicing ON:
+    Max execution time: 0.539152 seconds (539.152 ms)
+    Total allocated memory: 1410875968 bytes (1410875.97 KB, 1410.8760 MB)
+    Allocation calls:
+      malloc: 121
+      calloc: 0
+      realloc: 0
+      aligned_alloc: 0
+      Total: 121
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 8
+    Required calls memory: 1099104768 bytes (1099104.77 KB, 1099.1048 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 6.61%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 77.90%
+    Number of processes: 8
+
+    Per-process allocation data:
+      Rank 0:
+        Total allocated memory: 191738496 bytes (191738.50 KB, 191.7385 MB)
+        Allocation calls: total=16 (malloc=16, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=137388096 bytes (137388.10 KB, 137.3881 MB))
+        Execution time (this rank): 0.526414 seconds (526.414 ms)
+      Rank 1:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=137388096 bytes (137388.10 KB, 137.3881 MB))
+        Execution time (this rank): 0.539152 seconds (539.152 ms)
+      Rank 2:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=137388096 bytes (137388.10 KB, 137.3881 MB))
+        Execution time (this rank): 0.512870 seconds (512.870 ms)
+      Rank 3:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=137388096 bytes (137388.10 KB, 137.3881 MB))
+        Execution time (this rank): 0.524248 seconds (524.248 ms)
+      Rank 4:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=137388096 bytes (137388.10 KB, 137.3881 MB))
+        Execution time (this rank): 0.520772 seconds (520.772 ms)
+      Rank 5:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=137388096 bytes (137388.10 KB, 137.3881 MB))
+        Execution time (this rank): 0.530120 seconds (530.120 ms)
+      Rank 6:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=137388096 bytes (137388.10 KB, 137.3881 MB))
+        Execution time (this rank): 0.531317 seconds (531.317 ms)
+      Rank 7:
+        Total allocated memory: 174162496 bytes (174162.50 KB, 174.1625 MB)
+        Allocation calls: total=15 (malloc=15, calloc=0, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 1 (memory=137388096 bytes (137388.10 KB, 137.3881 MB))
+        Execution time (this rank): 0.529133 seconds (529.133 ms)
+
+    Rank 0 details:
+      Total allocated memory (rank 0): 191738496 bytes (191738.50 KB, 191.7385 MB)
+      Allocation calls (rank 0): 16
+      Invalid calls (rank 0): 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+      Required calls (rank 0): 1 (memory=137388096 bytes (137388.10 KB, 137.3881 MB))
+      Execution time (rank 0): 0.526414 seconds (526.414 ms)
+
+==================================================
+
+Test Case: spec_cpu
+------------------------------
+Binary Sizes:
+  Slicing OFF: 23792 bytes (23.79 KB, 0.0238 MB)
+  Slicing ON: 15552 bytes (15.55 KB, 0.0156 MB)
+
+LLVM Module Lines:
+  Original module: 4908
+  Slice module: 2201
+
+Slicing Time: 2.360128 seconds (2360.128 ms)
+
+Execution Data:
+  Slicing OFF:
+    Max execution time: 365.428682 seconds (365428.682 ms)
+    Total allocated memory: 1757471072 bytes (1757471.07 KB, 1757.4711 MB)
+    Allocation calls:
+      malloc: 0
+      calloc: 3
+      realloc: 0
+      aligned_alloc: 0
+      Total: 3
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 3
+    Required calls memory: 1757471072 bytes (1757471.07 KB, 1757.4711 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+
+    Per-process allocation data:
+      unknown_0:
+        Total allocated memory: 1757471072 bytes (1757471.07 KB, 1757.4711 MB)
+        Allocation calls: total=3 (malloc=0, calloc=3, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 3 (memory=1757471072 bytes (1757471.07 KB, 1757.4711 MB))
+        Execution time (this log): 365.428682 seconds (365428.682 ms)
+  Slicing ON:
+    Max execution time: 3.713234 seconds (3713.234 ms)
+    Total allocated memory: 1757471072 bytes (1757471.07 KB, 1757.4711 MB)
+    Allocation calls:
+      malloc: 0
+      calloc: 3
+      realloc: 0
+      aligned_alloc: 0
+      Total: 3
+    Invalid calls: 0
+    Invalid calls memory: 0 bytes (0.00 KB, 0.0000 MB)
+    Required calls: 3
+    Required calls memory: 1757471072 bytes (1757471.07 KB, 1757.4711 MB)
+    Invalid calls percentage: 0.00%
+    Required calls percentage: 100.00%
+    Invalid memory percentage: 0.00%
+    Required memory percentage: 100.00%
+
+    Per-process allocation data:
+      unknown_0:
+        Total allocated memory: 1757471072 bytes (1757471.07 KB, 1757.4711 MB)
+        Allocation calls: total=3 (malloc=0, calloc=3, realloc=0, aligned_alloc=0)
+        Invalid calls: 0 (memory=0 bytes (0.00 KB, 0.0000 MB))
+        Required calls: 3 (memory=1757471072 bytes (1757471.07 KB, 1757.4711 MB))
+        Execution time (this log): 3.713234 seconds (3713.234 ms)
+
+==================================================
+

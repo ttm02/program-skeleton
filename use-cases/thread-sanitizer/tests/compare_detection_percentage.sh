@@ -10,16 +10,21 @@ DRB_DIR=$(dirname $TEST_CASE)
 
 
 source ${BINARY_DIR}/setup_env.sh
+export OMP_NUM_THREADS=2
 
 #compares standard thread sanitizer with the precomputed one
 
 GREP_STRING="WARNING: ThreadSanitizer: data race"
 
-rm ./a.out ./a.out_original
-
 CFLAGS="-O2 -g -fopenmp -fsanitize=thread"
 PASS_FLAGS="-fuse-ld=lld -flto -fwhole-program-vtables -fno-inline"
 
+RUNDIR=$(mktemp -d)
+trap "rm -rf $RUNDIR" EXIT
+# make sure the tempdir is removed on script exit
+
+#rm ./a.out ./a.out_original
+cd $RUNDIR
 
 # compile
 if grep -q 'PolyBench' "$TEST_CASE"; then

@@ -177,7 +177,9 @@ inline bool should_call_intrinsic(llvm::Intrinsic::ID id) {
 
       // vector instructions
       id == llvm::Intrinsic::vector_reduce_add ||
-      llvm::Intrinsic::getName(id).starts_with("llvm.x86.sse"); // NOLINT
+      llvm::Intrinsic::getName(id).starts_with("llvm.x86.sse") ||
+      llvm::Intrinsic::getName(id).starts_with("llvm.vector") ||
+      llvm::Intrinsic::getName(id).starts_with("llvm.ctpop"); // NOLINT
 }
 
 #endif // PRECALCULATION_FUNCTION_ANALYSIS_H

@@ -39,4 +39,5 @@ cache.csv
 .cproject
 .settings
 .idea
+.cache
 

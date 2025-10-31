@@ -31,3 +31,8 @@ option(SANITIZER_USE_CASE "Build the Thread sanitizer usecase" ON)
 if (SANITIZER_USE_CASE)
     add_subdirectory(use-cases/thread-sanitizer)
 endif ()
+
+option(ALLOC_TRACKING_USE_CASE "Build the Allocation Tracking usecase" ON)
+if (ALLOC_TRACKING_USE_CASE)
+    add_subdirectory(use-cases/alloc-tracking)
+endif ()
