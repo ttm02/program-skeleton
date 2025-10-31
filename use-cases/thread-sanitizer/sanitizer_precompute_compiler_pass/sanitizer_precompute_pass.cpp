@@ -305,10 +305,9 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
   return {LLVM_PLUGIN_API_VERSION, "sanitizer_precompute", "1.0.0",
           [](PassBuilder &PB) {
-            PB.registerFullLinkTimeOptimizationEarlyEPCallback([&](ModulePassManager &MPM,
-                                                    OptimizationLevel Level,
-                                                    ThinOrFullLTOPhase Phase) {
-              MPM.addPass(SanitizerPrecomputePass());
-            });
+            PB.registerFullLinkTimeOptimizationEarlyEPCallback(
+                [&](ModulePassManager &MPM, OptimizationLevel Level) {
+                  MPM.addPass(SanitizerPrecomputePass());
+                });
           }};
 }

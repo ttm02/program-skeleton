@@ -40,7 +40,7 @@ bool AllocTrackerLTOPass::instrument_allocation_calls(
     // Get name of parent function
     Value *parent_func_name_V = ir_builder.CreateBitCast(
         logging::get_parent_function_name_V(M, Ctx, *call_I_F),
-        Type::getInt8PtrTy(Ctx));
+        PointerType::get(Ctx, 0));
 
     // Check if the allocation call is invalid
     //  i.e. only possible if precalc analysis ignored problematic MPI

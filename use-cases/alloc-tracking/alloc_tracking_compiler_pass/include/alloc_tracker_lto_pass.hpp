@@ -223,14 +223,15 @@ public:
 
 } // namespace
 
-
 //-----------------------------------------------------------------------------
 // New Pass Manager Registration
 //-----------------------------------------------------------------------------
-PassPluginLibraryInfo getPassPluginInfo() {
-    const auto register_callback = [](PassBuilder& PB) {
-
-        // Note on when pass is run during optimization pipeline: at the start of LTO pipeline
+extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
+  return {
+      LLVM_PLUGIN_API_VERSION, "AllocTrackerLTOPass", "1.0.0",
+      [](PassBuilder &PB) {
+        // Note on when pass is run during optimization pipeline: at the start
+        // of LTO pipeline
         // https://llvm.org/doxygen/classllvm_1_1PassBuilder.html#abca5690a1a0abc98824d0f15ce3f4a93
         // early vs last: 
         //  - registerFullLinkTimeOptimizationEarlyEPCallback: pass should run before other optimizations and thus has a clear view on the original code
@@ -248,13 +249,8 @@ PassPluginLibraryInfo getPassPluginInfo() {
                     return true;
                 }
                 return false;
-            }
-        );
-    };
+            });
+      }};
 
-    return { LLVM_PLUGIN_API_VERSION, "AllocTrackerLTOPass", LLVM_VERSION_STRING, register_callback };
+
 };
-  
-extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
-    return getPassPluginInfo();
-}
