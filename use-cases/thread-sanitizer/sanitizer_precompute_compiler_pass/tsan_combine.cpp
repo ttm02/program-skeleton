@@ -21,6 +21,9 @@ static inline void collect_base_ptr_to_tsan_call(
     DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
     DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr,
     CallBase *tsan_call, Instruction *inst) {
+  base_ptr_to_call[inst].insert(tsan_call);
+  call_to_base_ptr[tsan_call].insert(inst);
+
   // value is uncertain -> do not map these DFG values to TSAN call
   if (isa<PHINode>(inst) || isa<CallBase>(inst) || isa<LoadInst>(inst) ||
       isa<SelectInst>(inst))
@@ -37,9 +40,6 @@ static inline void collect_base_ptr_to_tsan_call(
     if (auto useGep = dyn_cast<Instruction>(u.get()))
       collect_base_ptr_to_tsan_call(base_ptr_to_call, call_to_base_ptr,
                                     tsan_call, useGep);
-
-  base_ptr_to_call[inst].insert(tsan_call);
-  call_to_base_ptr[tsan_call].insert(inst);
 }
 
 static inline void remove_inst_from_func(
@@ -138,19 +138,37 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls,
         tsan_reads.insert(call);
     }
 
+    auto *bp = bp2call.getFirst();
     if (ptr_values.size() == 1) {
+      // TODO does TSAN already do that itself?
+      // Are we removing too much here? additional DRB tests are not failing.
+
+      // replace:
+      //   call void @__tsan_readX(ptr nonnull %a)
+      //   call void @__tsan_writeX(ptr nonnull %a)
+      //   call void @__tsan_readX(ptr nonnull %a)
+      //   call void @__tsan_writeX(ptr nonnull %a)
+      // with:
+      //   call void @__tsan_writeX(ptr nonnull %a)
+
       // keep only one (write) version of of identical TSAN calls
       CallBase *keep_inst =
           tsan_writes.empty() ? *call_list.begin() : *tsan_writes.begin();
       for (auto call : call_list) {
         if (call != keep_inst) {
-          remove_inst_from_func(call, bp2call.getFirst(), base_ptr_to_call,
-                                call_to_base_ptr);
+          remove_inst_from_func(call, bp, base_ptr_to_call, call_to_base_ptr);
           removed_tsan_calls++;
         }
       }
-    } else if (auto *base_ptr =
-                   dyn_cast<GetElementPtrInst>(bp2call.getFirst())) {
+    } else if (auto *base_ptr = dyn_cast<GetElementPtrInst>(bp)) {
+      // replace:
+      //   %struct.a = type { i32, i32, i32 }
+      //   %base = getelementptr inbounds %struct.a, ptr %a, i64 0, ...
+      //   %b1 = getelementptr inbounds nuw i8, ptr %base, i64 4
+      //   %b2 = getelementptr inbounds nuw i8, ptr %base, i64 8
+      // with:
+      //   call void @__tsan_write_range(ptr nonnull %base, i64 12)
+
       // combine contingous address range to TSAN range call
       SmallVector<const GetElementPtrInst *, 10> offset_ptrs;
       const auto STy = getGEPstructTy(base_ptr);
@@ -212,13 +230,12 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls,
       for (auto call : bp2call.getSecond()) {
         auto arg0 = call->getArgOperand(0);
         if (arg0 == base_ptr) {
-          remove_inst_from_func(call, bp2call.getFirst(), base_ptr_to_call,
-                                call_to_base_ptr);
+          remove_inst_from_func(call, bp, base_ptr_to_call, call_to_base_ptr);
           removed_tsan_calls++;
         } else {
           for (auto *offPtr : offset_ptrs) {
             if (arg0 == offPtr) {
-              remove_inst_from_func(call, bp2call.getFirst(), base_ptr_to_call,
+              remove_inst_from_func(call, bp, base_ptr_to_call,
                                     call_to_base_ptr);
               removed_tsan_calls++;
             }
