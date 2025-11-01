@@ -248,9 +248,11 @@ static void range_replace_array(
     if (ptr_gep->getPointerOperand() != call_gep->getPointerOperand())
       continue;
     assert(1 <= ptr_gep->getNumIndices());
+    if (ptr_gep->getNumIndices() != 1)
+      continue;
+
     auto *idx0 = dyn_cast<Instruction>(ptr_gep->indices().begin()->get());
     auto *base = check_path_to_base_ptr(idx0, bp);
-
     if (base) {
       if (base == bp) {
         offset_ptrs.push_back({ptr_gep, base});
