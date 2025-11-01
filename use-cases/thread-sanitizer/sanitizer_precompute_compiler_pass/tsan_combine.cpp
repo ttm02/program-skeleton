@@ -11,6 +11,7 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 
 #include "precompute/compiler/analysis_results.h"
@@ -26,12 +27,11 @@ static inline void collect_base_ptr_to_tsan_call(
 
   // value is uncertain -> do not map these DFG values to TSAN call
   if (isa<PHINode>(inst) || isa<CallBase>(inst) || isa<LoadInst>(inst) ||
-      isa<SelectInst>(inst))
+      isa<SelectInst>(inst) || isa<AllocaInst>(inst))
     return;
 
-  if (not(isa<GetElementPtrInst>(inst) || isa<AllocaInst>(inst) ||
-          isa<IntToPtrInst>(inst) || isa<CastInst>(inst) ||
-          isa<BinaryOperator>(inst))) {
+  if (not(isa<GetElementPtrInst>(inst) || isa<IntToPtrInst>(inst) ||
+          isa<CastInst>(inst) || isa<BinaryOperator>(inst))) {
     inst->dump();
     llvm_unreachable("unexpected instruction in TSAN call DFG");
   }
@@ -96,8 +96,30 @@ static inline void createTSANrange(Module &M, Instruction *base_ptr,
 
   assert(base_ptr->getNextNode());
   IRBuilder<> builder(base_ptr->getNextNode());
+  // TODO i64 might not always be applicable
   Value *ssv = ConstantInt::get(Type::getInt64Ty(*ctx), struct_size, false);
   builder.CreateCall(tsan_func, {base_ptr, ssv});
+}
+
+static inline const Instruction *
+check_path_to_base_ptr(const Instruction *inst, const Instruction *base_ptr) {
+  if (not inst)
+    return nullptr;
+  if (not isa<CastInst>(inst)) {
+    if (inst == base_ptr)
+      return inst;
+    /* TODO consider non BinaryOperator instructions
+    for (auto &u : inst->operands())
+      if (u.get() == base_ptr)
+        return inst;
+    */
+    if (inst->getOperand(0) == base_ptr)
+      return inst;
+    return nullptr;
+  }
+  assert(inst->getNumOperands() == 1);
+  auto arg0 = dyn_cast<Instruction>(inst->getOperand(0));
+  return check_path_to_base_ptr(arg0, base_ptr);
 }
 
 static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls,
@@ -138,10 +160,17 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls,
         tsan_reads.insert(call);
     }
 
+    // nothing to do
+    if (tsan_writes.empty() && tsan_reads.empty())
+      continue;
+
     auto *bp = bp2call.getFirst();
+    auto bit2bytes = [&](unsigned bits) { return (bits + 7) / 8; };
+
     if (ptr_values.size() == 1) {
       // TODO does TSAN already do that itself?
       // Are we removing too much here? additional DRB tests are not failing.
+      // take a look at DRB173 -> maybe only remove if in same BasicBlock
 
       // replace:
       //   call void @__tsan_readX(ptr nonnull %a)
@@ -196,6 +225,9 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls,
         }
       }
 
+      if (offset_ptrs.size() < 2)
+        continue;
+
       // TODO are they always sorted -> unnecessary?
       auto byOffset = [&](const GetElementPtrInst *LHS,
                           const GetElementPtrInst *RHS) {
@@ -208,7 +240,6 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls,
       };
       sort(offset_ptrs, byOffset);
 
-      auto bit2bytes = [&](unsigned bits) { return (bits + 7) / 8; };
       unsigned byte_offset = 0;
       assert(not STy->elements().empty());
       auto elemTy = STy->elements().consume_front();
@@ -235,6 +266,107 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls,
         } else {
           for (auto *offPtr : offset_ptrs) {
             if (arg0 == offPtr) {
+              remove_inst_from_func(call, bp, base_ptr_to_call,
+                                    call_to_base_ptr);
+              removed_tsan_calls++;
+            }
+          }
+        }
+      }
+    } else if (auto *c_gep = dyn_cast<GetElementPtrInst>(*ptr_values.begin())) {
+      // replace;
+      //   %base = ...
+      //   %base0 = sext i32 %base to i64
+      //   %base_ptr = getelementptr inbounds double, ptr %var, i64 %base0
+      //   call void @__tsan_write8(ptr %base_ptr)
+      //   %b1 = add i32 %base, 1
+      //   %base1 = sext i32 %b1 to i64
+      //   %ptr_1 = getelementptr inbounds double, ptr %var, i64 %base1
+      //   call void @__tsan_write8(ptr %36)
+      //   %b2 = add i32 %base, 2
+      // with:
+      //   call void @__tsan_write_range(ptr %base_ptr, i64 32)
+
+      // TODO allow partial ranges of only read or only write
+      // Both might create false positives/negatives because only one member of
+      // the struct is written to.
+      if (not tsan_writes.empty() && not tsan_reads.empty())
+        continue;
+
+      SmallVector<std::pair<GetElementPtrInst *, const Instruction *>, 10>
+          offset_ptrs;
+      for (auto ptr : ptr_values) {
+        auto *ptr_gep = dyn_cast<GetElementPtrInst>(ptr);
+        if (not ptr_gep)
+          continue;
+        if (ptr_gep->getPointerOperand() != c_gep->getPointerOperand())
+          continue;
+        assert(1 <= ptr_gep->getNumIndices());
+        auto *idx0 = dyn_cast<Instruction>(ptr_gep->indices().begin()->get());
+        auto *base = check_path_to_base_ptr(idx0, bp);
+
+        if (base) {
+          if (base == bp) {
+            offset_ptrs.push_back({ptr_gep, base});
+          } else if (auto *base_inst = dyn_cast<BinaryOperator>(base)) {
+            if (base_inst->getOpcode() == Instruction::Add)
+              if (isa<ConstantInt>(base_inst->getOperand(1)))
+                offset_ptrs.push_back({ptr_gep, base_inst});
+          }
+        }
+      }
+
+      if (offset_ptrs.size() < 2)
+        continue;
+
+      auto byOffset =
+          [&](std::pair<GetElementPtrInst *, const Instruction *> LHS,
+              std::pair<GetElementPtrInst *, const Instruction *> RHS) {
+            assert(RHS.second);
+            if (RHS.second == bp)
+              return false;
+            assert(LHS.second);
+            if (LHS.second == bp)
+              return true;
+            auto *LHS_o1 = cast<ConstantInt>(LHS.second->getOperand(1));
+            auto *RHS_o1 = cast<ConstantInt>(RHS.second->getOperand(1));
+            assert(not LHS_o1->isNegative());
+            assert(not RHS_o1->isNegative());
+            return LHS_o1->getZExtValue() < RHS_o1->getZExtValue();
+          };
+      sort(offset_ptrs, byOffset);
+
+      unsigned n = 0;
+      for (auto offPtr : offset_ptrs) {
+        auto offAdd = offPtr.second;
+        assert(bp == offAdd || bp == offAdd->getOperand(0));
+        if (n == 0 && bp != offAdd) {
+          goto bp2call; // no contingous range
+        } else if (0 < n) {
+          auto *offInt = cast<ConstantInt>(offAdd->getOperand(1));
+          if (n != offInt->getZExtValue())
+            goto bp2call;
+        }
+        n++;
+      }
+
+      // TODO allow partial ranges of only read or only write
+      auto base_ptr = offset_ptrs.begin()->first;
+      auto *elemTy = base_ptr->getSourceElementType();
+      const llvm::DataLayout &DL = M.getDataLayout();
+      unsigned elemBitwidth = DL.getTypeSizeInBits(elemTy);
+      unsigned byte_offset = bit2bytes(n * elemBitwidth);
+      createTSANrange(M, base_ptr, byte_offset, tsan_reads.empty());
+
+      // cleanup replaced TSAN calls
+      for (auto call : bp2call.getSecond()) {
+        auto arg0 = call->getArgOperand(0);
+        if (arg0 == base_ptr) {
+          remove_inst_from_func(call, bp, base_ptr_to_call, call_to_base_ptr);
+          removed_tsan_calls++;
+        } else {
+          for (auto offPtr : offset_ptrs) {
+            if (arg0 == offPtr.first) {
               remove_inst_from_func(call, bp, base_ptr_to_call,
                                     call_to_base_ptr);
               removed_tsan_calls++;
