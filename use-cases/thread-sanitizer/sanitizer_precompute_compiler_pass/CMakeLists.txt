@@ -2,6 +2,7 @@ add_library(sanitizer_precompute_pass MODULE
         # List your source files here.
         LoopOptimize.cpp
         sanitizer_precompute_pass.cpp
+        single_thread_cleanup.cpp
         tsan_combine.cpp
 )
 

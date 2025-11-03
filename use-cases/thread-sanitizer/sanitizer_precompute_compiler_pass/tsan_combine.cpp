@@ -310,12 +310,12 @@ static void range_replace_array(
     auto arg0 = call->getArgOperand(0);
     if (arg0 == base_ptr) {
       remove_inst_from_func(call, bp, base_ptr_to_call, call_to_base_ptr);
-      removed_tsan_calls++;
+      (*removed_tsan_calls)++;
     } else {
       for (auto offPtr : offset_ptrs) {
         if (arg0 == offPtr.first) {
           remove_inst_from_func(call, bp, base_ptr_to_call, call_to_base_ptr);
-          removed_tsan_calls++;
+          (*removed_tsan_calls)++;
         }
       }
     }

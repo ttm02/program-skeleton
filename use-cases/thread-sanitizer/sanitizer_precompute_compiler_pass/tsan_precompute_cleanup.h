@@ -13,6 +13,8 @@
 
 std::string Optimize_loops(llvm::Module &M, llvm::ModuleAnalysisManager &AM);
 std::string reduce_tsan_calls(llvm::Module &M, llvm::ModuleAnalysisManager &AM);
+std::string eliminate_single_thread(llvm::Module &M,
+                                    llvm::ModuleAnalysisManager &AM);
 
 inline unsigned bits2bytes(const unsigned bits) { return (bits + 7) / 8; };
 
