@@ -1340,6 +1340,17 @@ bool PrecalculationAnalysis::check_if_call_should_be_included(
   return false;
 }
 
+static void throwInvokeWarning(const std::string msg, const InvokeInst *ivoke,
+                               const std::shared_ptr<TaintedValue> &call_info,
+                               const Function *func) {
+  errs() << "WARNING: " << msg << "\n";
+  errs() << "Reason: " << call_info->getReason() << "\n";
+  errs() << "In: " << ivoke->getFunction()->getName() << "\n";
+  // ivoke->dump();
+  // func->dump();
+  errs() << "\n";
+}
+
 void PrecalculationAnalysis::visit_invoke_for_exception(
     const std::shared_ptr<TaintedValue> &call_info) {
   auto *ivoke = cast<InvokeInst>(call_info->v);
@@ -1359,19 +1370,20 @@ void PrecalculationAnalysis::visit_invoke_for_exception(
       continue;
     }
     if (func->isDeclaration()) {
-      ivoke->dump();
-      func->dump();
-      errs() << "Reason: " << call_info->getReason() << "\n";
-      errs() << "In: " << ivoke->getFunction()->getName() << "\n";
+      throwInvokeWarning(
+          "cannot analyze if external function may throw an exception", ivoke,
+          call_info, func);
+      continue;
     }
-    assert(not func->isDeclaration() &&
-           "cannot analyze if external function may throw an exception");
     for (auto &bb : *func) {
       if (auto *res = dyn_cast<ResumeInst>(bb.getTerminator())) {
-        assert(call_info->isIncludeInPrecompute());
         if (call_info->isIncludeInPrecompute()) {
           auto new_val = insert_tainted_value(res, CONTROL_FLOW);
           include_value_in_precompute(new_val);
+        } else {
+          throwInvokeWarning("call not known to precompute analysis", ivoke,
+                             call_info, func);
+          continue;
         }
       }
       for (auto &inst : bb)
@@ -1413,18 +1425,16 @@ void PrecalculationAnalysis::visit_call_for_retval(
     include_call_to_std(call_info);
   } else {
     for (auto *func : get_possible_call_targets(call)) {
-      if (func->isDeclaration() && not(func == mpi_func->mpi_wtime)) {
-        errs() << "\n";
-        call->dump();
-        func->dump();
+      if (func->isDeclaration() && func != mpi_func->mpi_wtime) {
+        errs() << "WARNING: cannot analyze if calling external function for "
+                  "return value has side effects\n";
         errs() << "In: " << call->getFunction()->getName() << " intrinsic?"
                << func->isIntrinsic() << "\n";
+        call->dump();
+        func->dump();
+        errs() << "\n";
+        continue;
       }
-      assert(func == mpi_func->mpi_wtime ||
-             not func->isDeclaration() &&
-                 "cannot analyze if calling external function for return value "
-                 "has "
-                 "side effects");
       for (auto &bb : *func) {
         if (auto *ret = dyn_cast<ReturnInst>(bb.getTerminator())) {
           insert_tainted_value(ret, call_info);
@@ -1620,11 +1630,12 @@ void PrecalculationAnalysis::visit_call_from_ptr(
                         call) == to_precompute_cfg.end()) {
             // else: user told us to keep that call as they want to precompute
             // it this means user need to handle this call
-            errs() << "Can not analyze usage of external function:\n";
+            errs() << "WARNING: Can not analyze usage of external function:\n";
             ptr->v->dump();
             call->dump();
             errs() << "In: " << call->getFunction()->getName() << "\n";
-            assert(false);
+            errs() << "\n";
+            continue;
           }
         } else {
           if (arg_num < func->getFunctionType()->getNumParams()) {
