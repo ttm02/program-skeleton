@@ -1,10 +1,14 @@
+# asm and LLVM IR (text)
+*.ll
+*.s
+
 # objis
 *.o
 *.bc
 # executables
 
 # cmake build dirs
-build/*
+build*/
 cmake-build-debug/*
 
 #executables
@@ -40,6 +44,7 @@ cache.csv
 .settings
 .idea
 .cache
+*.kate-swp
 
 # Nix result links
 result*
