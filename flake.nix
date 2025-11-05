@@ -17,50 +17,85 @@
     inherit (pkgs) lib;
 
     LLVM_VER = "21";
+    LLVM_PKGS = pkgs."llvmPackages_${LLVM_VER}";
 
     # symlink all `libclang_rt.*-x86_64.so` as libclang_rt.*.so
-    compiler-rt-orig = pkgs."llvmPackages_${LLVM_VER}".compiler-rt;
-    compiler-rt-lib = compiler-rt-orig + "/lib/linux";
-    compiler-rt-sym = pkgs.stdenv.mkDerivation {
-      name = "compiler-rt-symlink";
-      src = null;
-      phases = [ "installPhase" ];
-      installPhase = ''
-        mkdir -p $out/lib
+    compiler-rt = LLVM_PKGS.compiler-rt-libc;
+    clang-custom = LLVM_PKGS.clangNoCompilerRtWithLibc.overrideAttrs (final: prev: {
+      postFixup = ''
+        ${prev.postFixup or ""}
+
+        ln -s ${compiler-rt}/share $out/resource-root/share
+        mkdir -p $out/resource-root/lib/linux
+        mkdir -p $out/resource-root/lib/x86_64-unknown-linux-gnu
       '' + (lib.concatStringsSep "\n" (lib.lists.forEach (
-        lib.filesystem.listFilesRecursive compiler-rt-lib
+        lib.filesystem.listFilesRecursive "${compiler-rt}/lib/linux"
       ) (file:
         let
-          sl = lib.strings.removePrefix (compiler-rt-lib + "/") (
-            builtins.replaceStrings [ "-x86_64" ] [ "" ] file
-          );
+          bf = lib.strings.removePrefix ("${compiler-rt}/lib/linux/") file;
+          rs = builtins.replaceStrings [ "-x86_64" ] [ "" ] bf;
+          lib-path = "$out/resource-root/lib";
+          ln-file = (target: link: ''
+            ln -s ${target} ${lib-path}/linux/${link}
+            ln -s ${target} ${lib-path}/x86_64-unknown-linux-gnu/${link}
+          '');
         in
-        "ln -s ${file} $out/lib/${sl}"
+        (ln-file file bf) + (lib.optionals (bf != rs) (ln-file file rs))
       )));
-    };
-    crt-path = compiler-rt-sym + "/lib";
+    });
+
+    wrapper-alias = (binName: varName: pkgs.writeShellScriptBin binName ''
+      if [ -z "''$${varName}" ]; then
+        echo "environment variable \"${varName}\" not set!"
+        exit 1
+      fi
+      if ! [ -x "''$${varName}" ]; then
+        echo "The file \"''$${varName}\" is not executable!"
+        exit 1
+      fi
+      exec -a ${binName} "''$${varName}" $@
+    '');
   in
   {
     # nix develop
     devShells.x86_64-linux.default = pkgs.mkShell.override {
       # set the Clang/LLVM toolchain as default
-      stdenv = pkgs."llvmPackages_${LLVM_VER}".stdenv;
+      inherit (LLVM_PKGS) stdenv;
     } {
       packages = with pkgs; [
+        # own needs
+        zsh
         # cmake and compiler
         cmake
         ninja
-        pkgs."llvmPackages_${LLVM_VER}".libllvm
-        pkgs."llvmPackages_${LLVM_VER}".bintools
-        pkgs."clang_${LLVM_VER}"
-        pkgs."lld_${LLVM_VER}"
-        pkgs."lldb_${LLVM_VER}"
+        clang-custom
+        LLVM_PKGS.flang # lacks useable linker integration (and flang-rt)
+        LLVM_PKGS.bintools
+        LLVM_PKGS.libllvm
+        LLVM_PKGS.lld
         # project libraries
         boost
-        pkgs."llvmPackages_${LLVM_VER}".openmp
+        LLVM_PKGS.openmp
+        # project scripts
+        git
+        gnumake
+        gnupatch
+        python3
+        # aliases for wrappers
+        (wrapper-alias "clang_wrap_cc"  "CLANG_WRAP_CC")
+        (wrapper-alias "clang_wrap_cxx" "CLANG_WRAP_CXX")
+        (wrapper-alias "flang_wrap"     "CLANG_WRAP_FC")
       ];
+      # QoL change for testing
       shellHook = ''
-        export LD_LIBRARY_PATH=${crt-path}
+        GIT_REPO_ROOT=$(git rev-parse --show-toplevel)
+        THREAD_SAN_PATH="''${GIT_REPO_ROOT}/build/use-cases/thread-sanitizer"
+
+        # enable precompile pass in wrapper
+        ENV_SCRIPT="''${THREAD_SAN_PATH}/setup_env.sh"
+        if [ -f "$ENV_SCRIPT" ]; then
+          source "$ENV_SCRIPT"
+        fi
       '';
     };
   };
