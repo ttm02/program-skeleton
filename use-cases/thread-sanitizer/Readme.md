@@ -49,17 +49,33 @@ This equivilent to running
 ```bash
 ctest --test-dir build
 ```
-Optionally add `--timeout 3` to the arguments
+Optionally add `--timeout 5` to the arguments
 
 Rerun and check why tests failed:
 ```bash
-ctest --test-dir build --timeout 3 --rerun-failed --output-on-failure
+ctest --test-dir build --timeout 5 --rerun-failed --output-on-failure
 ```
 If reason "Timeout" remove the arguments. 
 
 Run single test:
 ```bash
-ctest --test-dir build -R "DRB027-taskdependmissing-orig-yes"
+ctest --test-dir build --output-on-failure -R "DRB027-taskdependmissing-orig-yes"
+```
+Run multiple tests with regex:
+```bash
+ctest --test-dir build --output-on-failure -R 'pthread*'
+```
+
+### Running individual test manually
+
+Setup environment variables:
+```bash
+source build/use-cases/thread-sanitizer/setup_env.sh
+```
+
+Compile example testcase:
+```bash
+build/use-cases/thread-sanitizer/clang_wrap_cc -O2 -g -fopenmp -fsanitize=thread -fuse-ld=lld -flto -fwhole-program-vtables -fno-inline -o ./a.out example.cpp
 ```
 
 ## Performance
