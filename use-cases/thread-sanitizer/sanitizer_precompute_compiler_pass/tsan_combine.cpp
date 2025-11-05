@@ -367,29 +367,7 @@ static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls,
     auto *bp = bp2call.getFirst();
     auto &calls = bp2call.getSecond();
 
-    if (ptr_values.size() == 1) {
-      // TODO does TSAN already do that itself?
-      // Are we removing too much here? additional DRB tests are not failing.
-      // take a look at DRB173 -> maybe only remove if in same BasicBlock
-
-      // replace:
-      //   call void @__tsan_readX(ptr nonnull %a)
-      //   call void @__tsan_writeX(ptr nonnull %a)
-      //   call void @__tsan_readX(ptr nonnull %a)
-      //   call void @__tsan_writeX(ptr nonnull %a)
-      // with:
-      //   call void @__tsan_writeX(ptr nonnull %a)
-
-      // keep only one (write) version of of identical TSAN calls
-      CallBase *keep_inst =
-          tsan_writes.empty() ? *call_list.begin() : *tsan_writes.begin();
-      for (auto call : call_list) {
-        if (call != keep_inst) {
-          remove_inst_from_func(call, bp, base_ptr_to_call, call_to_base_ptr);
-          removed_tsan_calls++;
-        }
-      }
-    } else if (auto *base_ptr = dyn_cast<GetElementPtrInst>(bp)) {
+    if (auto *base_ptr = dyn_cast<GetElementPtrInst>(bp)) {
       range_replace_struct(M, base_ptr, base_ptr_to_call, call_to_base_ptr,
                            &removed_tsan_calls, tsan_writes, tsan_reads,
                            ptr_values, bp, calls);
