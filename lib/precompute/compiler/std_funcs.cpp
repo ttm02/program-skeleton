@@ -101,6 +101,43 @@ llvm::Function *get_std_dummy_func(llvm::Module *M) {
   return std_dummy_func;
 }
 
+static std::set<std::string> func_list_exact = {
+    "llvm.va_start",
+    "llvm.va_end",
+    "__errno_location", // more like a stack ptr than a function call
+    "__cxa_throw",
+    // openmp lib funcs
+    "omp_get_max_threads",
+    "omp_get_thread_num",
+    // TODO why it is not in TLI info??
+    "rand",
+    "rand_r",
+    "srand",
+    // calling rand() in precompute is actually "safe",
+    // as one should usa a random seed anyway it doesn't matter if we call
+    // it in precompute
+    "getrusage",
+    "time",
+    "localtime",
+    "clock_gettime",
+    "strftime",
+    "isspace",
+    "isalpha",
+    "isalnum",
+    "isdigit"
+    // from gnu
+    "__getdelim",
+};
+static std::set<std::string> func_list_starts_with = {
+    // from ctype.h
+    "__ctype_"
+    // if std=c99 is supplied to the compiler
+    "__isoc99_",
+    "__isoc23_",
+    // flang
+    "_FortranAio",
+};
+
 bool is_func_from_std(llvm::Function *func) {
   assert(func);
   if (allowed_function_prefixes.empty()) {
@@ -135,17 +172,13 @@ bool is_func_from_std(llvm::Function *func) {
     }
   }
 
-  if (func->getName() == "llvm.va_start" || func->getName() == "llvm.va_end") {
-    return true;
+  for (auto funcName : func_list_exact) {
+    if (func->getName() == funcName)
+      return true;
   }
-
-  // more like a stack ptr than a function call
-  if (func->getName() == "__errno_location") {
-    return true;
-  }
-
-  if (func->getName() == "__cxa_throw") {
-    return true;
+  for (auto funcName : func_list_starts_with) {
+    if (func->getName().starts_with(funcName))
+      return true;
   }
 
   if (func->getName() == "__cxa_allocate_exception") {
@@ -158,46 +191,6 @@ bool is_func_from_std(llvm::Function *func) {
   }
   if (func->getName() == "__cxa_begin_catch") {
     // TODO is free
-    return true;
-  }
-
-  // openmp lib funcs
-  if (func->getName() == "omp_get_max_threads") {
-    return true;
-  }
-  if (func->getName() == "omp_get_thread_num") {
-    return true;
-  }
-
-  // TODO why it is not in TLI info??
-  if (func->getName() == "rand" || func->getName() == "rand_r" ||
-      func->getName() == "srand" ||
-      // calling rand in precompute is actually "safe",
-      // as one should usa a random seed anyway it doesn't matter if we call
-      // it in precompute
-      func->getName() == "getrusage" || func->getName() == "time" ||
-      func->getName() == "localtime" || func->getName() == "clock_gettime" ||
-      func->getName() == "strftime" || func->getName() == "isspace" ||
-      func->getName() == "isalpha" || func->getName() == "isalnum" ||
-      func->getName() == "isdigit" ||
-
-      // from gnu
-      func->getName() == "__getdelim") {
-
-    return true;
-  }
-  if (func->getName().starts_with("__ctype_")) {
-    // from ctype.h
-    return true;
-  }
-
-  // if std=c99 is supplied to the compiler
-  if (func->getName().starts_with("__isoc99_")) {
-    return true;
-  }
-
-  // flang
-  if (func->getName().starts_with("_FortranAio")) {
     return true;
   }
 
