@@ -9,6 +9,9 @@ LULESH_PATCH_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && 
 TEST_INVOCATION_PARAMETER="-s 10 -i 3"
 APP_NAME="LULESH"
 
+LULESH_CXX_FLAGS="-O2 -flto -fwhole-program-vtables -fuse-ld=lld"
+LULESH_CMAKE_PARAMETER="-DCMAKE_CXX_COMPILER=$CLANG_WRAP_CXX -DWITH_MPI=Off -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+
 # $1 : directory to download into
 download(){
   echo "download"
@@ -43,7 +46,7 @@ build_vanilla(){
   # clean up any previous build
   rm -rf * &&\
   export USE_COMPILER_PASS=false &&\
-  cmake -DCMAKE_CXX_COMPILER=$CLANG_WRAP_CXX -DWITH_MPI=Off -DCMAKE_CXX_FLAGS="-O2 -flto -fwhole-program-vtables -fuse-ld=lld" .. && \
+  cmake $LULESH_CMAKE_PARAMETER -DCMAKE_CXX_FLAGS="$LULESH_CXX_FLAGS" .. && \
   make &&\
   cp lulesh2.0 $2)
 }
@@ -59,7 +62,7 @@ build_tsan_normal(){
     # clean up any previous build
     rm -rf * &&\
     export USE_COMPILER_PASS=false &&\
-    cmake -DCMAKE_CXX_COMPILER=$CLANG_WRAP_CXX -DWITH_MPI=Off -DCMAKE_CXX_FLAGS="-O2 -fsanitize=thread -flto -fwhole-program-vtables -fuse-ld=lld" .. && \
+    cmake $LULESH_CMAKE_PARAMETER -DCMAKE_CXX_FLAGS="$LULESH_CXX_FLAGS -fsanitize=thread" .. && \
     make &&\
     cp lulesh2.0 $2)
 }
@@ -75,7 +78,7 @@ build_tsan_modified(){
     cd build_modified &&\
     rm -rf * &&\
     export USE_COMPILER_PASS=false &&\
-    cmake -DCMAKE_CXX_COMPILER=$CLANG_WRAP_CXX -DWITH_MPI=Off -DCMAKE_CXX_FLAGS="-O2 -fsanitize=thread -flto -fwhole-program-vtables -fuse-ld=lld" .. && \
+    cmake $LULESH_CMAKE_PARAMETER -DCMAKE_CXX_FLAGS="$LULESH_CXX_FLAGS -fsanitize=thread" .. && \
     #endable our pass
     export USE_COMPILER_PASS=true &&\
     make &&\
