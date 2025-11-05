@@ -10,6 +10,7 @@
 #include "precompute/compiler/std_funcs.h"
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -140,8 +141,8 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
   auto *main_func = M.getFunction("main");
   assert(main_func);
 
-  std::vector<Value *> to_precompute;
-  std::vector<Instruction *> precompute_locations;
+  DenseSet<Value *> to_precompute;
+  DenseSet<Instruction *> precompute_locations;
 
   for (Function &f : M) {
     if (not f.getName().starts_with("tsan.module_ctor")) {
@@ -177,8 +178,8 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
               }
 
               for (auto &it_arg : call->args())
-                to_precompute.push_back(it_arg);
-              precompute_locations.push_back(call);
+                to_precompute.insert(it_arg);
+              precompute_locations.insert(call);
             }
           }
         }

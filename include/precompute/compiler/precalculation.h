@@ -40,8 +40,8 @@ class PrecalculationAnalysis
     : private std::enable_shared_from_this<PrecalculationAnalysis> {
 public:
   PrecalculationAnalysis(llvm::Module &M, llvm::Function *entry_point,
-                         std::vector<llvm::Value *> to_precompute_value,
-                         std::vector<llvm::Instruction *> to_precompute_cfg)
+                         llvm::DenseSet<llvm::Value *> to_precompute_value,
+                         llvm::DenseSet<llvm::Instruction *> to_precompute_cfg)
       : mpi_func(get_mpi_functions(M)), M(M), entry_point(entry_point),
         to_precompute_value(std::move(to_precompute_value)),
         to_precompute_cfg(std::move(to_precompute_cfg)) {
@@ -112,10 +112,10 @@ public:
 
   llvm::Function *get_entry_point() const { return entry_point; }
 
-  std::vector<llvm::Value *> get_values_to_precompute() const {
+  llvm::DenseSet<llvm::Value *> get_values_to_precompute() const {
     return to_precompute_value;
   }
-  std::vector<llvm::Instruction *> get_locations_to_precompute() const {
+  llvm::DenseSet<llvm::Instruction *> get_locations_to_precompute() const {
     return to_precompute_cfg;
   }
 
@@ -134,8 +134,8 @@ private:
   llvm::Module &M;
   llvm::Function *entry_point;
 
-  std::vector<llvm::Value *> to_precompute_value;
-  std::vector<llvm::Instruction *> to_precompute_cfg;
+  llvm::DenseSet<llvm::Value *> to_precompute_value;
+  llvm::DenseSet<llvm::Instruction *> to_precompute_cfg;
 
   std::set<std::shared_ptr<TaintedValue>> tainted_values;
 

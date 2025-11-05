@@ -19,8 +19,6 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 
-#include <map>
-
 class DevirtAnalysis {
 protected:
   DevirtAnalysis(llvm::Module &M);
@@ -46,7 +44,7 @@ public:
   void operator=(const DevirtAnalysis &) = delete;
 
 private:
-  std::map<llvm::CallBase *, std::vector<llvm::Function *>> result_map;
+  llvm::DenseMap<llvm::CallBase *, std::vector<llvm::Function *>> result_map;
 };
 
 #endif // INCLUDE_GUARD_DEVIRT_ANALYSIS_H

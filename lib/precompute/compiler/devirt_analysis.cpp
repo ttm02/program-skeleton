@@ -390,7 +390,7 @@ struct DevirtModule {
   // decrement the value stored in this map. If a value reaches zero, we can
   // eliminate the type check by RAUWing the associated llvm.type.test call with
   // true.
-  std::map<CallInst *, unsigned> NumUnsafeUsesForTypeTest;
+  llvm::DenseMap<CallInst *, unsigned> NumUnsafeUsesForTypeTest;
 
   DevirtModule(
       Module &M,
@@ -430,7 +430,7 @@ struct DevirtModule {
   // Apply the summary resolution for Slot to all virtual calls in SlotInfo.
   void importResolution(VTableSlot Slot, VTableSlotInfo &SlotInfo);
 
-  std::map<llvm::CallBase *, std::vector<llvm::Function *>> run();
+  llvm::DenseMap<llvm::CallBase *, std::vector<llvm::Function *>> run();
 
   // Look up the corresponding ValueInfo entry of `TheFn` in `ExportSummary`.
   //
@@ -570,9 +570,9 @@ return false;
   return !TargetsForSlot.empty();
 }
 
-std::map<llvm::CallBase *, std::vector<llvm::Function *>> DevirtModule::run() {
-
-  std::map<llvm::CallBase *, std::vector<llvm::Function *>> result;
+llvm::DenseMap<llvm::CallBase *, std::vector<llvm::Function *>>
+DevirtModule::run() {
+  llvm::DenseMap<llvm::CallBase *, std::vector<llvm::Function *>> result;
 
   Function *TypeTestFunc =
       M.getFunction(Intrinsic::getName(Intrinsic::type_test));
