@@ -11,7 +11,6 @@
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
@@ -36,23 +35,22 @@ RequiredAnalysisResults *analysis_results;
 
 // removes attribute noinline from every func
 // we previously set it to make analysis easier
-void remove_noinline_from_module(llvm::Module &M) {
+static void remove_noinline_from_module(Module &M) {
   for (auto &F : M) {
-    if (F.hasFnAttribute(llvm::Attribute::NoInline) and
-        not F.hasFnAttribute(llvm::Attribute::OptimizeNone)) {
-      F.removeFnAttr(llvm::Attribute::NoInline);
+    if (F.hasFnAttribute(Attribute::NoInline) and
+        not F.hasFnAttribute(Attribute::OptimizeNone)) {
+      F.removeFnAttr(Attribute::NoInline);
     }
   }
 }
 
-void run_optimization_passes(llvm::Module &M, ModuleAnalysisManager &AM) {
-
+static void run_optimization_passes(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Run inliner Pass\n";
-  auto inliner = llvm::ModuleInlinerPass();
+  auto inliner = ModuleInlinerPass();
   inliner.run(M, AM);
 
   errs() << "Run Global DCE Pass\n";
-  auto dce = llvm::GlobalDCEPass();
+  auto dce = GlobalDCEPass();
   dce.run(M, AM);
 
 #ifndef NDEBUG
@@ -62,7 +60,7 @@ void run_optimization_passes(llvm::Module &M, ModuleAnalysisManager &AM) {
   // M.dump();
 }
 
-bool is_tsan_cleanup_block(llvm::BasicBlock *block) {
+static bool is_tsan_cleanup_block(BasicBlock *block) {
   auto it = block->begin();
   if (it == block->end() || not isa<LandingPadInst>(it)) {
     return false;
@@ -83,10 +81,10 @@ bool is_tsan_cleanup_block(llvm::BasicBlock *block) {
 }
 
 // find compiler used in metadata
-bool is_compiled_with_flang(const Module &M) {
+static bool is_compiled_with_flang(const Module &M) {
   if (auto *NMD = M.getNamedMetadata("llvm.ident")) {
     for (auto *Op : NMD->operands()) {
-      if (auto *MDStr = llvm::dyn_cast<llvm::MDString>(Op->getOperand(0))) {
+      if (auto *MDStr = dyn_cast<MDString>(Op->getOperand(0))) {
         return MDStr->getString().starts_with("flang");
       }
     }
