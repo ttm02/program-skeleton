@@ -13,10 +13,11 @@ Licensed under the Apache License, Version 2.0 (the "License");
  See the License for the specific language governing permissions and
  limitations under the License.
 */
-#include "VtableManager.h"
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/GlobalValue.h>
+#include "precompute/compiler/VtableManager.h"
+
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalValue.h"
 
 using namespace llvm;
 

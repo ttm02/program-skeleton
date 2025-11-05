@@ -1,46 +1,34 @@
 
-#include "Precompute_insertion.h"
+#include "LoopOptimize.h"
+
+#include "precompute/compiler/Precompute_insertion.h"
+#include "precompute/compiler/analysis_results.h"
+#include "precompute/compiler/debug.h"
+#include "precompute/compiler/openmp_runtime_functions.h"
+#include "precompute/compiler/precalculation.h"
+#include "precompute/compiler/precompute_backend_funcs.h"
+#include "precompute/compiler/std_funcs.h"
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/InstrTypes.h"
-#include "llvm/IR/LegacyPassManager.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Pass.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
-
-#include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
-
-#include "llvm/IR/Verifier.h"
-
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
-
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/Pass.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
-
-#include "LoopOptimize.h"
-#include "precalculation.h"
-
-#include <cassert>
-#include <vector>
-
-#include "analysis_results.h"
-#include "debug.h"
-#include "openmp_runtime_functions.h"
-#include "precompute_backend_funcs.h"
-#include "std_funcs.h"
-
-#include "llvm/Transforms/IPO/ModuleInliner.h"
-
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO/GlobalDCE.h"
-
-#include <llvm/IR/IRBuilder.h>
-#include <precalculation.h>
+#include "llvm/Transforms/IPO/ModuleInliner.h"
+#include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
 

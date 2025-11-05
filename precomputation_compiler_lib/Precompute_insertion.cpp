@@ -13,19 +13,21 @@ Licensed under the Apache License, Version 2.0 (the "License");
  See the License for the specific language governing permissions and
  limitations under the License.
 */
-#include "Precompute_insertion.h"
+
 #include "CompilerPassConstants.h"
-#include "VtableManager.h"
-#include "debug.h"
-#include "openmp_runtime_functions.h"
-#include "precalculation.h"
-#include "precompute_backend_funcs.h"
-#include "std_funcs.h"
+
+#include "precompute/compiler/Precompute_insertion.h"
+#include "precompute/compiler/VtableManager.h"
+#include "precompute/compiler/debug.h"
+#include "precompute/compiler/openmp_runtime_functions.h"
+#include "precompute/compiler/precalculation.h"
+#include "precompute/compiler/precompute_backend_funcs.h"
+#include "precompute/compiler/std_funcs.h"
 
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
-#include <llvm/Transforms/Utils/BasicBlockUtils.h>
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
 

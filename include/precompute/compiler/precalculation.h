@@ -16,8 +16,6 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #ifndef MACH_PRECALCULATIONS_IMPL_H_
 #define MACH_PRECALCULATIONS_IMPL_H_
 
-#include "Precompute_insertion.h"
-
 #include <numeric>
 #include <regex>
 #include <utility>
@@ -29,11 +27,12 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #include "llvm/Support/Casting.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
-#include "VtableManager.h"
-#include "analysis_results.h"
-#include "devirt_analysis.h"
-#include "mpi_functions.h"
-#include "precalculation_function_analysis.h"
+#include "precompute/compiler/Precompute_insertion.h"
+#include "precompute/compiler/VtableManager.h"
+#include "precompute/compiler/analysis_results.h"
+#include "precompute/compiler/devirt_analysis.h"
+#include "precompute/compiler/mpi_functions.h"
+#include "precompute/compiler/precalculation_function_analysis.h"
 
 class PrecomputeInsertion; // such that include order doesn't matter
 

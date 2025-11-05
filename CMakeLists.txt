@@ -25,6 +25,8 @@ if (UNIX AND
 endif()
 
 include_directories(${LLVM_INCLUDE_DIRS})
+include_directories(${PROJECT_SOURCE_DIR}/include)
+
 link_directories(${LLVM_LIBRARY_DIRS})
 
 add_subdirectory(precomputation_compiler_lib)

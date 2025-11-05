@@ -1,9 +1,7 @@
-
-#include "std_funcs.h"
-#include "openmp_runtime_functions.h"
-
-#include "analysis_results.h"
-#include "precalculation_function_analysis.h"
+#include "precompute/compiler/std_funcs.h"
+#include "precompute/compiler/analysis_results.h"
+#include "precompute/compiler/openmp_runtime_functions.h"
+#include "precompute/compiler/precalculation_function_analysis.h"
 
 #include <llvm/Analysis/TargetLibraryInfo.h>
 #include <llvm/Demangle/Demangle.h>

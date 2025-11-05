@@ -13,8 +13,10 @@ Licensed under the Apache License, Version 2.0 (the "License");
  See the License for the specific language governing permissions and
  limitations under the License.
 */
-#include "devirt_analysis.h"
-#include "analysis_results.h"
+#include "precompute/compiler/devirt_analysis.h"
+#include "precompute/compiler/analysis_results.h"
+#include "precompute/compiler/std_funcs.h"
+
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseMapInfo.h"
@@ -62,13 +64,12 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/CallPromotionUtils.h"
 #include "llvm/Transforms/Utils/Evaluator.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <map>
 #include <set>
 #include <string>
-
-#include "std_funcs.h"
 
 // most code from llvms' WholeProgramDevirtPass
 

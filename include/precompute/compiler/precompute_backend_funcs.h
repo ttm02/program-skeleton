@@ -17,9 +17,10 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #define MACH_PRECOMPUTE_FUNCS_H_
 
 #include "llvm/IR/Constant.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Module.h"
+
 #include <cassert>
-#include <llvm/IR/InstrTypes.h>
 
 // holds the llvm::Function* for the functions from the precompute library
 class PrecomputeFunctions {

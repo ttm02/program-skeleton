@@ -13,16 +13,11 @@ Licensed under the Apache License, Version 2.0 (the "License");
  See the License for the specific language governing permissions and
  limitations under the License.
 */
-#include "ptr_info.h"
-#include "precalculation.h"
-#include "taintedValue.h"
+
+#include "precompute/compiler/precalculation.h"
+#include "precompute/compiler/taintedValue.h"
+
 #include <cassert>
-
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/InstIterator.h"
-
-#include <iostream>
 
 using namespace llvm;
 

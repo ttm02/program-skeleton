@@ -1,13 +1,13 @@
-
 #ifndef PRECALCULATION_FUNCTION_ANALYSIS_H
 #define PRECALCULATION_FUNCTION_ANALYSIS_H
 
-#include "Openmp_region.h"
-#include "mpi_functions.h"
-#include "ptr_info.h"
-#include <llvm/IR/Intrinsics.h>
-
 #include <memory>
+
+#include "precompute/compiler/Openmp_region.h"
+#include "precompute/compiler/mpi_functions.h"
+#include "precompute/compiler/ptr_info.h"
+
+#include "llvm/IR/Intrinsics.h"
 
 class PrecalculationFunctionCopy;
 class PrecalculationAnalysis;

@@ -13,11 +13,12 @@ Licensed under the Apache License, Version 2.0 (the "License");
  See the License for the specific language governing permissions and
  limitations under the License.
 */
-#include "mpi_functions.h"
-#include <assert.h>
+#include "precompute/compiler/mpi_functions.h"
+
+#include "assert.h"
 
 #include "llvm/IR/InstrTypes.h"
-#include <llvm/Support/raw_ostream.h>
+#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
 

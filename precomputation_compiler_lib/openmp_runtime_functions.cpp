@@ -1,4 +1,5 @@
-#include "openmp_runtime_functions.h"
+#include "precompute/compiler/openmp_runtime_functions.h"
+
 #include <assert.h>
 
 #include "llvm/IR/InstrTypes.h"

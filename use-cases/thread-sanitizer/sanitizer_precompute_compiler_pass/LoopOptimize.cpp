@@ -4,16 +4,16 @@
 
 #include "LoopOptimize.h"
 
-#include "analysis_results.h"
-#include "openmp_runtime_functions.h"
-#include "std_funcs.h"
+#include "precompute/compiler/analysis_results.h"
+#include "precompute/compiler/openmp_runtime_functions.h"
+#include "precompute/compiler/std_funcs.h"
 
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
-#include <cassert>
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/Instruction.h>
-#include <llvm/Support/raw_ostream.h>
-#include <llvm/Transforms/Utils/BasicBlockUtils.h>
 
 using namespace llvm;
 

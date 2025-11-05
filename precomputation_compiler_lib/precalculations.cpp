@@ -15,12 +15,14 @@ Licensed under the Apache License, Version 2.0 (the "License");
 */
 #include <regex>
 
-#include "Precompute_insertion.h"
-#include "devirt_analysis.h"
-#include "mpi_functions.h"
-#include "precalculation.h"
-#include "precalculation_function_analysis.h"
-#include "std_funcs.h"
+#include "precompute/compiler/Precompute_insertion.h"
+#include "precompute/compiler/debug.h"
+#include "precompute/compiler/devirt_analysis.h"
+#include "precompute/compiler/mpi_functions.h"
+#include "precompute/compiler/openmp_runtime_functions.h"
+#include "precompute/compiler/precalculation.h"
+#include "precompute/compiler/precalculation_function_analysis.h"
+#include "precompute/compiler/std_funcs.h"
 
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Demangle/Demangle.h"
@@ -29,9 +31,6 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/Casting.h"
-
-#include "debug.h"
-#include "openmp_runtime_functions.h"
 
 // for more scrutiny under testing:
 // the order of visiting the values should make no difference

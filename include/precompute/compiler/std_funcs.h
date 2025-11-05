@@ -1,11 +1,12 @@
 #ifndef STD_FUNCS_H
 #define STD_FUNCS_H
 
-#include "devirt_analysis.h"
-#include "llvm/IR/Function.h"
+#include "precompute/compiler/devirt_analysis.h"
 
-#include <llvm/Demangle/Demangle.h>
-#include <llvm/IR/InstrTypes.h>
+#include "llvm/Demangle/Demangle.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/InstrTypes.h"
+
 #include <regex>
 
 // call before creating a PrecomputeAnalysis object if this is needed

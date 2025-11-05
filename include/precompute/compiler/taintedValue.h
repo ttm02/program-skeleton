@@ -13,18 +13,20 @@ Licensed under the Apache License, Version 2.0 (the "License");
  See the License for the specific language governing permissions and
  limitations under the License.
 */
+#ifndef MACH_TAINTED_VALUE_H
+#define MACH_TAINTED_VALUE_H
+
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Casting.h"
+
 #ifndef NDEBUG
 #include <boost/stacktrace/stacktrace.hpp>
 #endif
+
 #include <memory>
 #include <set>
-
-#ifndef MACH_TAINTED_VALUE_H
-#define MACH_TAINTED_VALUE_H
 
 // defined in ptr_info.h
 class PtrUsageInfo;

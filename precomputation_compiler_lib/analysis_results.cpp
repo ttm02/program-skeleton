@@ -18,7 +18,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #include "llvm/IR/Dominators.h"
 #include "llvm/Pass.h"
 
-#include "analysis_results.h"
+#include "precompute/compiler/analysis_results.h"
 
 using namespace llvm;
 

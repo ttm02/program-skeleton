@@ -18,6 +18,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+
 #include <map>
 
 class DevirtAnalysis {

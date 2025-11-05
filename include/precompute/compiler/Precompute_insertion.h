@@ -17,8 +17,11 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #define MPI_ASSERTION_CHECKING_PRECOMPUTE_INSERTION_H
 
 #include "precalculation.h"
-#include "precalculation_function_analysis.h"
+
+#include "precompute/compiler/precalculation_function_analysis.h"
+
 #include "llvm/Transforms/Utils/Cloning.h"
+
 #include <map>
 
 class PrecalculationAnalysis; // such that include order doesn't matter

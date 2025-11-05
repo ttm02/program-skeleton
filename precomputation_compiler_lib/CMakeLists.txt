@@ -1,32 +1,16 @@
 add_library(precomputation_compiler_lib SHARED
-        # List your source files here.
-        debug.h
         debug.cpp
-        analysis_results.h
         analysis_results.cpp
-        precalculation.h
         precalculations.cpp
-        devirt_analysis.h
         devirt_analysis.cpp
-        taintedValue.h
-        ptr_info.h
         ptr_info.cpp
-        CompilerPassConstants.h
         precompute_backend_funcs.cpp
-        precompute_backend_funcs.h
         Precompute_insertion.cpp
-        Precompute_insertion.h
         VtableManager.cpp
-        VtableManager.h
-        mpi_functions.h
         mpi_functions.cpp
         precalculation_function_analysis.cpp
-        precalculation_function_analysis.h
         std_funcs.cpp
-        std_funcs.h
-        openmp_runtime_functions.h
         openmp_runtime_functions.cpp
-        Openmp_region.h
         Openmp_region.cpp
 )
 

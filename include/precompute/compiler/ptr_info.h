@@ -16,16 +16,16 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #ifndef MACH_PTR_INFO_H_
 #define MACH_PTR_INFO_H_
 
-#include "taintedValue.h"
+#include "precompute/compiler/taintedValue.h"
+
 #include <limits>
-#include <llvm/IR/Instructions.h>
 #include <map>
 #include <memory>
 #include <set>
 #include <utility>
 
-
 #include "llvm/IR/Module.h"
+#include <llvm/IR/Instructions.h>
 
 #define WILDCARD_IDX std::numeric_limits<unsigned int>::max()
 

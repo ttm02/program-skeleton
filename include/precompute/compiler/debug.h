@@ -16,11 +16,12 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #ifndef MACH_DEBUG_H
 #define MACH_DEBUG_H
 
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Casting.h"
+
 #include <boost/stacktrace.hpp>
-#include <llvm/IR/Constants.h>
 
 #if DEBUG_MACH_PASS == 1
 #define Debug(x) x
