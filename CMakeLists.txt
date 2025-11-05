@@ -9,10 +9,21 @@ if (NOT CMAKE_BUILD_TYPE)
 endif (NOT CMAKE_BUILD_TYPE)
 message("Build Type: ${CMAKE_BUILD_TYPE}")
 
-
 find_package(LLVM 21.1 REQUIRED CONFIG)
 
 add_definitions(${LLVM_DEFINITIONS})
+
+# stolen from CIRCT lib/cmake/llvm/HandleLLVMOptions.cmake
+# clang and gcc don't default-print colored diagnostics when invoked from Ninja.
+if (UNIX AND
+    CMAKE_GENERATOR MATCHES "Ninja" AND
+    (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR
+     (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+      NOT (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.9))))
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color")
+endif()
+
 include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS})
 
