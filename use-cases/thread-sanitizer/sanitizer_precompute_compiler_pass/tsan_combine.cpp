@@ -27,7 +27,7 @@ static inline void collect_base_ptr_to_tsan_call(
 
   // value is uncertain -> do not map these DFG values to TSAN call
   if (isa<PHINode>(inst) || isa<CallBase>(inst) || isa<LoadInst>(inst) ||
-      isa<SelectInst>(inst) || isa<AllocaInst>(inst))
+      isa<SelectInst>(inst) || isa<AllocaInst>(inst) || isa<FreezeInst>(inst))
     return;
 
   if (not(isa<GetElementPtrInst>(inst) || isa<IntToPtrInst>(inst) ||
@@ -76,10 +76,9 @@ static inline StructType *getGEPstructTy(const GetElementPtrInst *gep) {
   }
   // getelementptr inbounds %struct.s, ptr %a, i64 %b
   // %struct.s
-  if (auto *STy = dyn_cast<StructType>(elemTy)) {
-    assert(elemTy != gep->getSourceElementType() || gep->getNumIndices() == 1);
-    return STy;
-  }
+  if (auto *STy = dyn_cast<StructType>(elemTy))
+    if (elemTy != gep->getSourceElementType() || gep->getNumIndices() == 1)
+      return STy;
   return nullptr;
 }
 
@@ -143,6 +142,11 @@ static void range_replace_struct(
   if (!STy)
     return;
 
+  assert(not STy->elements().empty());
+  auto elemTy = STy->elements().consume_front();
+  if (not isa<IntegerType>(elemTy))
+    return;
+
   // TODO allow partial ranges of only read or only write
   // Both might create false positives/negatives because only one member of
   // the struct is written to.
@@ -166,6 +170,7 @@ static void range_replace_struct(
 
   if (offset_ptrs.size() < 2)
     return;
+  assert(not offset_ptrs.empty());
 
   // TODO are they always sorted -> unnecessary?
   auto byOffset = [&](const GetElementPtrInst *LHS,
@@ -180,10 +185,7 @@ static void range_replace_struct(
   sort(offset_ptrs, byOffset);
 
   unsigned byte_offset = 0;
-  assert(not STy->elements().empty());
-  auto elemTy = STy->elements().consume_front();
   byte_offset += bits2bytes(elemTy->getIntegerBitWidth());
-  assert(not offset_ptrs.empty());
   for (auto *offPtr : offset_ptrs) {
     elemTy = STy->elements().consume_front();
     auto idx0 = cast<ConstantInt>(offPtr->indices().begin()->get());
@@ -419,10 +421,12 @@ std::string reduce_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
             // TODO
             // DRB074 has `@__tsan_atomic32_fetch_add(ptr %3, i32 %18, i32 0)`
           } else if (func_name == "__tsan_memset" ||
-                     func_name == "__tsan_memcpy") {
+                     func_name == "__tsan_memcpy" ||
+                     func_name == "__tsan_memmove") {
             // TODO
             // DRB058 has `call ptr @__tsan_memset(ptr %20, i32 0, i64 %14)`
             // DRB058 has `call ptr @__tsan_memcpy(ptr %39, ptr %38, i64 %32)`
+            // TEALEAF has `call ptr @__tsan_memmove(ptr %1, ptr %8, i64 %10)`
           } else if (func_name.starts_with("__tsan_vptr")) {
             // TODO
             // HPCCG has `call void @__tsan_vptr_update(ptr nonnull %3,
