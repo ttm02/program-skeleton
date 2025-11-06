@@ -46,10 +46,7 @@ static inline void remove_inst_from_func(
     CallBase *call, const Instruction *base_ptr,
     DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
     DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr) {
-  if (!call->use_empty())
-    call->replaceAllUsesWith(UndefValue::get(call->getType()));
-  call->eraseFromParent();
-
+  remove_inst_from_func(call);
   // remove from all other lists to avoid segmentation fault
   for (auto bp : call_to_base_ptr[call])
     if (bp != base_ptr)

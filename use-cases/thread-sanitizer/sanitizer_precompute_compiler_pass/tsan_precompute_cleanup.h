@@ -38,4 +38,10 @@ inline llvm::ConstantInt *get_size_of_tsan_access(llvm::CallBase *tsan_call) {
   return llvm::ConstantInt::get(type, num);
 }
 
+inline void remove_inst_from_func(llvm::Instruction *inst) {
+  if (not inst->use_empty())
+    inst->replaceAllUsesWith(llvm::UndefValue::get(inst->getType()));
+  inst->eraseFromParent();
+}
+
 #endif // TSAN_PRECOMPUTE_CLEANUP_H
