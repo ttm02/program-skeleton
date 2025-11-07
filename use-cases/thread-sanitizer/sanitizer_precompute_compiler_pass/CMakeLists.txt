@@ -1,5 +1,6 @@
 add_library(sanitizer_precompute_pass MODULE
         # List your source files here.
+        aggressive_single_thread_removal.cpp
         critical_region_cleanup.cpp
         LoopOptimize.cpp
         sanitizer_precompute_pass.cpp
