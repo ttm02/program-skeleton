@@ -42,8 +42,10 @@ static unsigned remove_tsan_calls_in_func(
 
     // if all variable accesses are inside the same critical region name
     if (regions.size() == 1) {
-      for (auto call : var2callMap[var])
+      for (auto call : var2callMap[var]) {
         remove_inst_from_func(call);
+        removed_tsan_calls++;
+      }
     }
   }
 
