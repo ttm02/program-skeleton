@@ -18,6 +18,8 @@
 #include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
+#include <cassert>
+
 using namespace llvm;
 
 static DenseSet<Function *> parallel_functions;
@@ -53,36 +55,42 @@ static bool check_module(Module &M) {
   return true;
 }
 
-static void collectAllParallelFunctions(Function *func) {
-  // ignore tsan itself
-  if (func->getName().starts_with("tsan"))
-    return;
+static void collectAllParallelFunctions(Function *func, bool parallel = false) {
 
   if (parallel_functions.contains(func))
     return;
-
-  // TODO
-  parallel_functions.insert(func);
-  return;
+  if (parallel)
+    parallel_functions.insert(func);
 
   for (auto &bb : *func) {
     for (auto &inst : bb) {
-      if (auto call = dyn_cast<CallBase>(&inst)) {
+      if (auto *call = dyn_cast<CallBase>(&inst)) {
         // TODO function pointer? indirect calls?
         auto *called_func = call->getCalledFunction();
-        assert(called_func);
-        parallel_functions.insert(called_func);
-        collectAllParallelFunctions(called_func);
+        assert(called_func); // TODO
+        if (is_thread_function(called_func)) {
+          if (is_omp_function(called_func)) {
+            for (Use &a : call->args())
+              if (auto omp_target_func = dyn_cast<Function>(a.get()))
+                collectAllParallelFunctions(omp_target_func, true);
+          } else {
+            llvm_unreachable("did someone change check_module()?");
+          }
+        }
       }
     }
   }
 }
 
-static void collect_and_cleanup(Module &M) {
-  assert(not parallel_functions.empty());
+static void collect_and_cleanup(Module &M, unsigned *removed_tsan_calls) {
+  // assert(not parallel_functions.empty());
   for (Function &Func : M) {
     // ignore tsan itself
     if (Func.getName().starts_with("tsan"))
+      continue;
+
+    // remove TSAN calls only in single-threaded functions
+    if (parallel_functions.contains(&Func))
       continue;
 
     DenseSet<Instruction *> to_be_erased;
@@ -90,13 +98,17 @@ static void collect_and_cleanup(Module &M) {
       for (Instruction &Inst : BB) {
         if (auto call = dyn_cast<CallBase>(&Inst)) {
           auto *called_func = call->getCalledFunction();
-          if (not parallel_functions.contains(called_func))
+          // remove all TSAN calls in single-threaded functions
+          auto func_name = called_func->getName();
+          if (func_name.starts_with("__tsan"))
             to_be_erased.insert(call);
         }
       }
     }
-    for (auto *Inst : to_be_erased)
+    for (auto *Inst : to_be_erased) {
+      (*removed_tsan_calls)++;
       remove_inst_from_func(Inst);
+    }
   }
 }
 
@@ -105,11 +117,16 @@ std::string remove_all_single_thread_regions(Module &M,
   if (not check_module(M))
     return "";
 
-  for (auto &func : M)
+  for (auto &func : M) {
+    // ignore tsan itself
+    if (func.getName().starts_with("tsan"))
+      continue;
     collectAllParallelFunctions(&func);
+  }
   auto func_main = M.getFunction("main");
 
-  collect_and_cleanup(M);
+  unsigned removed_tsan_calls = 0;
+  collect_and_cleanup(M, &removed_tsan_calls);
 
-  return "Aggressive removal finished";
+  return "Aggressive removal: " + std::to_string(removed_tsan_calls);
 }
