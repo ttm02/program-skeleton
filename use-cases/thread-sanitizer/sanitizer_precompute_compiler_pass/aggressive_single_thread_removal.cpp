@@ -68,7 +68,13 @@ static void collectAllParallelFunctions(Function *func, bool parallel = false) {
         auto *called_func = call->getCalledFunction();
         if (parallel) {
           if (called_func) {
-            collectAllParallelFunctions(called_func, parallel);
+            if (is_thread_function(called_func)) {
+              for (Use &a : call->args())
+                if (auto target_func = dyn_cast<Function>(a.get()))
+                  collectAllParallelFunctions(target_func, parallel);
+            } else {
+              collectAllParallelFunctions(called_func, parallel);
+            }
           } else {
             // TODO function pointer? indirect calls?
             for (auto *ct : DevirtAnalysis::get_possible_call_targets(call)) {
