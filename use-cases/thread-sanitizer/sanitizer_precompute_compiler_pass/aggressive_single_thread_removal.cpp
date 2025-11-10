@@ -65,10 +65,23 @@ static void collectAllParallelFunctions(Function *func, bool parallel = false) {
   for (auto &bb : *func) {
     for (auto &inst : bb) {
       if (auto *call = dyn_cast<CallBase>(&inst)) {
-        // TODO function pointer? indirect calls?
         auto *called_func = call->getCalledFunction();
-        assert(called_func); // TODO
-        if (is_thread_function(called_func)) {
+        if (parallel) {
+          if (called_func) {
+            collectAllParallelFunctions(called_func, parallel);
+          } else {
+            // TODO function pointer? indirect calls?
+            for (auto *ct : DevirtAnalysis::get_possible_call_targets(call)) {
+              assert(ct);
+              collectAllParallelFunctions(ct, parallel);
+            }
+          }
+        } else {
+          if (not called_func)
+            continue;
+          if (not is_thread_function(called_func))
+            continue;
+
           if (is_omp_function(called_func)) {
             for (Use &a : call->args())
               if (auto omp_target_func = dyn_cast<Function>(a.get()))
@@ -100,7 +113,8 @@ static void collect_and_cleanup(Module &M, unsigned *removed_tsan_calls) {
           auto *called_func = call->getCalledFunction();
           // remove all TSAN calls in single-threaded functions
           auto func_name = called_func->getName();
-          if (func_name.starts_with("__tsan"))
+          if (func_name.starts_with("__tsan_read") ||
+              func_name.starts_with("__tsan_write"))
             to_be_erased.insert(call);
         }
       }
