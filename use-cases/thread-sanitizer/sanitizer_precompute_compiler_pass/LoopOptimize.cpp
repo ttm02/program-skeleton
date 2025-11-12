@@ -88,22 +88,22 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
 
   auto SE = analysis_results->getSE(*loop->getHeader()->getParent());
 
+  bool full_replacement_possible = true;
+
   // loop bounds have to be known
   auto trip_count = SE->getSymbolicMaxBackedgeTakenCount(loop);
   if (isa<SCEVCouldNotCompute>(trip_count))
-    return false;
+    full_replacement_possible = false;
 
   BasicBlock *incoming;
   BasicBlock *backedge;
   if (not loop->getIncomingAndBackEdge(incoming, backedge))
-    return false;
+    full_replacement_possible = false;
 
   assert(incoming);
   BasicBlock *outgoing = loop->getExitBlock();
-  if (!outgoing) {
-    // TODO implement
-    return false;
-  }
+  if (!outgoing)
+    full_replacement_possible = false;
 
   BasicBlock *new_bb =
       BasicBlock::Create(loop->getHeader()->getContext(), "loop_replacement",
@@ -116,10 +116,8 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
 
   // check if other values, such as the loop index are used after the loop
   // and compute them if possible
-  if (not compute_other_loop_values(M, SE, loop, dummy_inst)) {
-    clean_temp_bb(new_bb);
-    return false;
-  }
+  if (not compute_other_loop_values(M, SE, loop, dummy_inst))
+    full_replacement_possible = false;
 
   for (auto *call : tsan_in_loop) {
     if (call->getNumOperands() != 2)
@@ -148,8 +146,8 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
       auto *addRec = dyn_cast<SCEVAddRecExpr>(scev);
       if (!addRec) {
         // Could not compute start and end values of ptr
-        clean_temp_bb(new_bb);
-        return false;
+        full_replacement_possible = false;
+        continue;
       }
 
       auto tripCount = SE->getSymbolicMaxBackedgeTakenCount(loop);
@@ -161,8 +159,7 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
         std::swap(start, stop); // "backward" loop
         if (!SE->isKnownPredicate(ICmpInst::ICMP_ULE, start, stop)) {
           // could not determine iteration order
-          clean_temp_bb(new_bb);
-          return false;
+          full_replacement_possible = false;
         }
       }
 
@@ -193,42 +190,46 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
     }
   }
 
-  // finish up replacement BB
-  builder.SetInsertPoint(dummy_inst);
-  builder.CreateBr(outgoing);
-  dummy_inst->eraseFromParent();
+  if (full_replacement_possible) {
+    // finish up replacement BB
+    builder.SetInsertPoint(dummy_inst);
+    builder.CreateBr(outgoing);
+    dummy_inst->eraseFromParent();
 
-  // set incoming BB
-  auto *incoming_br = dyn_cast<BranchInst>(incoming->getTerminator());
-  assert(incoming_br);
-  int num_successors_replaced = 0;
-  // find successor to replace and check if it is unique
-  for (unsigned int i = 0; i < incoming_br->getNumSuccessors(); i++) {
-    auto *succ = incoming_br->getSuccessor(i);
-    if (loop->contains(succ)) {
-      incoming_br->setSuccessor(i, new_bb);
-      num_successors_replaced++;
+    // set incoming BB
+    auto *incoming_br = dyn_cast<BranchInst>(incoming->getTerminator());
+    assert(incoming_br);
+    int num_successors_replaced = 0;
+    // find successor to replace and check if it is unique
+    for (unsigned int i = 0; i < incoming_br->getNumSuccessors(); i++) {
+      auto *succ = incoming_br->getSuccessor(i);
+      if (loop->contains(succ)) {
+        incoming_br->setSuccessor(i, new_bb);
+        num_successors_replaced++;
+      }
     }
-  }
-  assert(num_successors_replaced == 1);
+    assert(num_successors_replaced == 1);
 
-  // remove old loop
-  std::vector<BasicBlock *> to_delete;
-  for (auto *bb : loop->getBlocks()) {
-    bb->replaceAllUsesWith(new_bb);
-    to_delete.push_back(bb);
-  }
-  for (auto *bb : to_delete) {
-    // dont care about correct deletion order, we already checked that
-    // nothing more is used outside of loop
-    for (auto it_i = bb->begin(); it_i != bb->end(); ++it_i) {
-      Instruction *inst = &*it_i;
-      inst->replaceAllUsesWith(PoisonValue::get(inst->getType()));
+    // remove old loop
+    std::vector<BasicBlock *> to_delete;
+    for (auto *bb : loop->getBlocks()) {
+      bb->replaceAllUsesWith(new_bb);
+      to_delete.push_back(bb);
     }
-    bb->eraseFromParent();
+    for (auto *bb : to_delete) {
+      // dont care about correct deletion order, we already checked that
+      // nothing more is used outside of loop
+      for (auto it_i = bb->begin(); it_i != bb->end(); ++it_i) {
+        Instruction *inst = &*it_i;
+        inst->replaceAllUsesWith(PoisonValue::get(inst->getType()));
+      }
+      bb->eraseFromParent();
+    }
+    return true;
+  } else {
+    clean_temp_bb(new_bb);
+    return false;
   }
-
-  return true;
 }
 
 std::string Optimize_loops(llvm::Module &M, ModuleAnalysisManager &AM) {
