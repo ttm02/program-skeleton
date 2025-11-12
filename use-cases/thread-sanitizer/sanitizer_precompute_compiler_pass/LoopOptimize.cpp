@@ -24,9 +24,9 @@ static bool compute_other_loop_values(llvm::Module &M, ScalarEvolution *SE,
                                       Loop *loop, Instruction *insert_point) {
   const SCEV *exitCount = SE->getExitCount(loop, loop->getExitingBlock());
   if (isa<SCEVCouldNotCompute>(exitCount)) {
-#ifdef VERBOSE_DEBUG_PRINTING
-    errs() << "Loop Optimization fail: Could not compute loop exit count\n";
-#endif
+    // unknown loop iteration count -> might be variable
+    // TODO do not remove loop completely
+    // TSAN range with non-constant runtime param possible
     return false;
   }
 
@@ -41,11 +41,8 @@ static bool compute_other_loop_values(llvm::Module &M, ScalarEvolution *SE,
           if (not loop->contains(user_inst)) {
             auto scev = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&inst_in_loop));
             if (not scev) {
-#ifdef VERBOSE_DEBUG_PRINTING
-              errs() << "Could not compute Scalar Evolution of value used "
-                        "after loop\n";
-              inst_in_loop.dump();
-#endif
+              // Could not compute Scalar Evolution of value used after loop
+              // TODO do not remove loop completely
               break;
             }
             auto *end_value_scev = scev->evaluateAtIteration(exitCount, *SE);
@@ -97,23 +94,17 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
     return false;
 
   BasicBlock *incoming;
-  BasicBlock *outgoing;
-  if (not loop->getIncomingAndBackEdge(incoming, outgoing)) {
-#ifdef VERBOSE_DEBUG_PRINTING
-    errs() << "Loop Optimization Incoming and Back edge are not unique\n";
-#endif
+  BasicBlock *backedge;
+  if (not loop->getIncomingAndBackEdge(incoming, backedge))
     return false;
-  }
-  outgoing = loop->getExitBlock();
+
   assert(incoming);
+  BasicBlock *outgoing = loop->getExitBlock();
   if (!outgoing) {
     // TODO implement
-#ifdef VERBOSE_DEBUG_PRINTING
-    errs() << "Loop Optimization fail: Outgoing edge not unique\n";
-#endif
     return false;
   }
-  // errs() << "create new BB instead of loop\n";
+
   BasicBlock *new_bb =
       BasicBlock::Create(loop->getHeader()->getContext(), "loop_replacement",
                          incoming->getParent(), outgoing);
@@ -137,10 +128,6 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
 
     if (not get_size_of_tsan_access(call)) {
       // TODO this tsan call is not supported yet
-#ifdef VERBOSE_DEBUG_PRINTING
-      errs() << "Loop Optimization fail: TSAN call not supported yet\n";
-      call->dump();
-#endif
       continue;
     }
 
@@ -151,10 +138,7 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
     } else {
       auto scev = SE->getSCEV(call_arg_0);
       if (not SE->hasComputableLoopEvolution(scev, loop)) {
-#ifdef VERBOSE_DEBUG_PRINTING
-        errs() << "Loop Optimization fail: Ptr in loop has non computable "
-                  "Scalar Evolution\n";
-#endif
+        // Ptr in loop has non computable Scalar Evolution
         continue;
         // TODO else: we could compute the memory accesses before the loop
         // without running it and tell tsan that whole region is accessed
@@ -163,12 +147,8 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
 
       auto *addRec = dyn_cast<SCEVAddRecExpr>(scev);
       if (!addRec) {
-        // could not determine start and end value
+        // Could not compute start and end values of ptr
         clean_temp_bb(new_bb);
-#ifdef VERBOSE_DEBUG_PRINTING
-        errs() << "Loop Optimization fail: Could not compute start and end "
-                  "values of ptr\n";
-#endif
         return false;
       }
 
@@ -182,10 +162,6 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
         if (!SE->isKnownPredicate(ICmpInst::ICMP_ULE, start, stop)) {
           // could not determine iteration order
           clean_temp_bb(new_bb);
-#ifdef VERBOSE_DEBUG_PRINTING
-          errs() << "Loop Optimization fail: Could not determine iteration "
-                    "order\n";
-#endif
           return false;
         }
       }
@@ -221,14 +197,7 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
   builder.SetInsertPoint(dummy_inst);
   builder.CreateBr(outgoing);
   dummy_inst->eraseFromParent();
-  /*
-    errs() << "Loop replaced:\n";
-    for (auto bb : loop->getBlocks()) {
-      bb->dump();
-    }
-    errs() << "replaced with:\n";
-    new_bb->dump();
-  */
+
   // set incoming BB
   auto *incoming_br = dyn_cast<BranchInst>(incoming->getTerminator());
   assert(incoming_br);
@@ -293,43 +262,22 @@ std::string Optimize_loops(llvm::Module &M, ModuleAnalysisManager &AM) {
                   } else if (called_func->getName() == "llvm.returnaddress") {
                     continue;
                   } else if (is_thread_function(called_func)) {
+                    // call to OpenMP?
                     // TODO analyze if we may be able to do something here?
-#ifdef VERBOSE_DEBUG_PRINTING
-                    errs() << "Loop Optimization fail: Call to Openmp\n";
-                    call->dump();
-#endif
                     loop_applicable = false;
                     break;
                   } else {
+                    // TODO do not remove the loop completely
                     // call to something else: we cant analyze that
-#ifdef VERBOSE_DEBUG_PRINTING
-                    errs() << "Loop Optimization fail: Call in loop\n";
-                    call->dump();
-#endif
                     loop_applicable = false;
                     break;
                   }
-                } else {
-                  llvm_unreachable("Loop Optimization fail: This call does not "
-                                   "call anything");
                 }
               }
-              if (auto *store = dyn_cast<StoreInst>(&inst)) {
+              if (isa<StoreInst>(&inst)) {
+                // TODO do not remove the loop completely
                 // some computation result may be necessary
                 loop_applicable = false;
-#ifdef VERBOSE_DEBUG_PRINTING
-                errs() << "Loop Optimization fail: store in loop\n";
-                inst.dump();
-#endif
-                // debug info
-                auto SE =
-                    analysis_results->getSE(*loop->getHeader()->getParent());
-                auto scev = SE->getSCEV(store->getPointerOperand()); // ptr
-#ifdef VERBOSE_DEBUG_PRINTING
-                errs() << "Ptr: Invariant? " << SE->isLoopInvariant(scev, loop)
-                       << " Konwn Evolution? "
-                       << SE->hasComputableLoopEvolution(scev, loop) << "\n";
-#endif
                 break;
               }
             }
