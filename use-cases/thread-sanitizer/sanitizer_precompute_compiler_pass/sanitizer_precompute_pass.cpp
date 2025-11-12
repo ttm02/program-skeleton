@@ -294,8 +294,14 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     run_optimization_passes(M, AM, remove_all_single_thread_regions);
     run_optimization_passes(M, AM, eliminate_single_thread);
     run_optimization_passes(M, AM, reduce_tsan_calls);
-    run_optimization_passes(M, AM, Optimize_loops);
+    run_optimization_passes(M, AM, Optimize_loops, false);
 #endif
+
+    // last pass above should always skip opts (4th param to false)
+    // try to eliminate even more things
+    PassBuilder PB;
+    auto MPM = PB.buildPerModuleDefaultPipeline(OptimizationLevel::O2);
+    MPM.run(M, AM);
 
     delete analysis_results;
     return PreservedAnalyses::none();
