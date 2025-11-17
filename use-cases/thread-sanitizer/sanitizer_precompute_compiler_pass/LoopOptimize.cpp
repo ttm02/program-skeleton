@@ -8,6 +8,7 @@
 #include "precompute/compiler/openmp_runtime_functions.h"
 #include "precompute/compiler/std_funcs.h"
 
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
@@ -24,9 +25,9 @@ using namespace llvm;
 
 // if e.g. loop index is used after the loop
 // TODO not extensively tested!
-static void compute_other_loop_values(llvm::Module &M, ScalarEvolution *SE,
+static void compute_other_loop_values(Module &M, ScalarEvolution *SE,
                                       const SCEV *exitCount, Loop *loop,
-                                      Instruction *insert_point) {
+                                      SCEVExpander &seExpander) {
   std::map<Value *, Value *> replacement_map;
   for (auto &bb : loop->getBlocks()) {
     for (auto &inst_in_loop : *bb) {
@@ -44,11 +45,8 @@ static void compute_other_loop_values(llvm::Module &M, ScalarEvolution *SE,
         if (auto user_inst = dyn_cast<Instruction>(u)) {
           if (not loop->contains(user_inst)) {
             auto *end_value_scev = scev->evaluateAtIteration(exitCount, *SE);
-            SCEVExpander expander(*SE, M.getDataLayout(), "scev");
-            expander.setInsertPoint(insert_point);
-
-            Value *end_value =
-                expander.expandCodeFor(end_value_scev, inst_in_loop.getType());
+            Value *end_value = seExpander.expandCodeFor(end_value_scev,
+                                                        inst_in_loop.getType());
             replacement_map[&inst_in_loop] = end_value;
             // only one replacement value is needed even if multiple users
             break;
@@ -63,35 +61,94 @@ static void compute_other_loop_values(llvm::Module &M, ScalarEvolution *SE,
   }
 }
 
-// removes the BB
-static void clean_temp_bb(BasicBlock *bb) {
-  assert(bb->getNumUses() == 0);
-  bb->eraseFromParent();
+static bool replace_tsan_ranges(Module &M, IRBuilder<> &builder,
+                                ScalarEvolution *SE, SCEVExpander &seExpander,
+                                Loop *loop, CallBase *call) {
+  auto called_func = call->getCalledFunction();
+  auto func_name = called_func->getName();
+
+  // TODO other TSAN calls
+  // maybe move func_entry (before loop) and func_exit (after loop)
+  if (not func_name.starts_with("__tsan_read") &&
+      not func_name.starts_with("__tsan_write")) {
+    return false;
+  }
+  assert(not func_name.starts_with("__tsan_read_write"));
+
+  auto call_arg_0 = call->getArgOperand(0);
+  auto tsan_size = get_size_of_tsan_access(call);
+  if (not tsan_size) {
+    return false;
+  }
+
+  if (loop->isLoopInvariant(call_arg_0)) {
+    // TODO move call instead of recreate
+    // call->moveAfter(builder.GetInsertPoint());
+    builder.CreateCall(call->getCalledFunction(), call_arg_0);
+    return true;
+  }
+
+  auto scev = SE->getSCEV(call_arg_0);
+  if (not SE->hasComputableLoopEvolution(scev, loop)) {
+    // Ptr in loop has non computable Scalar Evolution
+    return false;
+    // TODO else: we could compute the memory accesses before the loop
+    // without running it and tell tsan that whole region is accessed
+    // at once effectively
+  }
+
+  auto *addRec = dyn_cast<SCEVAddRecExpr>(scev);
+  if (!addRec) {
+    // Could not compute start and end values of ptr
+    return false;
+  }
+
+  // only if contingous address range
+  auto *step = addRec->getStepRecurrence(*SE);
+  if (auto stepConstant = dyn_cast<SCEVConstant>(step)) {
+    if (stepConstant->getAPInt() != tsan_size->getValue()) {
+      return false;
+    }
+  } else
+    return false;
+
+  auto *tripCount = SE->getSymbolicMaxBackedgeTakenCount(loop);
+  auto *start = addRec->getStart();
+  auto *stop = addRec->evaluateAtIteration(tripCount, *SE);
+
+  if (SE->isKnownPredicate(ICmpInst::ICMP_ULE, stop, start)) {
+    std::swap(start, stop);
+  } else if (not SE->isKnownPredicate(ICmpInst::ICMP_ULE, start, stop)) {
+    return false;
+  }
+
+  // TODO i64 might not always be applicable
+  auto int64Ty = builder.getInt64Ty();
+  auto constOne = ConstantInt::get(int64Ty, 1);
+
+  Value *val_min = seExpander.expandCodeFor(start, int64Ty);
+  Value *val_max = seExpander.expandCodeFor(stop, int64Ty);
+
+  // size_of(element) * ((last - base) + 1)
+  auto *base_ptr = builder.CreateIntToPtr(val_min, builder.getPtrTy());
+  auto *iter_count = builder.CreateSub(val_max, val_min);
+  auto *count_full = builder.CreateAdd(iter_count, constOne);
+  auto *range_full = builder.CreateMul(count_full, tsan_size);
+
+  auto isWrite = func_name.starts_with("__tsan_write");
+  createTSANrange(M, builder, base_ptr, range_full, isWrite);
+  // TODO remove old call
+  // remove_inst_from_func(call);
+
+  return true;
 }
 
 // true if loop was optimized
 static std::pair<bool, unsigned>
-perform_tsan_licm(llvm::Module &M, Loop *loop,
-                  const std::vector<llvm::CallBase *> &tsan_in_loop) {
+perform_tsan_licm(Module &M, Loop *loop,
+                  const std::vector<CallBase *> &tsan_in_loop) {
   unsigned removed_tsan_calls = 0;
   bool full_replacement_possible = true;
-
-  auto *ctx = &M.getContext();
-  auto ptrTy = PointerType::get(*ctx, 0);
-  auto voidTy = Type::getVoidTy(*ctx);
-  auto int64Ty = Type::getInt64Ty(*ctx);
-
-  auto tsan_read_range_func =
-      M.getOrInsertFunction("__tsan_read_range", voidTy, ptrTy, int64Ty);
-  auto tsan_write_range_func =
-      M.getOrInsertFunction("__tsan_write_range", voidTy, ptrTy, int64Ty);
-
-  auto SE = analysis_results->getSE(*loop->getHeader()->getParent());
-
-  // loop bounds have to be known
-  auto trip_count = SE->getSymbolicMaxBackedgeTakenCount(loop);
-  if (isa<SCEVCouldNotCompute>(trip_count))
-    full_replacement_possible = false;
 
   BasicBlock *incoming;
   BasicBlock *backedge;
@@ -100,17 +157,29 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
 
   assert(incoming);
   BasicBlock *outgoing = loop->getExitBlock();
-  if (!outgoing)
+  if (not outgoing)
     full_replacement_possible = false;
 
-  BasicBlock *new_bb =
-      BasicBlock::Create(loop->getHeader()->getContext(), "loop_replacement",
-                         incoming->getParent(), outgoing);
-  IRBuilder<> builder(new_bb);
-  // dummy instruction serving as the insertion point to insert everything
-  // before
-  auto *dummy_inst =
-      builder.CreateAlloca(builder.getInt64Ty(), nullptr, "dummy");
+  IRBuilder<> insert_builder(incoming);
+  auto beforeTermInst =
+      incoming->getTerminator()->getPrevNonDebugInstruction(true);
+  BasicBlock::iterator insert_dummy;
+  // use the BasicBlock begin iterator, if there is only the terminator
+  if (beforeTermInst)
+    insert_dummy = beforeTermInst->getIterator();
+  else
+    insert_dummy = incoming->begin();
+  insert_builder.SetInsertPoint(insert_dummy);
+
+  auto *func = loop->getHeader()->getParent();
+  auto *SE = analysis_results->getSE(*func);
+  SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
+  seExpander.setInsertPoint(insert_dummy);
+
+  // loop bounds have to be known
+  auto trip_count = SE->getSymbolicMaxBackedgeTakenCount(loop);
+  if (isa<SCEVCouldNotCompute>(trip_count))
+    full_replacement_possible = false;
 
   const SCEV *exitCount = SE->getExitCount(loop, loop->getExitingBlock());
   if (isa<SCEVCouldNotCompute>(exitCount)) {
@@ -123,89 +192,20 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
   // check if other values, such as the loop index are used after the loop
   // and compute them if possible
   if (full_replacement_possible)
-    compute_other_loop_values(M, SE, exitCount, loop, dummy_inst);
+    compute_other_loop_values(M, SE, exitCount, loop, seExpander);
 
   for (auto *call : tsan_in_loop) {
-    if (call->getNumOperands() != 2)
-      continue;
-    auto call_arg_0 = call->getArgOperand(0);
-
-    if (not get_size_of_tsan_access(call)) {
-      // TODO this tsan call is not supported yet
-      continue;
-    }
-
-    auto called_func = call->getCalledFunction();
-    if (loop->isLoopInvariant(call_arg_0)) {
-      // TODO move call instead of recreate
-      builder.SetInsertPoint(dummy_inst);
-      builder.CreateCall(call->getCalledFunction(), call_arg_0);
+    if (replace_tsan_ranges(M, insert_builder, SE, seExpander, loop, call))
       removed_tsan_calls++;
-    } else {
-      auto scev = SE->getSCEV(call_arg_0);
-      if (not SE->hasComputableLoopEvolution(scev, loop)) {
-        // Ptr in loop has non computable Scalar Evolution
-        continue;
-        // TODO else: we could compute the memory accesses before the loop
-        // without running it and tell tsan that whole region is accessed
-        // at once effectively
-      }
-
-      auto *addRec = dyn_cast<SCEVAddRecExpr>(scev);
-      if (!addRec) {
-        // Could not compute start and end values of ptr
-        full_replacement_possible = false;
-        continue;
-      }
-
-      auto tripCount = SE->getSymbolicMaxBackedgeTakenCount(loop);
-
-      auto *start = addRec->getStart();
-      auto *stop = addRec->evaluateAtIteration(tripCount, *SE);
-
-      if (!SE->isKnownPredicate(ICmpInst::ICMP_ULE, start, stop)) {
-        std::swap(start, stop); // "backward" loop
-        if (!SE->isKnownPredicate(ICmpInst::ICMP_ULE, start, stop)) {
-          // could not determine iteration order
-          full_replacement_possible = false;
-        }
-      }
-
-      // Expand to runtime values
-      // Expand SCEV at min/max trip count
-      SCEVExpander expander(*SE, M.getDataLayout(), "scev");
-      expander.setInsertPoint(dummy_inst);
-
-      Value *val_min = expander.expandCodeFor(start, builder.getInt64Ty());
-      Value *val_max = expander.expandCodeFor(stop, builder.getInt64Ty());
-
-      // create tsan call
-      builder.SetInsertPoint(dummy_inst);
-      auto *as_ptr = builder.CreateIntToPtr(val_min, builder.getPtrTy());
-      auto *size = builder.CreateSub(val_max, val_min);
-      // need to include the size of last access
-      auto *size_full = builder.CreateAdd(size, get_size_of_tsan_access(call));
-
-      auto func_name = called_func->getName();
-      if (func_name.starts_with("__tsan_read")) {
-        // not supported right now
-        assert(not func_name.starts_with("__tsan_read_write"));
-        builder.CreateCall(tsan_read_range_func, {as_ptr, size_full});
-      } else {
-        assert(func_name.starts_with("__tsan_write"));
-        builder.CreateCall(tsan_write_range_func, {as_ptr, size_full});
-      }
-
-      // TODO remove old call
-      removed_tsan_calls++;
-    }
+    else
+      full_replacement_possible = false;
   }
 
   if (full_replacement_possible) {
-    // finish up replacement BB
-    builder.SetInsertPoint(dummy_inst);
-    builder.CreateBr(outgoing);
-    dummy_inst->eraseFromParent();
+    BasicBlock *new_bb = BasicBlock::Create(loop->getHeader()->getContext(),
+                                            "loop_replacement", func, outgoing);
+    IRBuilder<> full_replacement_builder(new_bb);
+    full_replacement_builder.CreateBr(outgoing);
 
     // set incoming BB
     auto *incoming_br = dyn_cast<BranchInst>(incoming->getTerminator());
@@ -230,17 +230,14 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
     for (auto *bb : to_delete) {
       // dont care about correct deletion order, we already checked that
       // nothing more is used outside of loop
-      for (auto it_i = bb->begin(); it_i != bb->end(); ++it_i) {
-        Instruction *inst = &*it_i;
-        inst->replaceAllUsesWith(PoisonValue::get(inst->getType()));
-      }
+      for (auto &inst : *bb)
+        inst.replaceAllUsesWith(PoisonValue::get(inst.getType()));
       bb->eraseFromParent();
     }
     return std::make_pair(true, removed_tsan_calls);
-  } else {
-    clean_temp_bb(new_bb);
-    return std::make_pair(false, removed_tsan_calls);
   }
+
+  return std::make_pair(false, removed_tsan_calls);
 }
 
 std::string Optimize_loops(Module &M, ModuleAnalysisManager &AM) {
@@ -304,7 +301,6 @@ std::string Optimize_loops(Module &M, ModuleAnalysisManager &AM) {
           if (ptl.first) {
             optimized_loops++;
             optimized = true;
-            // LoopInfo is invalid!
             analysis_results->invalidate(f);
             break; // end looping over loops, as iterator is invalid
           }

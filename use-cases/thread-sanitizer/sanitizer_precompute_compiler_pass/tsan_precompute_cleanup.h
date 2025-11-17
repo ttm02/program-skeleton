@@ -31,13 +31,17 @@ void createTSANrange(llvm::Module &M, llvm::Instruction *base_ptr,
 inline llvm::ConstantInt *get_size_of_tsan_access(llvm::CallBase *tsan_call) {
   auto name = tsan_call->getCalledFunction()->getName();
   auto len = 0;
-  if (name.starts_with("__tsan_read")) {
-    if (name == "__tsan_read_range")
+  if (name.ends_with("_range")) {
+    assert(name.starts_with("__tsan_"));
+    auto range_size = tsan_call->getArgOperand(1);
+    if (auto ci = llvm::dyn_cast<llvm::ConstantInt>(range_size))
+      return ci;
+    else
+      // TODO are non-constant ranges possible?
       return nullptr;
+  } else if (name.starts_with("__tsan_read")) {
     len = std::string("__tsan_read").size();
   } else if (name.starts_with("__tsan_write")) {
-    if (name == "__tsan_write_range")
-      return nullptr;
     len = std::string("__tsan_write").size();
   } else
     return nullptr;
@@ -50,7 +54,7 @@ inline llvm::ConstantInt *get_size_of_tsan_access(llvm::CallBase *tsan_call) {
 
 inline void remove_inst_from_func(llvm::Instruction *inst) {
   if (not inst->use_empty())
-    inst->replaceAllUsesWith(llvm::UndefValue::get(inst->getType()));
+    inst->replaceAllUsesWith(llvm::PoisonValue::get(inst->getType()));
   inst->eraseFromParent();
 }
 
