@@ -20,31 +20,25 @@ using namespace llvm;
 
 // if e.g. loop index is used after the loop
 // TODO not extensively tested!
-static bool compute_other_loop_values(llvm::Module &M, ScalarEvolution *SE,
-                                      Loop *loop, Instruction *insert_point) {
-  const SCEV *exitCount = SE->getExitCount(loop, loop->getExitingBlock());
-  if (isa<SCEVCouldNotCompute>(exitCount)) {
-    // unknown loop iteration count -> might be variable
-    // TODO do not remove loop completely
-    // TSAN range with non-constant runtime param possible
-    return false;
-  }
-
+static void compute_other_loop_values(llvm::Module &M, ScalarEvolution *SE,
+                                      const SCEV *exitCount, Loop *loop,
+                                      Instruction *insert_point) {
   std::map<Value *, Value *> replacement_map;
   for (auto &bb : loop->getBlocks()) {
     for (auto &inst_in_loop : *bb) {
       if (not SE->isSCEVable(inst_in_loop.getType()))
         continue;
 
+      auto scev = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&inst_in_loop));
+      if (not scev) {
+        // Could not compute Scalar Evolution of value used after loop
+        // TODO do not remove loop completely
+        continue;
+      }
+
       for (auto *u : inst_in_loop.users()) {
         if (auto user_inst = dyn_cast<Instruction>(u)) {
           if (not loop->contains(user_inst)) {
-            auto scev = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&inst_in_loop));
-            if (not scev) {
-              // Could not compute Scalar Evolution of value used after loop
-              // TODO do not remove loop completely
-              break;
-            }
             auto *end_value_scev = scev->evaluateAtIteration(exitCount, *SE);
             SCEVExpander expander(*SE, M.getDataLayout(), "scev");
             expander.setInsertPoint(insert_point);
@@ -63,7 +57,6 @@ static bool compute_other_loop_values(llvm::Module &M, ScalarEvolution *SE,
   for (auto pair : replacement_map) {
     pair.first->replaceAllUsesWith(pair.second);
   }
-  return true;
 }
 
 // removes the BB
@@ -114,10 +107,18 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
   auto *dummy_inst =
       builder.CreateAlloca(builder.getInt64Ty(), nullptr, "dummy");
 
+  const SCEV *exitCount = SE->getExitCount(loop, loop->getExitingBlock());
+  if (isa<SCEVCouldNotCompute>(exitCount)) {
+    // unknown loop iteration count -> might be variable
+    // TODO do not remove loop completely
+    // TSAN range with non-constant runtime param possible
+    full_replacement_possible = false;
+  }
+
   // check if other values, such as the loop index are used after the loop
   // and compute them if possible
-  if (not compute_other_loop_values(M, SE, loop, dummy_inst))
-    full_replacement_possible = false;
+  if (full_replacement_possible)
+    compute_other_loop_values(M, SE, exitCount, loop, dummy_inst);
 
   for (auto *call : tsan_in_loop) {
     if (call->getNumOperands() != 2)
