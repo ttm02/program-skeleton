@@ -7,7 +7,6 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
-#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
@@ -79,22 +78,27 @@ static inline StructType *getGEPstructTy(const GetElementPtrInst *gep) {
   return nullptr;
 }
 
-static inline void createTSANrange(Module &M, Instruction *base_ptr,
-                                   const unsigned struct_size,
-                                   const bool isWrite) {
-  auto *ctx = &M.getContext();
+void createTSANrange(Module &M, IRBuilder<> &builder, Value *base_ptr,
+                     Value *struct_size, const bool isWrite) {
+  auto *ctx = &base_ptr->getContext();
   auto ptrTy = PointerType::get(*ctx, 0);
   auto voidTy = Type::getVoidTy(*ctx);
   auto int64Ty = Type::getInt64Ty(*ctx);
 
   auto func_name = isWrite ? "__tsan_write_range" : "__tsan_read_range";
   auto tsan_func = M.getOrInsertFunction(func_name, voidTy, ptrTy, int64Ty);
+  builder.CreateCall(tsan_func, {base_ptr, struct_size});
+}
 
-  assert(base_ptr->getNextNode());
-  IRBuilder<> builder(base_ptr->getNextNode());
+void createTSANrange(Module &M, Instruction *base_ptr,
+                     const unsigned struct_size, const bool isWrite) {
+  auto *ctx = &M.getContext();
+  auto int64Ty = Type::getInt64Ty(*ctx);
   // TODO i64 might not always be applicable
-  Value *ssv = ConstantInt::get(Type::getInt64Ty(*ctx), struct_size, false);
-  builder.CreateCall(tsan_func, {base_ptr, ssv});
+  Value *struct_size_value = ConstantInt::get(int64Ty, struct_size, false);
+
+  IRBuilder<> builder(base_ptr->getNextNode());
+  createTSANrange(M, builder, base_ptr, struct_size_value, isWrite);
 }
 
 static inline const Instruction *
@@ -299,7 +303,7 @@ static void range_replace_array(
   // TODO allow partial ranges of only read or only write
   auto base_ptr = offset_ptrs.begin()->first;
   auto *elemTy = base_ptr->getSourceElementType();
-  const llvm::DataLayout &DL = M.getDataLayout();
+  const DataLayout &DL = M.getDataLayout();
   unsigned elemBitwidth = DL.getTypeSizeInBits(elemTy);
   unsigned byte_offset = bits2bytes(n * elemBitwidth);
   createTSANrange(M, base_ptr, byte_offset, tsan_reads.empty());
@@ -321,8 +325,8 @@ static void range_replace_array(
   }
 }
 
-static unsigned remove_tsan_calls_in_func(DenseSet<CallBase *> &tsan_calls,
-                                          Module &M) {
+static unsigned
+remove_tsan_calls_in_func(const DenseSet<CallBase *> &tsan_calls, Module &M) {
   if (tsan_calls.empty())
     return 0;
 

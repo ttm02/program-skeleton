@@ -54,7 +54,7 @@ static bool run_optimization_passes(
     return false;
 #ifndef NDEBUG
   bool has_error = verifyModule(M, &errs(), nullptr);
-  assert(!has_error);
+  assert(not has_error);
 #endif
   errs() << opt_msg_success << "\n";
 
@@ -70,7 +70,7 @@ static bool run_optimization_passes(
     errs() << "\n";
 #ifndef NDEBUG
     has_error = verifyModule(M, &errs(), nullptr);
-    assert(!has_error);
+    assert(not has_error);
 #endif
   }
   return true;
