@@ -8,9 +8,13 @@
 #include "precompute/compiler/openmp_runtime_functions.h"
 #include "precompute/compiler/std_funcs.h"
 
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -66,9 +70,12 @@ static void clean_temp_bb(BasicBlock *bb) {
 }
 
 // true if loop was optimized
-static bool
+static std::pair<bool, unsigned>
 perform_tsan_licm(llvm::Module &M, Loop *loop,
                   const std::vector<llvm::CallBase *> &tsan_in_loop) {
+  unsigned removed_tsan_calls = 0;
+  bool full_replacement_possible = true;
+
   auto *ctx = &M.getContext();
   auto ptrTy = PointerType::get(*ctx, 0);
   auto voidTy = Type::getVoidTy(*ctx);
@@ -81,8 +88,6 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
 
   auto SE = analysis_results->getSE(*loop->getHeader()->getParent());
 
-  bool full_replacement_possible = true;
-
   // loop bounds have to be known
   auto trip_count = SE->getSymbolicMaxBackedgeTakenCount(loop);
   if (isa<SCEVCouldNotCompute>(trip_count))
@@ -91,7 +96,7 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
   BasicBlock *incoming;
   BasicBlock *backedge;
   if (not loop->getIncomingAndBackEdge(incoming, backedge))
-    full_replacement_possible = false;
+    return std::make_pair(false, 0);
 
   assert(incoming);
   BasicBlock *outgoing = loop->getExitBlock();
@@ -132,8 +137,10 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
 
     auto called_func = call->getCalledFunction();
     if (loop->isLoopInvariant(call_arg_0)) {
+      // TODO move call instead of recreate
       builder.SetInsertPoint(dummy_inst);
       builder.CreateCall(call->getCalledFunction(), call_arg_0);
+      removed_tsan_calls++;
     } else {
       auto scev = SE->getSCEV(call_arg_0);
       if (not SE->hasComputableLoopEvolution(scev, loop)) {
@@ -188,6 +195,9 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
         assert(func_name.starts_with("__tsan_write"));
         builder.CreateCall(tsan_write_range_func, {as_ptr, size_full});
       }
+
+      // TODO remove old call
+      removed_tsan_calls++;
     }
   }
 
@@ -226,16 +236,17 @@ perform_tsan_licm(llvm::Module &M, Loop *loop,
       }
       bb->eraseFromParent();
     }
-    return true;
+    return std::make_pair(true, removed_tsan_calls);
   } else {
     clean_temp_bb(new_bb);
-    return false;
+    return std::make_pair(false, removed_tsan_calls);
   }
 }
 
-std::string Optimize_loops(llvm::Module &M, ModuleAnalysisManager &AM) {
+std::string Optimize_loops(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Optimize Loops\n";
-  unsigned int optimized_loops = 0;
+  unsigned optimized_loops = 0;
+  unsigned removed_tsan_calls = 0;
 
   for (auto &f : M) {
     if (not f.isDeclaration() && not is_func_from_std(&f)) {
@@ -285,14 +296,17 @@ std::string Optimize_loops(llvm::Module &M, ModuleAnalysisManager &AM) {
             }
           }
 
-          if (loop_applicable) {
-            if (perform_tsan_licm(M, loop, tsan_calls)) {
-              optimized_loops++;
-              optimized = true;
-              // LoopInfo is invalid!
-              analysis_results->invalidate(f);
-              break; // end looping over loops, as iterator is invalid
-            }
+          if (not loop_applicable)
+            continue;
+
+          auto ptl = perform_tsan_licm(M, loop, tsan_calls);
+          removed_tsan_calls += ptl.second;
+          if (ptl.first) {
+            optimized_loops++;
+            optimized = true;
+            // LoopInfo is invalid!
+            analysis_results->invalidate(f);
+            break; // end looping over loops, as iterator is invalid
           }
         }
       }
@@ -300,5 +314,6 @@ std::string Optimize_loops(llvm::Module &M, ModuleAnalysisManager &AM) {
   }
 
   // print statistics
-  return "Optimized loops: " + std::to_string(optimized_loops);
+  return "Loops: " + std::to_string(optimized_loops) +
+         "\nTSAN calls: " + std::to_string(removed_tsan_calls);
 }
