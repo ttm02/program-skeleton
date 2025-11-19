@@ -148,11 +148,8 @@ static void compute_other_loop_values(Module &M, ScalarEvolution *SE,
         continue;
 
       auto scev = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&inst_in_loop));
-      if (not scev) {
-        // Could not compute Scalar Evolution of value used after loop
-        // TODO do not remove loop completely
+      if (not scev)
         continue;
-      }
 
       for (auto *u : inst_in_loop.users()) {
         if (auto user_inst = dyn_cast<Instruction>(u)) {
@@ -280,19 +277,15 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
   return true;
 }
 
-// true if loop was optimized
-static std::pair<bool, unsigned>
-perform_tsan_licm(Module &M, Loop *loop,
-                  const std::vector<CallBase *> &tsan_in_loop) {
+static unsigned perform_tsan_licm(Module &M, Loop *loop,
+                                  const std::vector<CallBase *> &tsan_in_loop) {
   unsigned removed_tsan_calls = 0;
-  bool full_replacement_possible = true;
 
   BasicBlock *incoming;
   BasicBlock *backedge;
   if (not loop->getIncomingAndBackEdge(incoming, backedge))
-    return std::make_pair(false, 0);
+    return removed_tsan_calls;
 
-  assert(incoming);
   IRBuilder<> insert_builder(incoming);
   BasicBlock::iterator insert_dummy;
   auto *incomingTerm = incoming->getTerminator();
@@ -300,10 +293,6 @@ perform_tsan_licm(Module &M, Loop *loop,
     insert_dummy = incomingTerm->getIterator();
   else
     insert_dummy = incoming->begin();
-
-  BasicBlock *outgoing = loop->getExitBlock();
-  if (not outgoing)
-    full_replacement_possible = false;
 
   auto *func = loop->getHeader()->getParent();
   DenseMap<Value *, SmallDenseSet<Use *>> boundReplacement;
@@ -313,31 +302,10 @@ perform_tsan_licm(Module &M, Loop *loop,
   SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
   seExpander.setInsertPoint(insert_builder.GetInsertPoint());
 
-  // loop bounds have to be known
-  auto trip_count = SE->getSymbolicMaxBackedgeTakenCount(loop);
-  if (isa<SCEVCouldNotCompute>(trip_count))
-    full_replacement_possible = false;
-
-  const SCEV *exitCount = SE->getExitCount(loop, loop->getExitingBlock());
-  if (isa<SCEVCouldNotCompute>(exitCount)) {
-    // unknown loop iteration count -> might be variable
-    // TODO do not remove loop completely
-    // TSAN range with non-constant runtime param possible
-    full_replacement_possible = false;
-  }
-
-  // check if other values, such as the loop index are used after the loop and
-  // compute them if possible
-  if (full_replacement_possible)
-    compute_other_loop_values(M, SE, exitCount, loop, seExpander);
-
-  for (auto *call : tsan_in_loop) {
-    if (replace_tsan_ranges(M, SE, loop, call)) {
+  // TODO writes only when follow-up loop was also optimized
+  for (auto *call : tsan_in_loop)
+    if (replace_tsan_ranges(M, SE, loop, call))
       removed_tsan_calls++;
-    } else {
-      full_replacement_possible = false;
-    }
-  }
 
   // Rollback: Do not break OpenMP thread handling
   for (auto br : boundReplacement) {
@@ -346,118 +314,40 @@ perform_tsan_licm(Module &M, Loop *loop,
       u->set(load);
   }
 
-  assert((removed_tsan_calls == 0 && full_replacement_possible) ||
-         (removed_tsan_calls != 0 || not full_replacement_possible));
-
-  if (full_replacement_possible) {
-    BasicBlock *new_bb = BasicBlock::Create(loop->getHeader()->getContext(),
-                                            "loop_replacement", func, outgoing);
-    IRBuilder<> full_replacement_builder(new_bb);
-    full_replacement_builder.CreateBr(outgoing);
-
-    // set incoming BB
-    auto *incoming_br = dyn_cast<BranchInst>(incoming->getTerminator());
-    assert(incoming_br);
-    int num_successors_replaced = 0;
-    // find successor to replace and check if it is unique
-    for (unsigned int i = 0; i < incoming_br->getNumSuccessors(); i++) {
-      auto *succ = incoming_br->getSuccessor(i);
-      if (loop->contains(succ)) {
-        incoming_br->setSuccessor(i, new_bb);
-        num_successors_replaced++;
-      }
-    }
-    assert(num_successors_replaced == 1);
-
-    // remove old loop
-    std::vector<BasicBlock *> to_delete;
-    for (auto *bb : loop->getBlocks()) {
-      bb->replaceAllUsesWith(new_bb);
-      to_delete.push_back(bb);
-    }
-    for (auto *bb : to_delete) {
-      // dont care about correct deletion order, we already checked that
-      // nothing more is used outside of loop
-      for (auto &inst : *bb)
-        inst.replaceAllUsesWith(PoisonValue::get(inst.getType()));
-      bb->eraseFromParent();
-    }
-    return std::make_pair(true, removed_tsan_calls);
-  }
-
-  return std::make_pair(false, removed_tsan_calls);
+  return removed_tsan_calls;
 }
 
 std::string Optimize_loops(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Optimize Loops\n";
-  unsigned optimized_loops = 0;
   unsigned removed_tsan_calls = 0;
 
   for (auto &f : M) {
     if (not f.isDeclaration() && not is_func_from_std(&f)) {
-      bool optimized = true;
-      while (optimized) { // until no more optimization
-        optimized = false;
+      auto li = analysis_results->getLoopInfo(f);
+      for (auto loop : li->getLoopsInPreorder()) {
+        std::vector<llvm::CallBase *> tsan_calls;
+        for (auto &bb : loop->getBlocks()) {
+          for (auto &inst : *bb) {
+            if (auto *call = dyn_cast<CallBase>(&inst)) {
+              auto called_func = call->getCalledFunction();
+              if (not called_func)
+                continue;
+              auto func_name = called_func->getName();
+              if (not called_func->getName().starts_with("__tsan"))
+                continue;
 
-        // get new loop info if it was invalidated
-        auto li = analysis_results->getLoopInfo(f);
-
-        for (auto loop : li->getLoopsInPreorder()) {
-          bool loop_applicable = true;
-
-          std::vector<llvm::CallBase *> tsan_calls;
-          for (auto &bb : loop->getBlocks()) {
-            for (auto &inst : *bb) {
-              if (auto *call = dyn_cast<CallBase>(&inst)) {
-                auto called_func = call->getCalledFunction();
-                if (called_func) {
-                  if (called_func->getName().starts_with("__tsan")) {
-                    auto func_name = call->getCalledFunction()->getName();
-                    if (func_name != "__tsan_func_entry" &&
-                        func_name != "__tsan_func_exit") {
-                      tsan_calls.push_back(call);
-                    }
-                  } else if (called_func->getName() == "llvm.returnaddress") {
-                    continue;
-                  } else if (is_thread_function(called_func)) {
-                    // call to OpenMP?
-                    // TODO analyze if we may be able to do something here?
-                    loop_applicable = false;
-                    break;
-                  } else {
-                    // TODO do not remove the loop completely
-                    // call to something else: we cant analyze that
-                    loop_applicable = false;
-                    break;
-                  }
-                }
-              }
-              if (isa<StoreInst>(&inst)) {
-                // TODO do not remove the loop completely
-                // some computation result may be necessary
-                loop_applicable = false;
-                break;
+              if (func_name != "__tsan_func_entry" &&
+                  func_name != "__tsan_func_exit") {
+                tsan_calls.push_back(call);
               }
             }
           }
-
-          if (not loop_applicable)
-            continue;
-
-          auto ptl = perform_tsan_licm(M, loop, tsan_calls);
-          removed_tsan_calls += ptl.second;
-          if (ptl.first) {
-            optimized_loops++;
-            optimized = true;
-            analysis_results->invalidate(f);
-            break; // end looping over loops, as iterator is invalid
-          }
         }
+        removed_tsan_calls += perform_tsan_licm(M, loop, tsan_calls);
       }
     }
   }
 
   // print statistics
-  return "Loops: " + std::to_string(optimized_loops) +
-         "\nTSAN calls: " + std::to_string(removed_tsan_calls);
+  return "invariant/unrolled TSAN calls: " + std::to_string(removed_tsan_calls);
 }
