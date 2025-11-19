@@ -13,16 +13,16 @@
 struct Point {
   int x, y, z;
 
-  void move(int dx, int dy, int dz) {
+  void move(const int dx, const int dy, const int dz) {
     x += dx;
     y += dy;
     z += dz;
   }
 };
 
-void movePts(Point *a, int lo, int hi) {
-#pragma omp parallel for
-  for (int i = lo; i < hi; i++)
+void movePts(Point *a, const unsigned lo, const unsigned hi) {
+#pragma omp parallel for firstprivate(a, lo, hi)
+  for (unsigned i = 5; i < 20; i++)
     a[i].move(1, 1, 1);
 }
 
