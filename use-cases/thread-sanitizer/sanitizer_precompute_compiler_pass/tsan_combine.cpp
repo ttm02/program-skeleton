@@ -126,7 +126,8 @@ static void range_replace_struct(
     Module &M, GetElementPtrInst *base_ptr,
     DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
     DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr,
-    unsigned *removed_tsan_calls, const DenseSet<CallBase *> &tsan_writes,
+    unsigned *removed_tsan_calls, unsigned *added_tsan_calls,
+    const DenseSet<CallBase *> &tsan_writes,
     const DenseSet<CallBase *> &tsan_reads, const DenseSet<Value *> &ptr_values,
     const Instruction *bp, const SmallDenseSet<CallBase *> &calls) {
   // replace:
@@ -198,6 +199,7 @@ static void range_replace_struct(
 
   // TODO allow partial ranges of only read or only write
   createTSANrange(M, base_ptr, byte_offset, tsan_reads.empty());
+  (*added_tsan_calls)++;
 
   // cleanup replaced TSAN calls
   for (auto call : calls) {
@@ -220,7 +222,8 @@ static void range_replace_array(
     Module &M, GetElementPtrInst *call_gep,
     DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
     DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr,
-    unsigned *removed_tsan_calls, const DenseSet<CallBase *> &tsan_writes,
+    unsigned *removed_tsan_calls, unsigned *added_tsan_calls,
+    const DenseSet<CallBase *> &tsan_writes,
     const DenseSet<CallBase *> &tsan_reads, const DenseSet<Value *> &ptr_values,
     const Instruction *bp, const SmallDenseSet<CallBase *> &calls) {
   // replace;
@@ -307,6 +310,7 @@ static void range_replace_array(
   unsigned elemBitwidth = DL.getTypeSizeInBits(elemTy);
   unsigned byte_offset = bits2bytes(n * elemBitwidth);
   createTSANrange(M, base_ptr, byte_offset, tsan_reads.empty());
+  (*added_tsan_calls)++;
 
   // cleanup replaced TSAN calls
   for (auto call : calls) {
@@ -325,12 +329,14 @@ static void range_replace_array(
   }
 }
 
-static unsigned
+static std::pair<unsigned, unsigned>
 remove_tsan_calls_in_func(const DenseSet<CallBase *> &tsan_calls, Module &M) {
-  if (tsan_calls.empty())
-    return 0;
-
   unsigned removed_tsan_calls = 0;
+  unsigned added_tsan_calls = 0;
+
+  if (tsan_calls.empty())
+    return std::make_pair(removed_tsan_calls, added_tsan_calls);
+
   DenseMap<Instruction *, SmallDenseSet<CallBase *>> base_ptr_to_call;
   DenseMap<CallBase *, SmallDenseSet<Instruction *>> call_to_base_ptr;
 
@@ -372,22 +378,23 @@ remove_tsan_calls_in_func(const DenseSet<CallBase *> &tsan_calls, Module &M) {
 
     if (auto *base_ptr = dyn_cast<GetElementPtrInst>(bp)) {
       range_replace_struct(M, base_ptr, base_ptr_to_call, call_to_base_ptr,
-                           &removed_tsan_calls, tsan_writes, tsan_reads,
-                           ptr_values, bp, calls);
+                           &removed_tsan_calls, &added_tsan_calls, tsan_writes,
+                           tsan_reads, ptr_values, bp, calls);
     } else if (auto *call_gep =
                    dyn_cast<GetElementPtrInst>(*ptr_values.begin())) {
       range_replace_array(M, call_gep, base_ptr_to_call, call_to_base_ptr,
-                          &removed_tsan_calls, tsan_writes, tsan_reads,
-                          ptr_values, bp, calls);
+                          &removed_tsan_calls, &added_tsan_calls, tsan_writes,
+                          tsan_reads, ptr_values, bp, calls);
     }
   }
 
-  return removed_tsan_calls;
+  return std::make_pair(removed_tsan_calls, added_tsan_calls);
 }
 
 std::string reduce_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Combine multiple TSAN calls with range call\n";
-  unsigned int removed_tsan_calls = 0;
+  unsigned removed_tsan_calls = 0;
+  unsigned added_tsan_calls = 0;
 
   for (Function &Func : M) {
     DenseSet<CallBase *> tsan_calls;
@@ -441,9 +448,12 @@ std::string reduce_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
       }
     }
 
-    removed_tsan_calls += remove_tsan_calls_in_func(tsan_calls, M);
+    auto tc = remove_tsan_calls_in_func(tsan_calls, M);
+    removed_tsan_calls += tc.first;
+    added_tsan_calls += tc.second;
   }
 
   // print statistics
-  return "Removed TSAN calls: " + std::to_string(removed_tsan_calls);
+  return "removed TSAN calls: " + std::to_string(removed_tsan_calls) +
+         "\nreplaced with: " + std::to_string(added_tsan_calls);
 }

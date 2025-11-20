@@ -134,6 +134,7 @@ static void collect_and_cleanup(Module &M, unsigned *removed_tsan_calls) {
 
 std::string remove_all_single_thread_regions(Module &M,
                                              ModuleAnalysisManager &AM) {
+  errs() << "Aggressivly remove all single-threaded TSAN calls\n";
   if (not check_module(M))
     return "";
 
@@ -148,5 +149,5 @@ std::string remove_all_single_thread_regions(Module &M,
   unsigned removed_tsan_calls = 0;
   collect_and_cleanup(M, &removed_tsan_calls);
 
-  return "Aggressive removal: " + std::to_string(removed_tsan_calls);
+  return "single-thread removal: " + std::to_string(removed_tsan_calls);
 }
