@@ -45,6 +45,10 @@ static void remove_noinline_from_module(Module &M) {
   }
 }
 
+static void reset_analysis_results(Module &M, ModuleAnalysisManager &AM) {
+  analysis_results = new RequiredAnalysisResults(AM, M);
+}
+
 static bool run_optimization_passes(
     Module &M, ModuleAnalysisManager &AM,
     std::string (*opt_pass_func)(Module &M, ModuleAnalysisManager &AM),
@@ -134,9 +138,7 @@ static std::string run_tsan(Module &M, ModuleAnalysisManager &AM) {
 
 static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
   allow_function_prefixes_to_be_called_in_precompute({"__tsan_"});
-
   PrecomputeFunctions::create_instance(M);
-  analysis_results = new RequiredAnalysisResults(AM, M);
 
   auto *main_func = M.getFunction("main");
   assert(main_func);
@@ -230,22 +232,19 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
   builder.CreateCall(precomputed_main, args);
   builder.CreateRet(Constant::getNullValue(main_func->getReturnType()));
 
-  remove_noinline_from_module(M);
-
   // remove other non-precompute functions now
   std::vector<Function *> to_delete;
-  for (auto it_f = M.begin(); it_f != M.end(); ++it_f) {
-    Function *f = &*it_f;
-    if (precalcuation->is_func_part_of_precompute_phase(f)) {
+  for (Function &func : M) {
+    if (precalcuation->is_func_part_of_precompute_phase(&func)) {
       // the tsan calls are already part of precompute, no need to instrumente
       // them again
-      f->removeFnAttr(Attribute::SanitizeThread);
-    } else if ((not f->isDeclaration()) && f != main_func &&
-               (not f->getName().starts_with("__tsan")) &&
-               (not is_func_from_std(f))) {
+      func.removeFnAttr(Attribute::SanitizeThread);
+    } else if ((not func.isDeclaration()) && &func != main_func &&
+               (not func.getName().starts_with("__tsan")) &&
+               (not is_func_from_std(&func))) {
       // not used: remove
-      if (f->hasExternalLinkage())
-        f->setLinkage(GlobalValue::InternalLinkage);
+      if (func.hasExternalLinkage())
+        func.setLinkage(GlobalValue::InternalLinkage);
       // this will prompt GlobalDCE to remove
     }
   }
@@ -270,14 +269,18 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
   // Pass starts here
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
+    PassBuilder PB;
+    auto MPM = PB.buildPerModuleDefaultPipeline(OptimizationLevel::O2);
     errs() << "\n";
-    run_optimization_passes(M, AM, run_tsan, false);
 
+    run_optimization_passes(M, AM, run_tsan, false);
 #ifndef NDEBUG
     auto num_undef = get_num_undefs(M);
 #endif
+    reset_analysis_results(M, AM);
     if (not run_optimization_passes(M, AM, run_precompute))
       return PreservedAnalyses::all();
+    remove_noinline_from_module(M);
 #ifndef NDEBUG
     // at most: every undef value can be duplicated
     // TODO re-enable assertions for no openmp programs
@@ -292,15 +295,13 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
 #ifdef PRECOMPUTE_TSAN_OPTIMIZE_LOOPS
     run_optimization_passes(M, AM, remove_all_single_thread_regions);
-    run_optimization_passes(M, AM, eliminate_single_thread);
+    run_optimization_passes(M, AM, eliminate_only_in_critical);
     run_optimization_passes(M, AM, reduce_tsan_calls);
     run_optimization_passes(M, AM, Optimize_loops, false);
 #endif
 
     // last pass above should always skip opts (4th param to false)
     // try to eliminate even more things
-    PassBuilder PB;
-    auto MPM = PB.buildPerModuleDefaultPipeline(OptimizationLevel::O2);
     MPM.run(M, AM);
 
     delete analysis_results;

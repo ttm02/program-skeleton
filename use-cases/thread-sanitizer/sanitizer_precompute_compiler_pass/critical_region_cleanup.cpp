@@ -52,7 +52,7 @@ static unsigned remove_tsan_calls_in_func(
   return removed_tsan_calls;
 }
 
-std::string eliminate_single_thread(Module &M, ModuleAnalysisManager &AM) {
+std::string eliminate_only_in_critical(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Eliminate non-multi-threaded variable accesses\n";
   unsigned int removed_tsan_calls = 0;
 
