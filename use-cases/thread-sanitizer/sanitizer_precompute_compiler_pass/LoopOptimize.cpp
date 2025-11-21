@@ -236,7 +236,8 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
   auto *range_full = tsanBuilder.CreateMul(count_full, tsan_size);
 
   bool isWrite = func_name.starts_with("__tsan_write");
-  createTSANrange(M, tsanBuilder, base_ptr, range_full, isWrite);
+  auto newCall = createTSANrange(M, tsanBuilder, base_ptr, range_full, isWrite);
+  newCall->setDebugLoc(call->getDebugLoc());
   remove_inst_from_func(call);
 
   return true;

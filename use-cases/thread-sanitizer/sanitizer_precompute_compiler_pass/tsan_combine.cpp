@@ -78,8 +78,8 @@ static inline StructType *getGEPstructTy(const GetElementPtrInst *gep) {
   return nullptr;
 }
 
-void createTSANrange(Module &M, IRBuilder<> &builder, Value *base_ptr,
-                     Value *struct_size, const bool isWrite) {
+CallInst *createTSANrange(Module &M, IRBuilder<> &builder, Value *base_ptr,
+                          Value *struct_size, const bool isWrite) {
   auto *ctx = &base_ptr->getContext();
   auto ptrTy = PointerType::get(*ctx, 0);
   auto voidTy = Type::getVoidTy(*ctx);
@@ -87,18 +87,18 @@ void createTSANrange(Module &M, IRBuilder<> &builder, Value *base_ptr,
 
   auto func_name = isWrite ? "__tsan_write_range" : "__tsan_read_range";
   auto tsan_func = M.getOrInsertFunction(func_name, voidTy, ptrTy, int64Ty);
-  builder.CreateCall(tsan_func, {base_ptr, struct_size});
+  return builder.CreateCall(tsan_func, {base_ptr, struct_size});
 }
 
-void createTSANrange(Module &M, Instruction *base_ptr,
-                     const unsigned struct_size, const bool isWrite) {
+CallInst *createTSANrange(Module &M, Instruction *base_ptr,
+                          const unsigned struct_size, const bool isWrite) {
   auto *ctx = &M.getContext();
   auto int64Ty = Type::getInt64Ty(*ctx);
   // TODO i64 might not always be applicable
   Value *struct_size_value = ConstantInt::get(int64Ty, struct_size, false);
 
   IRBuilder<> builder(base_ptr->getNextNode());
-  createTSANrange(M, builder, base_ptr, struct_size_value, isWrite);
+  return createTSANrange(M, builder, base_ptr, struct_size_value, isWrite);
 }
 
 static inline const Instruction *
@@ -198,7 +198,8 @@ static void range_replace_struct(
   }
 
   // TODO allow partial ranges of only read or only write
-  createTSANrange(M, base_ptr, byte_offset, tsan_reads.empty());
+  auto newCall = createTSANrange(M, base_ptr, byte_offset, tsan_reads.empty());
+  newCall->setDebugLoc((*calls.begin())->getDebugLoc());
   (*added_tsan_calls)++;
 
   // cleanup replaced TSAN calls
@@ -309,7 +310,8 @@ static void range_replace_array(
   const DataLayout &DL = M.getDataLayout();
   unsigned elemBitwidth = DL.getTypeSizeInBits(elemTy);
   unsigned byte_offset = bits2bytes(n * elemBitwidth);
-  createTSANrange(M, base_ptr, byte_offset, tsan_reads.empty());
+  auto newCall = createTSANrange(M, base_ptr, byte_offset, tsan_reads.empty());
+  newCall->setDebugLoc((*calls.begin())->getDebugLoc());
   (*added_tsan_calls)++;
 
   // cleanup replaced TSAN calls
@@ -374,17 +376,15 @@ remove_tsan_calls_in_func(const DenseSet<CallBase *> &tsan_calls, Module &M) {
       continue;
 
     auto *bp = bp2call.getFirst();
-    auto &calls = bp2call.getSecond();
-
     if (auto *base_ptr = dyn_cast<GetElementPtrInst>(bp)) {
       range_replace_struct(M, base_ptr, base_ptr_to_call, call_to_base_ptr,
                            &removed_tsan_calls, &added_tsan_calls, tsan_writes,
-                           tsan_reads, ptr_values, bp, calls);
+                           tsan_reads, ptr_values, bp, call_list);
     } else if (auto *call_gep =
                    dyn_cast<GetElementPtrInst>(*ptr_values.begin())) {
       range_replace_array(M, call_gep, base_ptr_to_call, call_to_base_ptr,
                           &removed_tsan_calls, &added_tsan_calls, tsan_writes,
-                          tsan_reads, ptr_values, bp, calls);
+                          tsan_reads, ptr_values, bp, call_list);
     }
   }
 
