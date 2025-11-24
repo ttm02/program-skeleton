@@ -26,7 +26,8 @@ static inline void collect_base_ptr_to_tsan_call(
 
   // value is uncertain -> do not map these DFG values to TSAN call
   if (isa<PHINode>(inst) || isa<CallBase>(inst) || isa<LoadInst>(inst) ||
-      isa<SelectInst>(inst) || isa<AllocaInst>(inst) || isa<FreezeInst>(inst))
+      isa<SelectInst>(inst) || isa<AllocaInst>(inst) || isa<FreezeInst>(inst) ||
+      isa<ExtractElementInst>(inst))
     return;
 
   if (not(isa<GetElementPtrInst>(inst) || isa<IntToPtrInst>(inst) ||
