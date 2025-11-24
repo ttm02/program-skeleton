@@ -136,6 +136,52 @@ static std::string run_tsan(Module &M, ModuleAnalysisManager &AM) {
   return "TSAN instrumentation already available";
 }
 
+static void collectCalls(CallBase *call, DenseSet<Value *> &to_precompute,
+                         DenseSet<Instruction *> &precompute_locations) {
+  if (is_func_from_std(call->getFunction())) {
+    // dont analyze internals of std, though tsan may instrument them
+    return;
+  }
+
+  auto called_func = call->getCalledFunction();
+  if (!called_func)
+    return;
+  auto func_name = called_func->getName();
+
+  // eiter tsan or omp function
+  // omp function necessary e.g. to keep synchronization
+  bool is_thread_func = is_thread_function(called_func);
+  if (not func_name.starts_with("__tsan") && not is_thread_func)
+    return;
+
+  if (func_name == "__tsan_func_exit") {
+    if (isa<ResumeInst>(call->getNextNonDebugInstruction())) {
+      // TODO make this a compiler option!!
+      // in cleanup block, dont handle exceptions
+      return;
+    }
+    if (is_tsan_cleanup_block(call->getParent())) {
+      // skip, the tsan cleanup part. no need to precompute, as it will only
+      // handle fatal exceptions
+      return;
+    }
+  }
+
+  for (auto &it_arg : call->args())
+    to_precompute.insert(it_arg);
+  precompute_locations.insert(call);
+}
+
+static void collectPrecompute(Instruction &inst,
+                              DenseSet<Value *> &to_precompute,
+                              DenseSet<Instruction *> &precompute_locations) {
+  if (auto *call = dyn_cast<CallBase>(&inst)) {
+    collectCalls(call, to_precompute, precompute_locations);
+  } else {
+    // TODO
+  }
+}
+
 static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
   allow_function_prefixes_to_be_called_in_precompute({"__tsan_"});
   PrecomputeFunctions::create_instance(M);
@@ -146,47 +192,14 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
   DenseSet<Value *> to_precompute;
   DenseSet<Instruction *> precompute_locations;
 
-  for (Function &f : M) {
-    if (not f.getName().starts_with("tsan.module_ctor")) {
-      // do not instrument tsan itself
-      for (BasicBlock &bb : f) {
-        for (Instruction &inst : bb) {
-          if (auto call = dyn_cast<CallBase>(&inst)) {
-            auto called_func = call->getCalledFunction();
-            if (!called_func)
-              continue;
-            auto func_name = called_func->getName();
-            // eiter tsan or omp function
-            // omp function necessary e.g. to keep synchronization
-            bool is_thread_func = is_thread_function(called_func);
-            if (func_name.starts_with("__tsan") || is_thread_func) {
-              if (func_name == "__tsan_func_exit") {
-                if (isa<ResumeInst>(call->getNextNonDebugInstruction())) {
-                  // TODO make this a compiler option!!
-                  //  in cleanup block, dont handle exceptions
-                  continue;
-                }
-                if (is_tsan_cleanup_block(call->getParent())) {
-                  // skip, the tsan cleanup part.
-                  // no need to precompute, as it will only handle fatal
-                  // exceptions
-                  continue;
-                }
-              }
-              if (is_func_from_std(call->getFunction())) {
-                // dont analyze internals of std, though tsan may instrument
-                // them
-                continue;
-              }
+  for (Function &func : M) {
+    // do not instrument tsan itself
+    if (func.getName().starts_with("tsan.module_ctor"))
+      continue;
 
-              for (auto &it_arg : call->args())
-                to_precompute.insert(it_arg);
-              precompute_locations.insert(call);
-            }
-          }
-        }
-      }
-    }
+    for (BasicBlock &bb : func)
+      for (Instruction &inst : bb)
+        collectPrecompute(inst, to_precompute, precompute_locations);
   }
 
   errs() << "Statistics: locations: " << precompute_locations.size()
