@@ -55,9 +55,9 @@ for TEST_CASE in $TEST_CASES; do
     if [[ -x "./a.out" ]]; then
       # compilation successful
       /usr/bin/env time -f "%e" -o "${MY_TMP_DIR}/time_orig.log" \
-        --quiet ./a.out_original &>"${MY_TMP_DIR}/orig.log"
+        --quiet timeout 300 ./a.out_original &>"${MY_TMP_DIR}/orig.log"
       /usr/bin/env time -f "%e" -o "${MY_TMP_DIR}/time_precompute.log" \
-        --quiet ./a.out &>"${MY_TMP_DIR}/precompute.log"
+        --quiet timeout 300 ./a.out &>"${MY_TMP_DIR}/precompute.log"
 
       if grep -qF "$GREP_STRING" "${MY_TMP_DIR}/orig.log"; then
         if grep -qF "$GREP_STRING" "${MY_TMP_DIR}/precompute.log"; then
