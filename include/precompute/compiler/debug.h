@@ -31,8 +31,8 @@ Licensed under the Apache License, Version 2.0 (the "License");
 
 void add_debug_printfs_to_precalculation(llvm::Function *func);
 
-inline int get_num_undefs(const llvm::Function &F) {
-  int num_undef = 0;
+inline unsigned get_num_undefs(const llvm::Function &F) {
+  unsigned num_undef = 0;
   for (auto &BB : F) {
     for (auto &I : BB) {
       // Check if the instruction has any undef operands.
@@ -46,8 +46,8 @@ inline int get_num_undefs(const llvm::Function &F) {
   return num_undef;
 }
 
-inline int get_num_undefs(const llvm::Module &M) {
-  int num_undef = 0;
+inline unsigned get_num_undefs(const llvm::Module &M) {
+  unsigned num_undef = 0;
   for (auto &F : M) {
     num_undef += get_num_undefs(F);
   }

@@ -296,15 +296,13 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
       return PreservedAnalyses::all();
     remove_noinline_from_module(M);
 #ifndef NDEBUG
-    // at most: every undef value can be duplicated
-    // TODO re-enable assertions for no openmp programs
-    // assert(get_num_undefs(M) <= num_undef * 2);
-    // but this is probably insecure (e.g. if undef is used to calculate the
-    // tag)// so we go with the stricter assertion that our pass should not use
-    // more undef values
-    // assert(get_num_undefs(M) <= num_undef);
-    // some undefs are actually duplicated in our test programm (some vector
-    // elems are undef)
+    // at most: every undef value can be duplicated but this is probably
+    // insecure (e.g. if undef is used to calculate the tag) so we go with the
+    // stricter assertion that our pass should not use more undef values some
+    // undefs are actually duplicated in our test programm (some vector elems
+    // are undef)
+    double max_undef_factor = 1.1; // between 1.0 and 2.0
+    assert(get_num_undefs(M) <= num_undef * max_undef_factor);
 #endif
     for (auto mop : myOptPasses)
       if (not mop.beforePrecompute)
