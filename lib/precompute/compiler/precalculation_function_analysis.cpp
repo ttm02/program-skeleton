@@ -112,12 +112,11 @@ PrecalculationFunctionAnalysis::PrecalculationFunctionAnalysis(
       aliases.insert(alias);
 
       if (not alias->user_empty()) {
-        llvm::errs() << "Function Alias is used:\n";
-        alias->dump();
-        llvm::errs() << "Replace with original func\n";
-        // this way we dont need to handle tha alias explicitly:
-        alias->replaceAllUsesWith(func);
+        llvm::errs() << "Replace function alias with original func:\n";
+        llvm::errs() << alias->getName() << " -> " << func->getName() << "\n\n";
+        // this way we dont need to handle the alias explicitly
         // this may impact debug info
+        alias->replaceAllUsesWith(func);
       }
     }
   }
