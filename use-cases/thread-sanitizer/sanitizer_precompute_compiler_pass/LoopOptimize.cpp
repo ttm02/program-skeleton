@@ -209,13 +209,17 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
 
   // fix trailing DbgRecords in BasicBlock
   auto *prevInst = call->getPrevNonDebugInstruction(true);
-  assert(prevInst);
+  auto *nextInst = call->getNextNonDebugInstruction();
+  assert(nextInst);
+  // sometime call is the first in BasicBlock (DRB041 and DRB042)
+  if (not prevInst)
+    prevInst = nextInst;
   auto *nextNode = call->getNextNode();
   assert(nextNode);
   auto *origBB = call->getParent();
   prevInst->adoptDbgRecords(origBB, nextNode->getIterator(), false);
 
-  auto *restBB = origBB->splitBasicBlock(call->getNextNonDebugInstruction());
+  auto *restBB = origBB->splitBasicBlock(nextInst);
   auto *tsanBB = BasicBlock::Create(*ctx, "tsan_bb", call->getFunction());
   origBB->getTerminator()->eraseFromParent();
 
