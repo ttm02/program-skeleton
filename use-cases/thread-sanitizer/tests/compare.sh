@@ -7,7 +7,15 @@ BINARY_DIR=$1
 TEST_CASE=$2
 
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
-"${SCRIPT_DIR}/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE"
+
+"${SCRIPT_DIR}/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" false &
+pid_compile_orig=$!
+
+"${SCRIPT_DIR}/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" true &
+pid_compile_pass=$!
+
+wait $pid_compile_orig
+wait $pid_compile_pass
 
 # compares standard thread sanitizer with the precomputed one
 GREP_STRING="WARNING: ThreadSanitizer: data race"
@@ -16,8 +24,6 @@ GREP_STRING="WARNING: ThreadSanitizer: data race"
 if [[ -x "./a.out" ]]; then
     # a.out exists
     if ./a.out_original 2>&1 | grep -qF "$GREP_STRING"; then
-        # original sanitizer found data race
-
         if ./a.out 2>&1 | grep -qF "$GREP_STRING"; then
             # success
             echo "both versions found the datarace"
@@ -27,12 +33,11 @@ if [[ -x "./a.out" ]]; then
             exit 1
         fi
     else
-        #echo "Original sanitizer found no race"
         if ./a.out 2>&1 | grep -qF "$GREP_STRING"; then
             echo "Original sanitizer found no race but precomputed did"
             exit 1
         else
-            #success
+            # success
             echo "both versions found no race"
             exit 0
         fi

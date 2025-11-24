@@ -34,7 +34,7 @@ MY_CUR_DIR=$(pwd)
 
 cd "$MY_TMP_DIR" || exit 10
 
-echo "testcase,time_original,time_precompute,found_by" >"${MY_CUR_DIR}/timing.csv"
+echo "testcase,time_original,time_precompute,found_by" | tee "${MY_CUR_DIR}/timing.csv"
 
 save_time_to_file() {
   (
@@ -52,7 +52,14 @@ run_testcase() {
   TEST_CASE="$1"
 
   if [[ "$TEST_CASE" == *.c ]]; then
-    "${SCRIPT_DIR}/tests/drb_compile.sh" "$BINARY_DIR" "${TEST_CASE}" >/dev/null 2>&1
+    "${SCRIPT_DIR}/tests/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" false >/dev/null 2>&1 &
+    pid_compile_orig=$!
+
+    "${SCRIPT_DIR}/tests/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" true >/dev/null 2>&1 &
+    pid_compile_pass=$!
+
+    wait $pid_compile_orig
+    wait $pid_compile_pass
 
     if [[ -x "./a.out" ]]; then
       # compilation successful
