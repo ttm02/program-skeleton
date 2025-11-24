@@ -136,41 +136,6 @@ openMPboundFix(Function *func,
   getBoundLoadStoreReplacement(omp_upper, boundReplacement);
 }
 
-// if e.g. loop index is used after the loop
-// TODO not extensively tested!
-static void compute_other_loop_values(Module &M, ScalarEvolution *SE,
-                                      const SCEV *exitCount, Loop *loop,
-                                      SCEVExpander &seExpander) {
-  std::map<Value *, Value *> replacement_map;
-  for (auto &bb : loop->getBlocks()) {
-    for (auto &inst_in_loop : *bb) {
-      if (not SE->isSCEVable(inst_in_loop.getType()))
-        continue;
-
-      auto scev = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&inst_in_loop));
-      if (not scev)
-        continue;
-
-      for (auto *u : inst_in_loop.users()) {
-        if (auto user_inst = dyn_cast<Instruction>(u)) {
-          if (not loop->contains(user_inst)) {
-            auto *end_value_scev = scev->evaluateAtIteration(exitCount, *SE);
-            Value *end_value = seExpander.expandCodeFor(end_value_scev,
-                                                        inst_in_loop.getType());
-            replacement_map[&inst_in_loop] = end_value;
-            // only one replacement value is needed even if multiple users
-            break;
-          }
-        }
-      }
-    }
-  }
-  // perform the replacement
-  for (auto pair : replacement_map) {
-    pair.first->replaceAllUsesWith(pair.second);
-  }
-}
-
 static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
                                 CallBase *call) {
   auto called_func = call->getCalledFunction();
