@@ -5,10 +5,6 @@ add_subdirectory(sanitizer_precompute_compiler_pass)
 add_subdirectory(tests)
 add_subdirectory(sample_apps)
 
-add_custom_target(run.sh-sanitizer ALL
-        COMMAND cp ${CMAKE_CURRENT_SOURCE_DIR}/run.sh ${CMAKE_CURRENT_BINARY_DIR}/run.sh
-        DEPENDS run.sh)
-
 add_custom_target(clang_wrap_cc-sanitizer ALL
         COMMAND cp ${CMAKE_SOURCE_DIR}/clang_wrapper.py ${CMAKE_CURRENT_BINARY_DIR}/clang_wrap_cc
         DEPENDS ${CMAKE_SOURCE_DIR}/clang_wrapper.py)

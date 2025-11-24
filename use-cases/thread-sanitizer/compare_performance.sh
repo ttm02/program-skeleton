@@ -14,7 +14,8 @@ if [ -n "$1" ]; then
   if ! [ -d "$1" ]; then
     usage
   else
-    MY_CMAKE_BUILD_DIR="$1"
+    MY_CMAKE_BUILD_DIR=$(realpath "$1")
+    shift
   fi
 fi
 
@@ -25,39 +26,40 @@ TEST_CASE_DIR="${MY_CMAKE_BUILD_DIR}/_deps/drb-src/micro-benchmarks"
 TEST_CASES=$(ls "$TEST_CASE_DIR")
 
 source "${BINARY_DIR}/setup_env.sh"
-RUN_SCRIPT="${BINARY_DIR}/run.sh"
 
 GREP_STRING="WARNING: ThreadSanitizer: data race"
 
-echo "testcase,time_original,time_precompute,found_by" >timing.csv
+MY_TMP_DIR=$(mktemp -d --suffix="JustTheRaces-timing")
+MY_CUR_DIR=$(pwd)
+
+cd "$MY_TMP_DIR" || exit 10
+
+echo "testcase,time_original,time_precompute,found_by" >"${MY_CUR_DIR}/timing.csv"
 
 save_time_to_file() {
   (
-    echo -n "$1"
+    echo -n "$(basename "$1")"
     echo -n ","
     cat "${MY_TMP_DIR}/time_orig.log" | tr -d "\n"
     echo -n ","
     cat "${MY_TMP_DIR}/time_precompute.log" | tr -d "\n"
     echo -n ","
     echo "$2"
-  ) | tee -a timing.csv
+  ) | tee -a "${MY_CUR_DIR}/timing.csv"
 }
 
-MY_TMP_DIR=$(mktemp -d --suffix="JustTheRaces-timing")
+run_testcase() {
+  TEST_CASE="$1"
 
-for TEST_CASE in $TEST_CASES; do
   if [[ "$TEST_CASE" == *.c ]]; then
-    rm -f ./a.out ./a.out_original
-
-    # compile
-    $RUN_SCRIPT "${TEST_CASE_DIR}/${TEST_CASE}" &>/dev/null
+    "${SCRIPT_DIR}/tests/drb_compile.sh" "$BINARY_DIR" "${TEST_CASE}" >/dev/null 2>&1
 
     if [[ -x "./a.out" ]]; then
       # compilation successful
       /usr/bin/env time -f "%e" -o "${MY_TMP_DIR}/time_orig.log" \
-        --quiet timeout 300 ./a.out_original &>"${MY_TMP_DIR}/orig.log"
+        --quiet timeout 300 ./a.out_original >"${MY_TMP_DIR}/orig.log" 2>&1
       /usr/bin/env time -f "%e" -o "${MY_TMP_DIR}/time_precompute.log" \
-        --quiet timeout 300 ./a.out &>"${MY_TMP_DIR}/precompute.log"
+        --quiet timeout 300 ./a.out >"${MY_TMP_DIR}/precompute.log" 2>&1
 
       if grep -qF "$GREP_STRING" "${MY_TMP_DIR}/orig.log"; then
         if grep -qF "$GREP_STRING" "${MY_TMP_DIR}/precompute.log"; then
@@ -78,7 +80,19 @@ for TEST_CASE in $TEST_CASES; do
       save_time_to_file "$TEST_CASE" "compilation failed"
     fi
   fi
-done
+}
 
-rm -fr "$MY_TMP_DIR"
-exit 0
+clean_exit() {
+  rm -fr "$MY_TMP_DIR"
+  exit 0
+}
+
+if [ -n "$1" ]; then
+  run_testcase "${TEST_CASE_DIR}/"*"${1}"*
+  clean_exit
+fi
+
+for tc in $TEST_CASES; do
+  run_testcase "${TEST_CASE_DIR}/${tc}"
+done
+clean_exit

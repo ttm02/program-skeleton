@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# where the wrappers are found
+BINARY_DIR=$1
+
+# the testcase to use
+TEST_CASE=$2
+DRB_DIR=$(dirname "$TEST_CASE")
+
+source "${BINARY_DIR}/setup_env.sh"
+
+rm ./a.out ./a.out_original
+
+CFLAGS="-O2 -g -fopenmp -fsanitize=thread"
+PASS_FLAGS="-fuse-ld=lld -flto -fwhole-program-vtables -fno-inline"
+
+# compile
+if grep -q 'PolyBench' "$TEST_CASE"; then
+    # needs additional compiler flags
+    POLYFLAG="-I$DRB_DIR -I$DRB_DIR/utilities -DPOLYBENCH_NO_FLUSH_CACHE -DPOLYBENCH_TIME -D_POSIX_C_SOURCE=200112L"
+    CFLAGS="$CFLAGS $POLYFLAG"
+    # normal compilation
+    export USE_COMPILER_PASS=false
+    $CLANG_WRAP_CC $CFLAGS -c -o polybench.o $DRB_DIR/utilities/polybench.c
+    $CLANG_WRAP_CC $CFLAGS -c -o main.o $2
+    $CLANG_WRAP_CC $CFLAGS -o ./a.out_original main.o polybench.o
+    # with pass
+    export USE_COMPILER_PASS=true
+    $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -c -o polybench.o $DRB_DIR/utilities/polybench.c
+    $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -c -o main.o $2
+    $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -o ./a.out main.o polybench.o
+else
+    # normal compilation
+    export USE_COMPILER_PASS=false
+    $CLANG_WRAP_CC $CFLAGS -o ./a.out_original $2
+    # with pass
+    export USE_COMPILER_PASS=true
+    $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -o ./a.out $2
+fi
