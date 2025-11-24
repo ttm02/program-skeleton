@@ -252,10 +252,20 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
   return "Successfully computed the precomputation";
 }
 
+struct myOptPass {
+  std::string (*opt_pass_func)(Module &M, ModuleAnalysisManager &AM);
+  const bool beforePrecompute = false;
+};
+
+static const SmallVector<myOptPass, 4> myOptPasses = {
+    myOptPass{remove_all_single_thread_regions},
+    myOptPass{eliminate_only_in_critical},
+    myOptPass{reduce_tsan_calls},
+    myOptPass{Optimize_loops},
+};
+
 namespace {
 struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
-
-  // register that we require this analysis
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.addRequired<TargetLibraryInfoWrapperPass>();
@@ -274,6 +284,10 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     errs() << "\n";
 
     run_optimization_passes(M, AM, run_tsan, false);
+
+    for (auto mop : myOptPasses)
+      if (mop.beforePrecompute)
+        run_optimization_passes(M, AM, mop.opt_pass_func);
 #ifndef NDEBUG
     auto num_undef = get_num_undefs(M);
 #endif
@@ -292,13 +306,9 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     // some undefs are actually duplicated in our test programm (some vector
     // elems are undef)
 #endif
-
-#ifdef PRECOMPUTE_TSAN_OPTIMIZE_LOOPS
-    run_optimization_passes(M, AM, remove_all_single_thread_regions);
-    run_optimization_passes(M, AM, eliminate_only_in_critical);
-    run_optimization_passes(M, AM, reduce_tsan_calls);
-    run_optimization_passes(M, AM, Optimize_loops, false);
-#endif
+    for (auto mop : myOptPasses)
+      if (not mop.beforePrecompute)
+        run_optimization_passes(M, AM, mop.opt_pass_func);
 
     // last pass above should always skip opts (4th param to false)
     // try to eliminate even more things

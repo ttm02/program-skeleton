@@ -20,7 +20,7 @@ target_include_directories(sanitizer_precompute_pass PRIVATE ${CMAKE_SOURCE_DIR}
 
 #TODO document that teh pass only builds with clang
 
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=address -fno-omit-frame-pointer -g -Og -DDEBUG_MACH_PASS=1 -gdwarf-4 -DPRECOMPUTE_TSAN_OPTIMIZE_LOOPS")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=address -fno-omit-frame-pointer -g -Og -DDEBUG_MACH_PASS=1 -gdwarf-4")
 # db on my local platform has some issues with gdwarf 5
 #TODO the link step does not work correctly, we still need to preload the libasan
 #TODO check if compiler is clang
