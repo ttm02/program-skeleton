@@ -33,8 +33,9 @@ IMB-ASYNC/output/
 Testing/Temporary
 
 # backupo data from older measurements
-visualization/mearurement_2022_05_16.tar.gz
+visualization/mearurement_*.tar.gz
 # more in visualization
+timing.csv
 cache.csv
 *.pdf
 
