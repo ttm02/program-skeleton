@@ -75,6 +75,7 @@ static bool run_optimization_passes(
 #ifndef NDEBUG
     has_error = verifyModule(M, &errs(), nullptr);
     assert(not has_error);
+    // assert(not has_poisoned_values(M));
 #endif
   }
   return true;
@@ -314,7 +315,7 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     // stricter assertion that our pass should not use more undef values some
     // undefs are actually duplicated in our test programm (some vector elems
     // are undef)
-    double max_undef_factor = 1.1; // between 1.0 and 2.0
+    double max_undef_factor = 1.0; // between 1.0 and 2.0
     assert(get_num_undefs(M) <= num_undef * max_undef_factor);
 #endif
     for (auto mop : myOptPasses)

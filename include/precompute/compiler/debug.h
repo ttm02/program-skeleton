@@ -54,4 +54,14 @@ inline unsigned get_num_undefs(const llvm::Module &M) {
   return num_undef;
 }
 
+inline bool has_poisoned_values(const llvm::Module &M) {
+  for (auto &F : M)
+    for (auto &BB : F)
+      for (auto &I : BB)
+        for (auto &U : I.operands())
+          if (llvm::isa<llvm::PoisonValue>(U))
+            return true;
+  return false;
+}
+
 #endif
