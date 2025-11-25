@@ -42,10 +42,15 @@ save_time_to_file() {
     echo -n ","
     cat "${MY_TMP_DIR}/time_orig.log" | tr -d "\n"
     echo -n ","
-    cat "${MY_TMP_DIR}/time_precompute.log" | tr -d "\n"
+    cat "${MY_TMP_DIR}/time_pass.log" | tr -d "\n"
     echo -n ","
     echo "$2"
   ) | tee -a "${MY_CUR_DIR}/timing.csv"
+}
+
+time_testcase() {
+  /usr/bin/env time -f "%e" -o "${MY_TMP_DIR}/time_${1}.log" \
+    --quiet timeout 300 "$2" 2>&1
 }
 
 run_testcase() {
@@ -62,20 +67,14 @@ run_testcase() {
     wait $pid_compile_pass
 
     if [[ -x "./a.out" ]]; then
-      # compilation successful
-      /usr/bin/env time -f "%e" -o "${MY_TMP_DIR}/time_orig.log" \
-        --quiet timeout 300 ./a.out_original >"${MY_TMP_DIR}/orig.log" 2>&1
-      /usr/bin/env time -f "%e" -o "${MY_TMP_DIR}/time_precompute.log" \
-        --quiet timeout 300 ./a.out >"${MY_TMP_DIR}/precompute.log" 2>&1
-
-      if grep -qF "$GREP_STRING" "${MY_TMP_DIR}/orig.log"; then
-        if grep -qF "$GREP_STRING" "${MY_TMP_DIR}/precompute.log"; then
+      if time_testcase "orig" ./a.out_original | grep -qF "$GREP_STRING"; then
+        if time_testcase "pass" ./a.out | grep -qF "$GREP_STRING"; then
           save_time_to_file "$TEST_CASE" "both"
         else
           save_time_to_file "$TEST_CASE" "orig"
         fi
       else
-        if grep -qF "$GREP_STRING" "${MY_TMP_DIR}/precompute.log"; then
+        if time_testcase "pass" ./a.out | grep -qF "$GREP_STRING"; then
           save_time_to_file "$TEST_CASE" "precomputed"
         else
           save_time_to_file "$TEST_CASE" "neither"
