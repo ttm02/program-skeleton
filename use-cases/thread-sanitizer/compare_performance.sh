@@ -34,23 +34,45 @@ MY_CUR_DIR=$(pwd)
 
 cd "$MY_TMP_DIR" || exit 10
 
-echo "testcase,time_original,time_precompute,found_by" | tee "${MY_CUR_DIR}/timing.csv"
+echo "testcase,found_orig,found_pass,found_stan,time_orig,time_pass,time_stan" | tee "${MY_CUR_DIR}/timing.csv"
 
 save_time_to_file() {
   (
     echo -n "$(basename "$1")"
     echo -n ","
+    cat "${MY_TMP_DIR}/found_orig.log" | tr -d "\n"
+    echo -n ","
+    cat "${MY_TMP_DIR}/found_pass.log" | tr -d "\n"
+    echo -n ","
+    cat "${MY_TMP_DIR}/found_stan.log" | tr -d "\n"
+    echo -n ","
     cat "${MY_TMP_DIR}/time_orig.log" | tr -d "\n"
     echo -n ","
     cat "${MY_TMP_DIR}/time_pass.log" | tr -d "\n"
     echo -n ","
-    echo "$2"
+    cat "${MY_TMP_DIR}/time_stan.log" | tr -d "\n"
+    echo ""
   ) | tee -a "${MY_CUR_DIR}/timing.csv"
 }
 
 time_testcase() {
   /usr/bin/env time -f "%e" -o "${MY_TMP_DIR}/time_${1}.log" \
     --quiet timeout 300 "$2" 2>&1
+}
+
+run_binary() {
+  NAME="$1"
+
+  if [[ -x "./a.out_${NAME}" ]]; then
+    if time_testcase "${NAME}" "./a.out_${NAME}" | grep -qF "$GREP_STRING"; then
+      echo "yes" >"${MY_TMP_DIR}/found_${NAME}.log"
+    else
+      echo "no" >"${MY_TMP_DIR}/found_${NAME}.log"
+    fi
+  else
+    echo "build" >"${MY_TMP_DIR}/found_${NAME}.log"
+    echo "-1" >"${MY_TMP_DIR}/time_${NAME}.log"
+  fi
 }
 
 run_testcase() {
@@ -63,28 +85,25 @@ run_testcase() {
     "${SCRIPT_DIR}/tests/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" true >/dev/null 2>&1 &
     pid_compile_pass=$!
 
+    export OUTPUT_SUFFIX='stan'
+    export USE_STATIC_ANALYSIS=true
+    "${SCRIPT_DIR}/tests/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" true >/dev/null 2>&1 &
+    pid_compile_stan=$!
+    unset OUTPUT_SUFFIX
+    unset USE_STATIC_ANALYSIS
+
     wait $pid_compile_orig
     wait $pid_compile_pass
+    wait $pid_compile_stan
 
-    if [[ -x "./a.out" ]]; then
-      if time_testcase "orig" ./a.out_original | grep -qF "$GREP_STRING"; then
-        if time_testcase "pass" ./a.out | grep -qF "$GREP_STRING"; then
-          save_time_to_file "$TEST_CASE" "both"
-        else
-          save_time_to_file "$TEST_CASE" "orig"
-        fi
-      else
-        if time_testcase "pass" ./a.out | grep -qF "$GREP_STRING"; then
-          save_time_to_file "$TEST_CASE" "precomputed"
-        else
-          save_time_to_file "$TEST_CASE" "neither"
-        fi
-      fi
-    else
-      echo "0" >"${MY_TMP_DIR}/time_orig.log"
-      echo "0" >"${MY_TMP_DIR}/time_precompute.log"
-      save_time_to_file "$TEST_CASE" "compilation failed"
-    fi
+    run_binary 'orig'
+    run_binary 'pass'
+    run_binary 'stan'
+
+    save_time_to_file "$TEST_CASE"
+  else
+    echo "Not a C file: $TEST_CASE"
+    return
   fi
 }
 

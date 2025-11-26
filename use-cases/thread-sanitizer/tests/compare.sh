@@ -11,8 +11,10 @@ SCRIPT_DIR=$(dirname "$(realpath "$0")")
 "${SCRIPT_DIR}/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" false &
 pid_compile_orig=$!
 
+export USE_STATIC_ANALYSIS=true
 "${SCRIPT_DIR}/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" true &
 pid_compile_pass=$!
+unset USE_STATIC_ANALYSIS
 
 wait $pid_compile_orig
 wait $pid_compile_pass
@@ -21,10 +23,9 @@ wait $pid_compile_pass
 GREP_STRING="WARNING: ThreadSanitizer: data race"
 
 # execution
-if [[ -x "./a.out" ]]; then
-    # a.out exists
-    if ./a.out_original 2>&1 | grep -qF "$GREP_STRING"; then
-        if ./a.out 2>&1 | grep -qF "$GREP_STRING"; then
+if [[ -x "./a.out_pass" ]]; then
+    if ./a.out_orig 2>&1 | grep -qF "$GREP_STRING"; then
+        if ./a.out_pass 2>&1 | grep -qF "$GREP_STRING"; then
             # success
             echo "both versions found the datarace"
             exit 0
@@ -33,7 +34,7 @@ if [[ -x "./a.out" ]]; then
             exit 1
         fi
     else
-        if ./a.out 2>&1 | grep -qF "$GREP_STRING"; then
+        if ./a.out_pass 2>&1 | grep -qF "$GREP_STRING"; then
             echo "Original sanitizer found no race but precomputed did"
             exit 1
         else

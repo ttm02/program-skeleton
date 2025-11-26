@@ -21,29 +21,33 @@ poly_flags() {
     CFLAGS="$CFLAGS $POLYFLAG"
 }
 
-if [ "$USE_COMPILER_PASS" = "true" ]; then
-    rm -f ./a.out
-    # with pass
+compile() {
+    TEST_CASE="$1"
+    SUFFIX_NAME="$2"
+
     if grep -q 'PolyBench' "$TEST_CASE"; then
         poly_flags
-        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -c -o polybench_pass.o $DRB_DIR/utilities/polybench.c
-        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -c -o main_pass.o "$TEST_CASE"
-        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -o ./a.out main_pass.o polybench_pass.o
+        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -c -o "polybench_${SUFFIX_NAME}.o" "${DRB_DIR}/utilities/polybench.c"
+        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -c -o "main_${SUFFIX_NAME}.o" "$TEST_CASE"
+        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -o "./a.out_${SUFFIX_NAME}" "main_${SUFFIX_NAME}.o" "polybench_${SUFFIX_NAME}.o"
     else
-        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -o ./a.out "$TEST_CASE"
+        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -o "./a.out_${SUFFIX_NAME}" "$TEST_CASE"
     fi
-else
-    rm -f ./a.out_original
-    # normal compilation
-    if grep -q 'PolyBench' "$TEST_CASE"; then
-        poly_flags
-        $CLANG_WRAP_CC $CFLAGS -c -o polybench_orig.o $DRB_DIR/utilities/polybench.c
-        $CLANG_WRAP_CC $CFLAGS -c -o main_orig.o "$TEST_CASE"
-        $CLANG_WRAP_CC $CFLAGS -o ./a.out_original main_orig.o polybench_orig.o
+}
+
+if [ -z "$OUTPUT_SUFFIX" ]; then
+    if [ "$USE_COMPILER_PASS" = 'true' ]; then
+        OUTPUT_SUFFIX='pass'
     else
-        # normal compilation
-        $CLANG_WRAP_CC $CFLAGS -o ./a.out_original "$TEST_CASE"
+        OUTPUT_SUFFIX='orig'
     fi
 fi
+
+if [ "$USE_STATIC_ANALYSIS" = 'true' ]; then
+    CFLAGS="$CFLAGS --enable-static-analysis"
+fi
+
+rm -f ./a.out_"${OUTPUT_SUFFIX}"
+compile "$TEST_CASE" "$OUTPUT_SUFFIX"
 
 exit 0
