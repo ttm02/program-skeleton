@@ -78,7 +78,7 @@ run_binary() {
 run_testcase() {
   TEST_CASE="$1"
 
-  if [[ "$TEST_CASE" == *.c ]]; then
+  if [[ "$TEST_CASE" == *.c ]] || [[ "$TEST_CASE" == *.cpp ]] || [[ "$TEST_CASE" == *.f ]]; then
     "${SCRIPT_DIR}/tests/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" false >/dev/null 2>&1 &
     pid_compile_orig=$!
 
@@ -102,7 +102,7 @@ run_testcase() {
 
     save_time_to_file "$TEST_CASE"
   else
-    echo "Not a C file: $TEST_CASE"
+    echo "Not a known Source Code file: $TEST_CASE"
     return
   fi
 }

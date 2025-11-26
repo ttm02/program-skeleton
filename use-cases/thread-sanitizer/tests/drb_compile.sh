@@ -25,13 +25,20 @@ compile() {
     TEST_CASE="$1"
     SUFFIX_NAME="$2"
 
+    case "$TEST_CASE" in
+    *.c) WRAPPER="$CLANG_WRAP_CC" ;;
+    *.cpp) WRAPPER="$CLANG_WRAP_CXX" ;;
+    *.f) WRAPPER="$CLANG_WRAP_FC" ;;
+    *) WRAPPER="$CLANG_WRAP_CC" ;;
+    esac
+
     if grep -q 'PolyBench' "$TEST_CASE"; then
         poly_flags
-        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -c -o "polybench_${SUFFIX_NAME}.o" "${DRB_DIR}/utilities/polybench.c"
-        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -c -o "main_${SUFFIX_NAME}.o" "$TEST_CASE"
-        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -o "./a.out_${SUFFIX_NAME}" "main_${SUFFIX_NAME}.o" "polybench_${SUFFIX_NAME}.o"
+        $WRAPPER $CFLAGS $PASS_FLAGS -c -o "polybench_${SUFFIX_NAME}.o" "${DRB_DIR}/utilities/polybench.c"
+        $WRAPPER $CFLAGS $PASS_FLAGS -c -o "main_${SUFFIX_NAME}.o" "$TEST_CASE"
+        $WRAPPER $CFLAGS $PASS_FLAGS -o "./a.out_${SUFFIX_NAME}" "main_${SUFFIX_NAME}.o" "polybench_${SUFFIX_NAME}.o"
     else
-        $CLANG_WRAP_CC $CFLAGS $PASS_FLAGS -o "./a.out_${SUFFIX_NAME}" "$TEST_CASE"
+        $WRAPPER $CFLAGS $PASS_FLAGS -o "./a.out_${SUFFIX_NAME}" "$TEST_CASE"
     fi
 }
 
