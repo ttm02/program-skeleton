@@ -186,6 +186,7 @@ static void collectPrecompute(Instruction &inst,
 static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
   allow_function_prefixes_to_be_called_in_precompute({"__tsan_"});
   PrecomputeFunctions::create_instance(M);
+  reset_analysis_results(M, AM);
 
   auto *main_func = M.getFunction("main");
   assert(main_func);
@@ -263,20 +264,15 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
     }
   }
 
+  remove_noinline_from_module(M);
+
   return "Successfully computed the precomputation";
 }
 
-struct myOptPass {
-  std::string (*opt_pass_func)(Module &M, ModuleAnalysisManager &AM);
-  const bool beforePrecompute = false;
-};
-
-static const SmallVector<myOptPass, 4> myOptPasses = {
-    myOptPass{remove_all_single_thread_regions},
-    myOptPass{eliminate_only_in_critical},
-    myOptPass{reduce_tsan_calls},
-    myOptPass{Optimize_loops},
-};
+static cl::opt<bool>
+    EnableStaticAnalysis("enable-static-analysis",
+                         cl::desc("Enable static analysis to help precompute"),
+                         cl::init(false));
 
 namespace {
 struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
@@ -299,16 +295,14 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
     run_optimization_passes(M, AM, run_tsan, false);
 
-    for (auto mop : myOptPasses)
-      if (mop.beforePrecompute)
-        run_optimization_passes(M, AM, mop.opt_pass_func);
+    if (EnableStaticAnalysis) {
+      // static analysis before precomputation
+    }
 #ifndef NDEBUG
     auto num_undef = get_num_undefs(M);
 #endif
-    reset_analysis_results(M, AM);
     if (not run_optimization_passes(M, AM, run_precompute))
       return PreservedAnalyses::all();
-    remove_noinline_from_module(M);
 #ifndef NDEBUG
     // at most: every undef value can be duplicated but this is probably
     // insecure (e.g. if undef is used to calculate the tag) so we go with the
@@ -318,9 +312,13 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     double max_undef_factor = 1.0; // between 1.0 and 2.0
     assert(get_num_undefs(M) <= num_undef * max_undef_factor);
 #endif
-    for (auto mop : myOptPasses)
-      if (not mop.beforePrecompute)
-        run_optimization_passes(M, AM, mop.opt_pass_func);
+    if (EnableStaticAnalysis) {
+      // static analysis after precomputation
+      run_optimization_passes(M, AM, remove_all_single_thread_regions);
+      run_optimization_passes(M, AM, eliminate_only_in_critical);
+      run_optimization_passes(M, AM, reduce_tsan_calls);
+      run_optimization_passes(M, AM, Optimize_loops);
+    }
 
     // last pass above should always skip opts (4th param to false)
     // try to eliminate even more things

@@ -30,10 +30,16 @@ else:
 
 ld_preload_prev = os.environ.get("LD_PRELOAD", "")
 debug_wrapper = os.environ.get("DEBUG_CLANG_WRAPPER", "false").lower() == "true"
+
 use_compiler_pass_env = os.environ.get("USE_COMPILER_PASS", "0")
 use_compiler_pass = (
     use_compiler_pass_env == "1" or use_compiler_pass_env.lower() == "true"
 )
+use_static_analysis_env = os.environ.get("USE_STATIC_ANALYSIS", "0")
+use_static_analysis = (
+    use_static_analysis_env == "1" or use_static_analysis_env.lower() == "true"
+)
+
 
 if debug_wrapper:
     print("INVOKE CLANG_WRAPPER")
@@ -73,6 +79,9 @@ for arg in args:
         if has_src_file:
             has_multiple_src_file = True
         has_src_file = True
+    elif arg == "--enable-static-analysis":
+        use_static_analysis = True
+        args.remove(arg)
 
 # check if necessary flags are given
 if use_compiler_pass and (
@@ -89,12 +98,24 @@ if use_compiler_pass and "COMPILER_PASS" not in os.environ:
     print("The COMPILER_PASS environment variable is not set")
     sys.exit(1)
 
+pass_args = ["-fpass-plugin=" + os.environ["COMPILER_PASS"], "-lprecompute"]
+if use_static_analysis:
+    # arguments to opt pass need old `-load` syntax for some reason
+    # https://github.com/llvm/llvm-project/issues/56137
+    pass_args += ["-Xclang", "-load", "-Xclang", os.environ["COMPILER_PASS"]]
+    pass_args += ["-mllvm", "-enable-static-analysis"]
+
 
 def run_command(cmd):
     if debug_wrapper:
         print("RUN:", " ".join(cmd))
-    result = subprocess.call(cmd)
-    sys.exit(result)
+    try:
+        result = subprocess.call(cmd)
+        sys.exit(result)
+    except KeyboardInterrupt:
+        sys.exit(130)
+
+    sys.exit(255)
 
 
 if is_to_obj:
@@ -131,7 +152,7 @@ if has_o_files:
     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".bc").name
     cmd = [compiler, tmp_file]
     if use_compiler_pass:
-        cmd += ["-fpass-plugin=" + os.environ["COMPILER_PASS"], "-lprecompute"]
+        cmd += pass_args
 
     llvm_link = ["llvm-link", "-o", tmp_file]
 
@@ -159,9 +180,10 @@ if has_o_files:
 
     try:
         subprocess.check_call(llvm_link)
-        run_command(cmd)
-    except subprocess.CalledProcessError:
-        pass
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.returncode)
+
+    run_command(cmd)
 
 if debug_wrapper:
     print("MODE: direct to Binary")
@@ -175,7 +197,7 @@ if has_multiple_src_file:
 
 cmd = [compiler]
 if use_compiler_pass:
-    cmd += ["-fpass-plugin=" + os.environ["COMPILER_PASS"], "-lprecompute"]
+    cmd += pass_args
 cmd += args
 
 run_command(cmd)
