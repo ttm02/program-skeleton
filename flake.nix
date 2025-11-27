@@ -81,6 +81,7 @@
         gnumake
         gnupatch
         python3
+        rsync
         # aliases for wrappers
         (wrapper-alias "clang_wrap_cc"  "CLANG_WRAP_CC")
         (wrapper-alias "clang_wrap_cxx" "CLANG_WRAP_CXX")

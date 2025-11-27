@@ -2,85 +2,65 @@
 
 # location of this script
 # this is the location where tha path file to introduce a datarace is
-LULESH_PATCH_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+LULESH_PATCH_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 
 # parameters that can be used for a sample invocation of the mini app
 # used to test if the injected datarace is still found
 TEST_INVOCATION_PARAMETER="-s 10 -i 3"
-APP_NAME="LULESH"
 
-LULESH_CXX_FLAGS="-O2 -flto -fwhole-program-vtables -fuse-ld=lld"
-LULESH_CMAKE_PARAMETER="-DCMAKE_CXX_COMPILER=$CLANG_WRAP_CXX -DWITH_MPI=Off -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+APP_NAME="LULESH"
+APP_CXX_FLAGS="-O2 -flto -fwhole-program-vtables -fuse-ld=lld"
+APP_CMAKE_PARAMETER="-DCMAKE_CXX_COMPILER=$CLANG_WRAP_CXX -DWITH_MPI=Off -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
 
 # $1 : directory to download into
-download(){
+download() {
   echo "download"
-  git clone https://github.com/LLNL/LULESH.git $1
+  git clone https://github.com/LLNL/LULESH.git "$1"
   # set the specific commit we used
   # probably not necessary
-  ( cd $1 && git checkout 3e01c40b3281aadb7f996525cdd4a3354f6d3801 )
+  (cd "$1" && git checkout 3e01c40b3281aadb7f996525cdd4a3354f6d3801)
 }
 
 # patches in a datarace
 # $1 : directory with src (same argument as given to download dir)
-patch_datarace(){
+patch_datarace() {
   echo "patch to inject datarace"
-  patch $1/lulesh.cc $LULESH_PATCH_DIR/introduce_datarace.patch
+  patch "$1/lulesh.cc" "$LULESH_PATCH_DIR/introduce_datarace.patch"
 }
 
 # reverse the patch
 # $1 : directory with src (same argument as given to download dir)
-unpatch_datarace(){
+unpatch_datarace() {
   echo "reverse data race injection"
-  patch -R $1/lulesh.cc $LULESH_PATCH_DIR/introduce_datarace.patch
+  patch -R "$1/lulesh.cc" "$LULESH_PATCH_DIR/introduce_datarace.patch"
 }
 
-# build without tsan
+# build
 # $1 : directory with src (same argument as given to download dir)
-# $2 : output file
-build_vanilla(){
-  echo "build without tsan"
-  (cd $1 &&\
-  mkdir -p build_vanilla &&\
-  cd build_vanilla &&\
+# $2 : build mode: original or modified by pass
+build_app() {
+  APP_DIR="$1"
+  BUILD_MODE="$2"
+  USE_COMPILER_PASS=$3
+  export USE_COMPILER_PASS
+
+  echo "build ${APP_DIR} with ${BUILD_MODE}"
+
+  BUILD_DIR="${APP_DIR}/build_${BUILD_MODE}"
+  TARGET_BIN=$(realpath "${PWD}/${APP_NAME}_${BUILD_MODE}.exe")
+
+  # for testing we need this
+  APP_CXX_FLAGS="$APP_CXX_FLAGS -fsanitize=thread"
+
   # clean up any previous build
-  rm -rf * &&\
-  export USE_COMPILER_PASS=false &&\
-  cmake $LULESH_CMAKE_PARAMETER -DCMAKE_CXX_FLAGS="$LULESH_CXX_FLAGS" .. && \
-  make &&\
-  cp lulesh2.0 $2)
-}
+  rm -f "$TARGET_BIN"
+  rm -fr "$BUILD_DIR"
 
-# build with normal tsan
-# $1 : directory with src (same argument as given to download dir)
-# $2 : output file
-build_tsan_normal(){
-  echo "build normal"
-  (cd $1 &&\
-    mkdir -p build_normal &&\
-    cd build_normal &&\
-    # clean up any previous build
-    rm -rf * &&\
-    export USE_COMPILER_PASS=false &&\
-    cmake $LULESH_CMAKE_PARAMETER -DCMAKE_CXX_FLAGS="$LULESH_CXX_FLAGS -fsanitize=thread" .. && \
-    make &&\
-    cp lulesh2.0 $2)
-}
-
-# build with modified tsan
-# $1 : directory with src (same argument as given to download dir)
-# $2 : output file
-build_tsan_modified(){
-  echo "build modified"
-  (cd $1 &&\
-    mkdir -p build_modified &&\
-    # clean up any previous build
-    cd build_modified &&\
-    rm -rf * &&\
-    export USE_COMPILER_PASS=false &&\
-    cmake $LULESH_CMAKE_PARAMETER -DCMAKE_CXX_FLAGS="$LULESH_CXX_FLAGS -fsanitize=thread" .. && \
-    #endable our pass
-    export USE_COMPILER_PASS=true &&\
-    make &&\
-    cp lulesh2.0 $2)
+  mkdir "$BUILD_DIR"
+  (
+    cd "$BUILD_DIR" &&
+      USE_COMPILER_PASS=false cmake $APP_CMAKE_PARAMETER -DCMAKE_CXX_FLAGS="$APP_CXX_FLAGS" .. &&
+      make &&
+      cp lulesh2.0 "$TARGET_BIN"
+  )
 }
