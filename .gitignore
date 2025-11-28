@@ -35,6 +35,7 @@ Testing/Temporary
 # backupo data from older measurements
 visualization/mearurement_*.tar.gz
 # more in visualization
+output/
 timing.csv
 cache.csv
 *.pdf

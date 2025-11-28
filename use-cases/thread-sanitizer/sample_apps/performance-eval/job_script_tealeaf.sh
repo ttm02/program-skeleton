@@ -1,62 +1,43 @@
 #!/usr/bin/env bash
 
-# same as -n
 #SBATCH --ntasks 1
 
+#SBATCH --cpus-per-task 8
 #SBATCH --mem-per-cpu=3800
-#same as -t
+
 #SBATCH --time 00:30:00
 #SBATCH --exclusive
 
+# TODO actually 15 lines
 #SBATCH --array 1-6
 
-
-#same as -c
-#SBATCH --cpus-per-task 8
-
-#change for debugging the environment
+# change for debugging the environment
 #SBATCH -o /dev/null
 #SBATCH -e /dev/null
 
-#specify these variables
-PRECOMPUTE_DIR="/home/tj75qeje/precompute/build/use-cases/thread-sanitizer"
-EXECUTABLE_DIR="/home/tj75qeje/precompute/use-cases/thread-sanitizer/sample_apps/performance-eval/TEALEAF"
-PARAMETER_FILE="/home/tj75qeje/precompute/use-cases/thread-sanitizer/sample_apps/performance-eval/parameters_tealeaf.txt"
-OUTPUT_DIR="/work/scratch/tj75qeje/precompute/tealeaf"
+SCRIPT_DIR=$(dirname "$(realpath "$0")")
 
+APPNAME='TeaLeaf'
+PARAMETER_FILE="${SCRIPT_DIR}/parameters_tealeaf.txt"
 
-OUTPUT_FILE_PREFIX="$OUTPUT_DIR/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}_output"
-RUNDIR="$OUTPUT_DIR/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
-mkdir -p $RUNDIR
-cd $RUNDIR
+source "${SCRIPT_DIR}/job_script_cluster_common.sh"
 
-ml gcc/8.5.0 clang/16.0.6
-source ${PRECOMPUTE_DIR}/setup_env.sh
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-export OMP_PLACES=cores
+RUN_DIR="$OUTPUT_DIR/tmp/${SLURM_ARRAY_TASK_ID}"
+mkdir -p "$RUN_DIR"
+cd "$RUN_DIR" || exit 1
 
-# read from parameter file
-RUN_PARAMETER=$(sed -n "${SLURM_ARRAY_TASK_ID}p" $PARAMETER_FILE)
-# Extract values from CONFIG (split at ,)
-IFS=',' read -r RESOLUTION STEPS <<< "$RUN_PARAMETER"
+# copy inputs
+IFS=',' read -r RESOLUTION STEPS <<<"$RUN_PARAMETER"
+cp "${EXEC_DIR}/tea.in" "${EXEC_DIR}/tea.problems" "${EXEC_DIR}/${APPNAME}_${MODE}.exe" ./
+EXEC_DIR="$RUN_DIR"
 
-# setup tea.in
-cp $EXECUTABLE_DIR/tea.in tea.in
-cp $EXECUTABLE_DIR/tea.problems tea.problems
 # update input file with correct parameters
 sed -i \
     -e "s/^x_cells=.*/x_cells=$RESOLUTION/" \
     -e "s/^y_cells=.*/y_cells=$RESOLUTION/" \
     -e "s/^end_step=.*/end_step=$STEPS/" \
-	tea.in
+    tea.in
 
-
-/usr/bin/time --format "$RUN_PARAMETER,$SLURM_CPUS_PER_TASK,without,%es" --output=${OUTPUT_FILE_PREFIX}_without ${EXECUTABLE_DIR}/without.exe $RUN_PARAMETER
-
-/usr/bin/time --format "$RUN_PARAMETER,$SLURM_CPUS_PER_TASK,normal,%es" --output=${OUTPUT_FILE_PREFIX}_normal ${EXECUTABLE_DIR}/normal.exe $RUN_PARAMETER
-
-/usr/bin/time --format "$RUN_PARAMETER,$SLURM_CPUS_PER_TASK,modified,%es" --output=${OUTPUT_FILE_PREFIX}_modified ${EXECUTABLE_DIR}/modified.exe $RUN_PARAMETER
-
-
-
-
+setup_resources
+exec_test
+write_result
