@@ -109,13 +109,9 @@ check_path_to_base_ptr(const Instruction *inst, const Instruction *base_ptr) {
   if (not isa<CastInst>(inst)) {
     if (inst == base_ptr)
       return inst;
-    /* TODO consider non BinaryOperator instructions
     for (auto &u : inst->operands())
       if (u.get() == base_ptr)
         return inst;
-    */
-    if (inst->getOperand(0) == base_ptr)
-      return inst;
     return nullptr;
   }
   assert(inst->getNumOperands() == 1);
@@ -164,7 +160,6 @@ static void range_replace_struct(
       assert(offset_gep->getNumIndices() == 1);
       auto idx0 = offset_gep->indices().begin()->get();
       assert(idx0);
-      // TODO Scalar Evolution possible?
       if (not isa<ConstantInt>(idx0))
         continue;
       offset_ptrs.push_back(offset_gep);
@@ -175,7 +170,6 @@ static void range_replace_struct(
     return;
   assert(not offset_ptrs.empty());
 
-  // TODO are they always sorted -> unnecessary?
   auto byOffset = [&](const GetElementPtrInst *LHS,
                       const GetElementPtrInst *RHS) {
     assert(LHS && RHS);
@@ -415,36 +409,12 @@ std::string reduce_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
           if (not func_name.starts_with("__tsan"))
             continue;
           if (func_name == "__tsan_func_entry" ||
-              func_name == "__tsan_func_exit") {
+              func_name == "__tsan_func_exit")
             continue;
-          }
 
-          if (func_name.starts_with("__tsan_write")) {
+          if (func_name.starts_with("__tsan_write") ||
+              func_name.starts_with("__tsan_read"))
             tsan_calls.insert(call);
-          } else if (func_name.starts_with("__tsan_read")) {
-            tsan_calls.insert(call);
-          } else if (func_name.starts_with("__tsan_unaligned")) {
-            // TODO
-            // DRB011 has @__tsan_unaligned_read4
-          } else if (func_name.starts_with("__tsan_atomic")) {
-            // TODO
-            // DRB074 has `@__tsan_atomic32_fetch_add(ptr %3, i32 %18, i32 0)`
-          } else if (func_name == "__tsan_memset" ||
-                     func_name == "__tsan_memcpy" ||
-                     func_name == "__tsan_memmove") {
-            // TODO
-            // DRB058 has `call ptr @__tsan_memset(ptr %20, i32 0, i64 %14)`
-            // DRB058 has `call ptr @__tsan_memcpy(ptr %39, ptr %38, i64 %32)`
-            // TEALEAF has `call ptr @__tsan_memmove(ptr %1, ptr %8, i64 %10)`
-          } else if (func_name.starts_with("__tsan_vptr")) {
-            // TODO
-            // HPCCG has `call void @__tsan_vptr_update(ptr nonnull %3,
-            // ptr nonnull getelementptr inbounds nuw inrange(-16, 16)
-            // (i8, ptr @_ZTVSt9basic_iosIcSt11char_traitsIcEE, i64 16))`
-          } else {
-            call->dump();
-            llvm_unreachable("TSAN Combiner: only read or write call expected");
-          }
         }
       }
     }

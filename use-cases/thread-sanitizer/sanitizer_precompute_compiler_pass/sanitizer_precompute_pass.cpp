@@ -179,7 +179,7 @@ static void collectPrecompute(Instruction &inst,
   if (auto *call = dyn_cast<CallBase>(&inst)) {
     collectCalls(call, to_precompute, precompute_locations);
   } else {
-    // TODO
+    // TODO do we need other instructions precomputed?
   }
 }
 

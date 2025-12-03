@@ -141,8 +141,6 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
   auto called_func = call->getCalledFunction();
   auto func_name = called_func->getName();
 
-  // TODO other TSAN calls
-  // maybe move func_entry (before loop) and func_exit (after loop)
   if (not func_name.starts_with("__tsan_read") &&
       not func_name.starts_with("__tsan_write")) {
     return false;
