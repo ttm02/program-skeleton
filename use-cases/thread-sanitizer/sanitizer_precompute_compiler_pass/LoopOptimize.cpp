@@ -136,6 +136,38 @@ openMPboundFix(Function *func,
   getBoundLoadStoreReplacement(omp_upper, boundReplacement);
 }
 
+static inline void splitBBexecOnce(
+    Instruction *inst,
+    std::function<Value *(IRBuilder<> &origBuilder)> insertIntoOrigBB,
+    std::function<void(IRBuilder<> &tsanBuilder)> insertIntoTsanBB) {
+  // fix trailing DbgRecords in BasicBlock
+  auto *prevInst = inst->getPrevNonDebugInstruction(true);
+  auto *nextInst = inst->getNextNonDebugInstruction();
+  assert(nextInst);
+  // sometime inst is the first in BasicBlock (DRB041 and DRB042)
+  if (not prevInst)
+    prevInst = nextInst;
+  auto *nextNode = inst->getNextNode();
+  assert(nextNode);
+  auto *origBB = inst->getParent();
+  prevInst->adoptDbgRecords(origBB, nextNode->getIterator(), false);
+
+  auto *ctx = &inst->getContext();
+  auto *restBB = origBB->splitBasicBlock(nextInst);
+  auto *tsanBB = BasicBlock::Create(*ctx, "tsan_bb", inst->getFunction());
+  origBB->getTerminator()->eraseFromParent();
+
+  IRBuilder<> origBuilder(origBB);
+  origBuilder.SetInsertPoint(inst);
+  auto cmp = insertIntoOrigBB(origBuilder);
+  origBuilder.CreateCondBr(cmp, tsanBB, restBB);
+
+  IRBuilder<> tsanBuilder(tsanBB);
+  tsanBuilder.CreateBr(restBB);
+  tsanBuilder.SetInsertPoint(tsanBB->begin());
+  insertIntoTsanBB(tsanBuilder);
+}
+
 static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
                                 CallBase *call) {
   auto called_func = call->getCalledFunction();
@@ -205,41 +237,26 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
   if (isa<PoisonValue>(val_min))
     return false;
 
-  // fix trailing DbgRecords in BasicBlock
-  auto *prevInst = call->getPrevNonDebugInstruction(true);
-  auto *nextInst = call->getNextNonDebugInstruction();
-  assert(nextInst);
-  // sometime call is the first in BasicBlock (DRB041 and DRB042)
-  if (not prevInst)
-    prevInst = nextInst;
-  auto *nextNode = call->getNextNode();
-  assert(nextNode);
-  auto *origBB = call->getParent();
-  prevInst->adoptDbgRecords(origBB, nextNode->getIterator(), false);
+  Value *base_ptr;
+  auto origInserter = [&](IRBuilder<> &origBuilder) {
+    base_ptr = origBuilder.CreateIntToPtr(val_min, ptrTy);
+    Value *isEQ = origBuilder.CreateICmpEQ(call_arg_0, base_ptr);
+    return isEQ;
+  };
+  auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
+    // length = size_of(element) * (abs(last - base) + 1)
+    seExpander.setInsertPoint(tsanBuilder.GetInsertPoint());
+    auto *iter_count = seExpander.expandCodeFor(tripCount, int64Ty);
+    auto *count_full = tsanBuilder.CreateAdd(iter_count, constOne);
+    auto *range_full = tsanBuilder.CreateMul(count_full, tsan_size);
 
-  auto *restBB = origBB->splitBasicBlock(nextInst);
-  auto *tsanBB = BasicBlock::Create(*ctx, "tsan_bb", call->getFunction());
-  origBB->getTerminator()->eraseFromParent();
+    bool isWrite = func_name.starts_with("__tsan_write");
+    auto newCall =
+        createTSANrange(M, tsanBuilder, base_ptr, range_full, isWrite);
+    newCall->setDebugLoc(call->getDebugLoc());
+  };
 
-  IRBuilder<> origBuilder(origBB);
-  origBuilder.SetInsertPoint(call);
-  auto *base_ptr = origBuilder.CreateIntToPtr(val_min, ptrTy);
-  auto *isEQ = origBuilder.CreateICmpEQ(call_arg_0, base_ptr);
-  origBuilder.CreateCondBr(isEQ, tsanBB, restBB);
-
-  IRBuilder<> tsanBuilder(tsanBB);
-  tsanBuilder.CreateBr(restBB);
-
-  // length = size_of(element) * (abs(last - base) + 1)
-  tsanBuilder.SetInsertPoint(tsanBB->begin());
-  seExpander.setInsertPoint(tsanBuilder.GetInsertPoint());
-  auto *iter_count = seExpander.expandCodeFor(tripCount, int64Ty);
-  auto *count_full = tsanBuilder.CreateAdd(iter_count, constOne);
-  auto *range_full = tsanBuilder.CreateMul(count_full, tsan_size);
-
-  bool isWrite = func_name.starts_with("__tsan_write");
-  auto newCall = createTSANrange(M, tsanBuilder, base_ptr, range_full, isWrite);
-  newCall->setDebugLoc(call->getDebugLoc());
+  splitBBexecOnce(call, origInserter, tsanInserter);
   remove_inst_from_func(call);
 
   return true;
