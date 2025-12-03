@@ -41,12 +41,9 @@ static bool check_module(Module &M) {
           if (not called_func)
             continue;
 
-          if (is_thread_function(called_func)) {
-            if (not is_omp_function(called_func)) {
-              // TODO also support pthread fork and join
+          if (is_thread_function(called_func))
+            if (not is_omp_function(called_func))
               return false;
-            }
-          }
         }
       }
     }
@@ -144,7 +141,6 @@ std::string remove_all_single_thread_regions(Module &M,
       continue;
     collectAllParallelFunctions(&func);
   }
-  auto func_main = M.getFunction("main");
 
   unsigned removed_tsan_calls = 0;
   collect_and_cleanup(M, &removed_tsan_calls);

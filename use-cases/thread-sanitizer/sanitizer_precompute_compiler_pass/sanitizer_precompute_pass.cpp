@@ -318,6 +318,7 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
       run_optimization_passes(M, AM, eliminate_only_in_critical);
       run_optimization_passes(M, AM, reduce_tsan_calls);
       run_optimization_passes(M, AM, Optimize_loops);
+      run_optimization_passes(M, AM, wrap_non_openmp_tsan_calls);
     }
 
     // last pass above should always skip opts (4th param to false)

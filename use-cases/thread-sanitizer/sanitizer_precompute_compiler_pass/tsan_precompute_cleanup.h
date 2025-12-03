@@ -19,6 +19,8 @@ std::string eliminate_only_in_critical(llvm::Module &M,
                                        llvm::ModuleAnalysisManager &AM);
 std::string remove_all_single_thread_regions(llvm::Module &M,
                                              llvm::ModuleAnalysisManager &AM);
+std::string wrap_non_openmp_tsan_calls(llvm::Module &M,
+                                       llvm::ModuleAnalysisManager &AM);
 
 inline unsigned bits2bytes(const unsigned bits) { return (bits + 7) / 8; };
 
@@ -27,6 +29,11 @@ llvm::CallInst *createTSANrange(llvm::Module &M, llvm::IRBuilder<> &builder,
                                 const bool isWrite);
 llvm::CallInst *createTSANrange(llvm::Module &M, llvm::Instruction *base_ptr,
                                 const unsigned struct_size, const bool isWrite);
+
+inline void splitBBexecOnce(
+    llvm::Instruction *inst,
+    std::function<llvm::Value *(llvm::IRBuilder<> &origBuilder)> origInserter,
+    std::function<void(llvm::IRBuilder<> &tsanBuilder)> tsanInserter);
 
 inline llvm::ConstantInt *get_size_of_tsan_access(llvm::CallBase *tsan_call) {
   auto name = tsan_call->getCalledFunction()->getName();

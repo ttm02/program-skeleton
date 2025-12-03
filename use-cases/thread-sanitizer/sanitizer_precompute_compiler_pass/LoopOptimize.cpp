@@ -136,7 +136,7 @@ openMPboundFix(Function *func,
   getBoundLoadStoreReplacement(omp_upper, boundReplacement);
 }
 
-static inline void splitBBexecOnce(
+inline void splitBBexecOnce(
     Instruction *inst,
     std::function<Value *(IRBuilder<> &origBuilder)> insertIntoOrigBB,
     std::function<void(IRBuilder<> &tsanBuilder)> insertIntoTsanBB) {
