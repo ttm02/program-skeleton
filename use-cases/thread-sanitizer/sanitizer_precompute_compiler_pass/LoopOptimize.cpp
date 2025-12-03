@@ -186,11 +186,32 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
   }
 
   if (loop->isLoopInvariant(call_arg_0)) {
-    // TODO restrict to only one iteration
-    /*
-    call->moveAfter(builder.GetInsertPoint());
-    */
-    return false;
+    BasicBlock *incoming, *backedge, *header;
+    loop->getIncomingAndBackEdge(incoming, backedge);
+    assert(incoming && backedge);
+    header = loop->getHeader();
+    assert(header);
+
+    // only in first loop iteration
+    // makes it effectively invariant in (OpenMP) parallel context
+    auto *ctx = &call->getContext();
+    IRBuilder<> headerBuilder(header);
+    headerBuilder.SetInsertPoint(header->getFirstNonPHIIt());
+    auto *phi = headerBuilder.CreatePHI(Type::getInt1Ty(*ctx), 2, "flag");
+    auto *constTrue = ConstantInt::getTrue(*ctx);
+    phi->addIncoming(constTrue, incoming);
+    phi->addIncoming(ConstantInt::getFalse(*ctx), backedge);
+
+    auto origInserter = [&](IRBuilder<> &origBuilder) {
+      Value *isEQ = origBuilder.CreateICmpEQ(phi, constTrue);
+      return isEQ;
+    };
+    auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
+      call->moveAfter(tsanBuilder.GetInsertPoint());
+    };
+    splitBBexecOnce(call, origInserter, tsanInserter);
+
+    return true;
   }
 
   auto scev = SE->getSCEV(call_arg_0);
