@@ -81,6 +81,7 @@ static inline StructType *getGEPstructTy(const GetElementPtrInst *gep) {
 
 CallInst *createTSANrange(Module &M, IRBuilder<> &builder, Value *base_ptr,
                           Value *struct_size, const bool isWrite) {
+  assert(base_ptr);
   auto *ctx = &base_ptr->getContext();
   auto ptrTy = PointerType::get(*ctx, 0);
   auto voidTy = Type::getVoidTy(*ctx);
@@ -98,6 +99,7 @@ CallInst *createTSANrange(Module &M, Instruction *base_ptr,
   // TODO i64 might not always be applicable
   Value *struct_size_value = ConstantInt::get(int64Ty, struct_size, false);
 
+  assert(base_ptr);
   IRBuilder<> builder(base_ptr->getNextNode());
   return createTSANrange(M, builder, base_ptr, struct_size_value, isWrite);
 }

@@ -141,18 +141,14 @@ static inline void splitBBexecOnce(
     std::function<Value *(IRBuilder<> &origBuilder)> insertIntoOrigBB,
     std::function<void(IRBuilder<> &tsanBuilder)> insertIntoTsanBB) {
   // fix trailing DbgRecords in BasicBlock
-  auto *prevInst = inst->getPrevNonDebugInstruction(true);
-  auto *nextInst = inst->getNextNonDebugInstruction();
-  assert(nextInst);
-  // sometime inst is the first in BasicBlock (DRB041 and DRB042)
-  if (not prevInst)
-    prevInst = nextInst;
+  // we tried adoptDbgRecords(), but this does not work in DRB169
   auto *nextNode = inst->getNextNode();
   assert(nextNode);
-  auto *origBB = inst->getParent();
-  prevInst->adoptDbgRecords(origBB, nextNode->getIterator(), false);
+  nextNode->dropDbgRecords();
 
   auto *ctx = &inst->getContext();
+  auto *origBB = inst->getParent();
+  auto *nextInst = inst->getNextNonDebugInstruction();
   auto *restBB = origBB->splitBasicBlock(nextInst);
   auto *tsanBB = BasicBlock::Create(*ctx, "tsan_bb", inst->getFunction());
   origBB->getTerminator()->eraseFromParent();
