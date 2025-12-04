@@ -8,7 +8,8 @@ ut not all files or directories meantioned in the text are relativ that. Some ar
 
 ## Prerequisites
 
-A C/C++ compiler with `libclang-rt`(asan) and `openmp` support and possibly `boost`.
+`clang` with `libclang-rt`(asan) and `openmp` support and possibly `boost`.
+Other C/C++ might not work. And later you will need `clang` to use the wrapper (loading the pass plugin).
 
 For this Project, we used clang/`llvm 21.1.0`
 The `cmake` configure step will download [DataRaceBench](https://github.com/LLNL/dataracebench) for testing
@@ -78,9 +79,32 @@ Compile example testcase:
 build/use-cases/thread-sanitizer/clang_wrap_cc -O2 -g -fopenmp -fsanitize=thread -fuse-ld=lld -flto -fwhole-program-vtables -fno-inline -o ./a.out example.cpp
 ```
 
-## Performance
+### Performance 
 
-sample_apps/performance_evaluation contains the scripts ew used for performance evaluation.
+For the DRB tests you can run:
+```bash
+use-cases/thread-sanitizer/compare_performance.sh build
+```
+The parameter is optional, but it is possible to select another `build` directory.
+This uses a timeout of 300 seconds per tests and outputs the runtime of the program itself into `timing.csv`.
+
+To setup and use the "sample_apps" you can run:
+```bash
+use-cases/thread-sanitizer/sample_apps/performance-eval/setup_sample_apps.sh
+```
+This downloads and compiles all sample apps into `build-perf-tests/use-cases/thread-sanitizer/sample_apps`.
+Then all apps are ready you could submit sbatch jobs on the cluster with
+```bash
+sbatch use-cases/thread-sanitizer/sample_apps/performance-eval/job_script_lulesh.sh
+sbatch use-cases/thread-sanitizer/sample_apps/performance-eval/job_script_hpccg.sh
+sbatch use-cases/thread-sanitizer/sample_apps/performance-eval/job_script_tealeaf.sh
+```
+or run all of this locally with for example LULESH:
+```bash
+use-cases/thread-sanitizer/sample_apps/performance-eval/run_local.sh LULESH use-cases/thread-sanitizer/sample_apps/performance-eval/parameters_lulesh.txt 5
+```
+The last parameter (number) selects the parameter line inside the given parameters file (second parameter).
+Your system might start swapping a lot when running the program compiled with the pass if you selected a line of the end the file.
 
 #### References
 
