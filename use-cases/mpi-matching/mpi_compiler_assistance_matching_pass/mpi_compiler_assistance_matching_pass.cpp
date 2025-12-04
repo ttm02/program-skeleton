@@ -265,13 +265,17 @@ struct MPICompilerAssistanceMatchingPass
 // class MSGOrderRelaxCheckerPass
 } // namespace
 
+PassPluginLibraryInfo getPassPluginInfo() {
+  const auto callback = [](PassBuilder &PB) {
+    PB.registerOptimizerEarlyEPCallback([&](ModulePassManager &MPM, auto,auto) {
+      MPM.addPass(MPICompilerAssistanceMatchingPass());
+      return true;
+    });
+  };
+
+  return {LLVM_PLUGIN_API_VERSION, "mpi-matching", "1.0.0", callback};
+};
 
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
-  return {LLVM_PLUGIN_API_VERSION, "mpi-matching", "1.0.0",
-          [](PassBuilder &PB) {
-            PB.registerFullLinkTimeOptimizationEarlyEPCallback(
-                [&](ModulePassManager &MPM, OptimizationLevel Level) {
-                  MPM.addPass(MPICompilerAssistanceMatchingPass());
-                });
-          }};
+  return getPassPluginInfo();
 }

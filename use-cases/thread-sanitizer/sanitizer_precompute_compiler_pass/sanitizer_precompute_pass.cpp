@@ -247,7 +247,7 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
     remove_noinline_from_module(M);
 
-    std::vector<Function *> to_delete;
+     std::vector<Function *> to_delete;
     for (auto it_f = M.begin(); it_f != M.end(); ++it_f) {
       Function *f = &*it_f;
       if (precalcuation->is_func_part_of_precompute_phase(f)) {
@@ -301,13 +301,17 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
 } // namespace
 
+PassPluginLibraryInfo getPassPluginInfo() {
+  const auto callback = [](PassBuilder &PB) {
+    PB.registerOptimizerEarlyEPCallback([&](ModulePassManager &MPM, auto,auto) {
+      MPM.addPass(SanitizerPrecomputePass());
+      return true;
+    });
+  };
+
+  return {LLVM_PLUGIN_API_VERSION, "sanitizer-precompute", "1.0.0", callback};
+};
 
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
-  return {LLVM_PLUGIN_API_VERSION, "sanitizer_precompute", "1.0.0",
-          [](PassBuilder &PB) {
-            PB.registerFullLinkTimeOptimizationEarlyEPCallback(
-                [&](ModulePassManager &MPM, OptimizationLevel Level) {
-                  MPM.addPass(SanitizerPrecomputePass());
-                });
-          }};
+  return getPassPluginInfo();
 }
