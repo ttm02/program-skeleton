@@ -83,7 +83,7 @@ build/use-cases/thread-sanitizer/clang_wrap_cc -O2 -g -fopenmp -fsanitize=thread
 
 For the DRB tests you can run:
 ```bash
-use-cases/thread-sanitizer/compare_performance.sh build
+use-cases/thread-sanitizer/tests/compare_performance.sh build
 ```
 The parameter is optional, but it is possible to select another `build` directory.
 This uses a timeout of 300 seconds per tests and outputs the runtime of the program itself into `timing.csv`.

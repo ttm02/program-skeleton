@@ -22,6 +22,7 @@ fi
 BINARY_DIR="${MY_CMAKE_BUILD_DIR}/use-cases/thread-sanitizer"
 
 # TODO fortran testcases
+# TODO pthread testcases
 TEST_CASE_DIR="${MY_CMAKE_BUILD_DIR}/_deps/drb-src/micro-benchmarks"
 TEST_CASES=$(ls "$TEST_CASE_DIR")
 
@@ -79,15 +80,15 @@ run_testcase() {
   TEST_CASE="$1"
 
   if [[ "$TEST_CASE" == *.c ]] || [[ "$TEST_CASE" == *.cpp ]] || [[ "$TEST_CASE" == *.f ]]; then
-    "${SCRIPT_DIR}/tests/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" false >/dev/null 2>&1 &
+    "${SCRIPT_DIR}/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" false >/dev/null 2>&1 &
     pid_compile_orig=$!
 
-    "${SCRIPT_DIR}/tests/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" true >/dev/null 2>&1 &
+    "${SCRIPT_DIR}/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" true >/dev/null 2>&1 &
     pid_compile_pass=$!
 
     export OUTPUT_SUFFIX='stan'
     export USE_STATIC_ANALYSIS=true
-    "${SCRIPT_DIR}/tests/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" true >/dev/null 2>&1 &
+    "${SCRIPT_DIR}/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" true >/dev/null 2>&1 &
     pid_compile_stan=$!
     unset OUTPUT_SUFFIX
     unset USE_STATIC_ANALYSIS
