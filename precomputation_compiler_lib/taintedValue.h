@@ -116,7 +116,7 @@ public:
   void set_need_visit() {
     _visited = false;
 #ifndef NDEBUG
-    if (visit_count > 50) {
+    if (visit_count > 100) {
       llvm::errs() << "Possible endless loop visiting\n";
       v->dump();
       llvm::errs() << "Re visit triggered by:\n";

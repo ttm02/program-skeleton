@@ -642,7 +642,7 @@ void PrecalculationAnalysis::visit_ptr_insertvalue(
 }
 
 bool PrecalculationAnalysis::visit_ptr_insertelement_recursive_impl(
-    const std::shared_ptr<TaintedValue> &ptr, llvm::Value *insert_idx,
+    const std::shared_ptr<TaintedValue> &ptr, llvm::ConstantInt *insert_idx,
     llvm::Instruction *aggregate_inst) {
 
   bool is_needed = false;
@@ -688,7 +688,28 @@ bool PrecalculationAnalysis::visit_ptr_insertelement_recursive_impl(
       }
     } else if (isa<ResumeInst>(u) || isa<CmpInst>(u) || isa<PtrToIntInst>(u)) {
       // nothing to do: (cast for) comparison is allowed
-    } else {
+    } else if (auto* shuffle = dyn_cast<ShuffleVectorInst>(u)) {
+
+      if (aggregate_inst == shuffle->getOperand(1)) {
+        shuffle->commute();
+      }
+      assert(aggregate_inst == shuffle->getOperand(0));
+
+      for (auto idx : shuffle->getShuffleMask()) {
+        if (insert_idx->equalsInt(idx)) {
+          // new derived compound
+          bool is_needed_down_lvl =
+              visit_ptr_insertelement_recursive_impl(ptr, ConstantInt::get(insert_idx->getIntegerType(),idx), shuffle);
+          if (is_needed_down_lvl) {
+            // the value needed for aggregate_inst is handled by upper recursion
+            // lvl
+            insert_tainted_value(shuffle, insert_tainted_value(aggregate_inst));
+          }
+          is_needed = is_needed || is_needed_down_lvl;
+        }
+      }
+    }
+    else {
       u->dump();
       assert(0 && "this aggregate usage is not supported yet");
     }
@@ -708,7 +729,7 @@ void PrecalculationAnalysis::visit_ptr_insertelement(
   for (auto *u : insertelem_inst->users()) {
     if (auto *inst = dyn_cast<Instruction>(u)) {
       bool needed =
-          visit_ptr_insertelement_recursive_impl(ptr, inserted_index, inst);
+          visit_ptr_insertelement_recursive_impl(ptr, cast<ConstantInt>(inserted_index), inst);
       if (needed)
         insert_tainted_value(inst, ptr);
     } else {
