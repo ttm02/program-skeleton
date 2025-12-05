@@ -128,7 +128,7 @@ static void wrap_parallel_calls() {
 }
 
 std::string wrap_non_openmp_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
-  errs() << "Restrict impact of single-threaded TSAN calls in POSIS thread "
+  errs() << "Restrict impact of single-threaded TSAN calls in POSIX thread "
             "programs\n";
   if (not check_module(M))
     return "";
