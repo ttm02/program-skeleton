@@ -70,14 +70,13 @@ static bool run_optimization_passes(
     errs() << "Run Global DCE Pass\n";
     auto dce = llvm::GlobalDCEPass();
     dce.run(M, AM);
-
-    errs() << "\n";
 #ifndef NDEBUG
     has_error = verifyModule(M, &errs(), nullptr);
     assert(not has_error);
     // assert(not has_poisoned_values(M));
 #endif
   }
+  errs() << "\n";
   return true;
 }
 
@@ -184,9 +183,7 @@ static void collectPrecompute(Instruction &inst,
 }
 
 static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
-  allow_function_prefixes_to_be_called_in_precompute({"__tsan_"});
   PrecomputeFunctions::create_instance(M);
-  reset_analysis_results(M, AM);
 
   auto *main_func = M.getFunction("main");
   assert(main_func);
@@ -227,7 +224,7 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
   auto it = precompute_main->begin()->begin();
   ++it; // second instruction is call to precomputed main
   auto *call = cast<CallBase>(it);
-  auto precomputed_main = call->getCalledFunction();
+  auto *precomputed_main = call->getCalledFunction();
 
   // remove old main
   auto orig_linkeage = main_func->getLinkage();
@@ -265,6 +262,8 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
   }
 
   remove_noinline_from_module(M);
+  analysis_results->invalidate(*precomputed_main);
+  analysis_results->invalidate(*main_func);
 
   return "Successfully computed the precomputation";
 }
@@ -295,8 +294,14 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
     run_optimization_passes(M, AM, run_tsan, false);
 
+    allow_function_prefixes_to_be_called_in_precompute({"__tsan_"});
+    reset_analysis_results(M, AM);
+
+    // static analysis before slicing
     if (EnableStaticAnalysis) {
-      // static analysis before precomputation
+      run_optimization_passes(M, AM, reduce_tsan_calls);
+      run_optimization_passes(M, AM, eliminate_only_in_critical);
+      run_optimization_passes(M, AM, wrap_non_openmp_tsan_calls);
     }
 #ifndef NDEBUG
     auto num_undef = get_num_undefs(M);
@@ -312,16 +317,14 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     double max_undef_factor = 1.0; // between 1.0 and 2.0
     assert(get_num_undefs(M) <= num_undef * max_undef_factor);
 #endif
+    // static analysis after slicing
     if (EnableStaticAnalysis) {
-      // static analysis after precomputation
+      // HPCCG does not detect data race when this runs before precompute
       run_optimization_passes(M, AM, remove_all_single_thread_regions);
-      run_optimization_passes(M, AM, eliminate_only_in_critical);
-      run_optimization_passes(M, AM, reduce_tsan_calls);
+      // precomputation does not allow int2ptr casts
       run_optimization_passes(M, AM, Optimize_loops);
-      run_optimization_passes(M, AM, wrap_non_openmp_tsan_calls);
     }
 
-    // last pass above should always skip opts (4th param to false)
     // try to eliminate even more things
     MPM.run(M, AM);
 
