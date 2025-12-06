@@ -5,6 +5,7 @@ BINARY_DIR=$1
 
 # the testcase to use
 TEST_CASE=$2
+[ -n "$TEST_CASE" ] || exit 42
 DRB_DIR=$(dirname "$TEST_CASE")
 
 source "${BINARY_DIR}/setup_env.sh"

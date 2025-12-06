@@ -52,5 +52,7 @@ foreach (FORTRAN_TEST_SRC ${FORTRAN_TEST_SOURCES})
 
 endforeach ()
 
-
-
+file(GLOB STATIC_ANALYSIS_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/static_analysis/*.c*")
+foreach (STATIC_ANALYSIS_TEST ${STATIC_ANALYSIS_TEST_SOURCES})
+    add_compare_test(${STATIC_ANALYSIS_TEST})
+endforeach ()
