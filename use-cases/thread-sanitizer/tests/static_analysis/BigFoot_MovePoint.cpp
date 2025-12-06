@@ -28,6 +28,10 @@ struct Point {
     y += dy;
     z += dz;
   }
+  inline void moveXZ(const int dx, const int dz) {
+    x += dx;
+    z += dz;
+  }
 };
 
 static inline void moveWithOffset(Point *a, unsigned i) {
@@ -36,6 +40,7 @@ static inline void moveWithOffset(Point *a, unsigned i) {
   a[i + 2].move(1, 1, 1);
   a[i + 20].moveYZ(2, 2);
   a[i + 21].moveXY(2, 2);
+  a[i + 23].moveXZ(3, 3);
 }
 
 void movePtsConst(Point *a) {

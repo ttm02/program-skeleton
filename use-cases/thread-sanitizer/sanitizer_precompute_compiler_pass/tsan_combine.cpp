@@ -13,6 +13,8 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 
+#include <cassert>
+
 #include "precompute/compiler/analysis_results.h"
 
 using namespace llvm;
@@ -125,10 +127,9 @@ static void range_replace_struct(
     Module &M, GetElementPtrInst *base_ptr,
     DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
     DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr,
-    unsigned *removed_tsan_calls, unsigned *added_tsan_calls,
-    const DenseSet<CallBase *> &tsan_writes,
-    const DenseSet<CallBase *> &tsan_reads, const DenseSet<Value *> &ptr_values,
-    const Instruction *bp, const SmallDenseSet<CallBase *> &calls) {
+    unsigned *removed_tsan_calls, unsigned *added_tsan_calls, bool isWrite,
+    const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
+    const Instruction *bp) {
   // replace:
   //   %struct.a = type { i32, i32, i32 }
   //   %base = getelementptr inbounds %struct.a, ptr %a, i64 0, ...
@@ -138,7 +139,7 @@ static void range_replace_struct(
   //   call void @__tsan_write_range(ptr nonnull %base, i64 12)
 
   // combine contingous address range to TSAN range call
-  SmallVector<const GetElementPtrInst *, 10> offset_ptrs;
+  SmallVector<GetElementPtrInst *, 10> offset_ptrs;
   const auto STy = getGEPstructTy(base_ptr);
   if (!STy)
     return;
@@ -148,14 +149,14 @@ static void range_replace_struct(
   if (not isa<IntegerType>(elemTy))
     return;
 
-  // TODO allow partial ranges of only read or only write
-  // Both might create false positives/negatives because only one member of
-  // the struct is written to.
-  if (not tsan_writes.empty() && not tsan_reads.empty())
-    return;
-
-  for (auto ptr : ptr_values) {
+  for (auto p2c : ptr_values) {
+    auto *ptr = p2c.getFirst();
+    assert(p2c.getSecond().size() == 1);
     if (auto offset_gep = dyn_cast<GetElementPtrInst>(ptr)) {
+      if (base_ptr == offset_gep) {
+        offset_ptrs.push_back(offset_gep);
+        continue;
+      }
       auto base_gep_op = offset_gep->getPointerOperand();
       if (base_ptr != base_gep_op)
         continue;
@@ -175,6 +176,10 @@ static void range_replace_struct(
   auto byOffset = [&](const GetElementPtrInst *LHS,
                       const GetElementPtrInst *RHS) {
     assert(LHS && RHS);
+    if (RHS == base_ptr)
+      return false;
+    if (LHS == base_ptr)
+      return true;
     auto LHS_idx0 = cast<ConstantInt>(LHS->indices().begin()->get());
     auto RHS_idx0 = cast<ConstantInt>(RHS->indices().begin()->get());
     assert(not LHS_idx0->isNegative());
@@ -183,36 +188,85 @@ static void range_replace_struct(
   };
   sort(offset_ptrs, byOffset);
 
-  unsigned byte_offset = 0;
-  byte_offset += bits2bytes(elemTy->getIntegerBitWidth());
-  for (auto *offPtr : offset_ptrs) {
-    elemTy = STy->elements().consume_front();
-    auto idx0 = cast<ConstantInt>(offPtr->indices().begin()->get());
-    // struct offset == ptr byte offset * size_of(byte)
-    if (byte_offset != idx0->getZExtValue())
-      return; // no contingous range
-    byte_offset += bits2bytes(elemTy->getIntegerBitWidth());
-  }
+  auto getMemberOffset = [](const GetElementPtrInst *base_ptr,
+                            const GetElementPtrInst *offPtr) {
+    uint64_t offset;
+    if (base_ptr == offPtr) {
+      offset = 0;
+    } else {
+      assert(offPtr->getNumIndices() == 1);
+      auto idxGEP = cast<ConstantInt>(offPtr->indices().begin()->get());
+      offset = idxGEP->getZExtValue();
+    }
+    return offset;
+  };
+  auto range_replace_struct_part = [&](Instruction *base_ptr,
+                                       unsigned range_size,
+                                       DenseSet<CallBase *> calls) {
+    assert(0 < range_size);
+    auto newCall = createTSANrange(M, base_ptr, range_size, isWrite);
+    newCall->setDebugLoc((*calls.begin())->getDebugLoc());
+    (*added_tsan_calls)++;
 
-  // TODO allow partial ranges of only read or only write
-  auto newCall = createTSANrange(M, base_ptr, byte_offset, tsan_reads.empty());
-  newCall->setDebugLoc((*calls.begin())->getDebugLoc());
-  (*added_tsan_calls)++;
-
-  // cleanup replaced TSAN calls
-  for (auto call : calls) {
-    auto arg0 = call->getArgOperand(0);
-    if (arg0 == base_ptr) {
+    // cleanup replaced TSAN calls
+    for (auto call : calls) {
       remove_inst_from_func(call, bp, base_ptr_to_call, call_to_base_ptr);
       (*removed_tsan_calls)++;
-    } else {
-      for (auto *offPtr : offset_ptrs) {
-        if (arg0 == offPtr) {
-          remove_inst_from_func(call, bp, base_ptr_to_call, call_to_base_ptr);
-          (*removed_tsan_calls)++;
-        }
-      }
     }
+  };
+
+  const auto DL = M.getDataLayout();
+  const auto *SL = DL.getStructLayout(STy);
+
+  DenseSet<CallBase *> calls;
+  unsigned startIdx, lastIdx;
+  uint64_t startOffset;
+  GetElementPtrInst *startPtr, *lastPtr;
+  startPtr = nullptr;
+  lastPtr = offset_ptrs.back();
+
+  for (auto *offPtr : offset_ptrs) {
+    auto memberOffset = getMemberOffset(base_ptr, offPtr);
+    auto idxMember = SL->getElementContainingOffset(memberOffset);
+    assert(0 <= idxMember && idxMember <= STy->elements().size());
+
+    // first iteration
+    if (not startPtr) {
+      lastIdx = startIdx = idxMember;
+      startPtr = offPtr;
+      startOffset = memberOffset;
+    }
+    if (lastPtr == offPtr) {
+      // If there is a gap before the last element, it will remain alone
+      // forever
+      if (1 < (idxMember - lastIdx))
+        continue;
+      // if last element, then there is no gap after it
+      lastIdx = idxMember;
+    }
+    auto vc = ptr_values.lookup(offPtr);
+    assert(vc.size() == 1);
+    calls.insert(*vc.begin());
+    if (1 < (idxMember - lastIdx) || lastPtr == offPtr) {
+      auto length = lastIdx - startIdx + 1;
+      assert(1 <= length);
+      // if more than one call
+      if (1 < length) {
+        auto structMaxBytes = SL->getSizeInBytes();
+        while (SL->getElementContainingOffset(memberOffset) == lastIdx) {
+          memberOffset++;
+          if (memberOffset == structMaxBytes)
+            break;
+        };
+        assert(startPtr);
+        range_replace_struct_part(startPtr, memberOffset - startOffset, calls);
+        calls.clear();
+      }
+      startIdx = idxMember;
+      startPtr = offPtr;
+      startOffset = memberOffset;
+    }
+    lastIdx = idxMember;
   }
 }
 
@@ -220,9 +274,8 @@ static void range_replace_array(
     Module &M, GetElementPtrInst *call_gep,
     DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
     DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr,
-    unsigned *removed_tsan_calls, unsigned *added_tsan_calls,
-    const DenseSet<CallBase *> &tsan_writes,
-    const DenseSet<CallBase *> &tsan_reads, const DenseSet<Value *> &ptr_values,
+    unsigned *removed_tsan_calls, unsigned *added_tsan_calls, bool isWrite,
+    const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
     const Instruction *bp, const SmallDenseSet<CallBase *> &calls) {
   // replace;
   //   %base = ...
@@ -237,15 +290,12 @@ static void range_replace_array(
   // with:
   //   call void @__tsan_write_range(ptr %base_ptr, i64 32)
 
-  // TODO allow partial ranges of only read or only write
-  // Both might create false positives/negatives because only one member of
-  // the struct is written to.
-  if (not tsan_writes.empty() && not tsan_reads.empty())
-    return;
-
   SmallVector<std::pair<GetElementPtrInst *, const Instruction *>, 10>
       offset_ptrs;
-  for (auto ptr : ptr_values) {
+  for (auto p2c : ptr_values) {
+    auto *ptr = p2c.getFirst();
+    // LULESH fails with this assertion
+    // assert(p2c.getSecond().size() == 1);
     auto *ptr_gep = dyn_cast<GetElementPtrInst>(ptr);
     if (not ptr_gep)
       continue;
@@ -307,7 +357,7 @@ static void range_replace_array(
   const DataLayout &DL = M.getDataLayout();
   unsigned elemBitwidth = DL.getTypeSizeInBits(elemTy);
   unsigned byte_offset = bits2bytes(n * elemBitwidth);
-  auto newCall = createTSANrange(M, base_ptr, byte_offset, tsan_reads.empty());
+  auto newCall = createTSANrange(M, base_ptr, byte_offset, isWrite);
   newCall->setDebugLoc((*calls.begin())->getDebugLoc());
   (*added_tsan_calls)++;
 
@@ -348,37 +398,49 @@ remove_tsan_calls_in_bb(const DenseSet<CallBase *> &tsan_calls, Module &M) {
     if (call_list.size() < 2)
       continue;
 
-    DenseSet<Value *> ptr_values;
-    DenseSet<CallBase *> tsan_writes, tsan_reads;
+    DenseMap<Value *, DenseSet<CallBase *>> ptr_values_read, ptr_values_write;
 
     for (auto call : call_list) {
-      auto arg0 = call->getArgOperand(0);
-      ptr_values.insert(arg0);
-
       auto func_name = call->getCalledFunction()->getName();
       if (func_name.ends_with("_range"))
         continue;
 
+      auto arg0 = call->getArgOperand(0);
       if (func_name.starts_with("__tsan_write"))
-        tsan_writes.insert(call);
+        ptr_values_write[arg0].insert(call);
       else if (func_name.starts_with("__tsan_read"))
-        tsan_reads.insert(call);
+        ptr_values_read[arg0].insert(call);
     }
 
     // nothing to do
-    if (tsan_writes.empty() && tsan_reads.empty())
+    if (ptr_values_write.empty() && ptr_values_read.empty())
       continue;
 
     auto *bp = bp2call.getFirst();
     if (auto *base_ptr = dyn_cast<GetElementPtrInst>(bp)) {
-      range_replace_struct(M, base_ptr, base_ptr_to_call, call_to_base_ptr,
-                           &removed_tsan_calls, &added_tsan_calls, tsan_writes,
-                           tsan_reads, ptr_values, bp, call_list);
-    } else if (auto *call_gep =
-                   dyn_cast<GetElementPtrInst>(*ptr_values.begin())) {
-      range_replace_array(M, call_gep, base_ptr_to_call, call_to_base_ptr,
-                          &removed_tsan_calls, &added_tsan_calls, tsan_writes,
-                          tsan_reads, ptr_values, bp, call_list);
+      auto rrs = [&](DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
+                     bool isWrite) {
+        range_replace_struct(M, base_ptr, base_ptr_to_call, call_to_base_ptr,
+                             &removed_tsan_calls, &added_tsan_calls, isWrite,
+                             ptr_values, bp);
+      };
+      rrs(ptr_values_write, true);
+      rrs(ptr_values_read, false);
+    } else {
+      auto rra = [&](DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
+                     bool isWrite) {
+        if (ptr_values.empty())
+          return;
+        auto *pvb = (*ptr_values.begin()).getFirst();
+        assert(pvb);
+        if (auto *call_gep = dyn_cast<GetElementPtrInst>(pvb)) {
+          range_replace_array(M, call_gep, base_ptr_to_call, call_to_base_ptr,
+                              &removed_tsan_calls, &added_tsan_calls, isWrite,
+                              ptr_values, bp, call_list);
+        }
+      };
+      rra(ptr_values_write, true);
+      rra(ptr_values_read, false);
     }
   }
 
