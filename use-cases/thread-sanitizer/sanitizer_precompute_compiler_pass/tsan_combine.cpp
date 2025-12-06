@@ -214,6 +214,7 @@ static void range_replace_struct(
 
     // cleanup replaced TSAN calls
     for (auto call : calls) {
+      assert(not call->getCalledFunction()->getName().ends_with("_range"));
       remove_inst_from_func(call, base_ptr, base_ptr_to_call, call_to_base_ptr);
       (*removed_tsan_calls)++;
     }
@@ -406,9 +407,6 @@ remove_tsan_calls_in_bb(const DenseSet<CallBase *> &tsan_calls, Module &M) {
 
     for (auto call : call_list) {
       auto func_name = call->getCalledFunction()->getName();
-      if (func_name.ends_with("_range"))
-        continue;
-
       auto arg0 = call->getArgOperand(0);
       if (func_name.starts_with("__tsan_write"))
         ptr_values_write[arg0].insert(call);
