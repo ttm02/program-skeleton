@@ -329,12 +329,9 @@ static void range_replace_array(
 }
 
 static std::pair<unsigned, unsigned>
-remove_tsan_calls_in_func(const DenseSet<CallBase *> &tsan_calls, Module &M) {
+remove_tsan_calls_in_bb(const DenseSet<CallBase *> &tsan_calls, Module &M) {
   unsigned removed_tsan_calls = 0;
   unsigned added_tsan_calls = 0;
-
-  if (tsan_calls.empty())
-    return std::make_pair(removed_tsan_calls, added_tsan_calls);
 
   DenseMap<Instruction *, SmallDenseSet<CallBase *>> base_ptr_to_call;
   DenseMap<CallBase *, SmallDenseSet<Instruction *>> call_to_base_ptr;
@@ -394,36 +391,44 @@ std::string reduce_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
   unsigned added_tsan_calls = 0;
 
   for (Function &Func : M) {
-    DenseSet<CallBase *> tsan_calls;
-
     // do not instrument tsan itself
     if (Func.getName().starts_with("tsan.module_ctor"))
       continue;
 
     for (BasicBlock &BB : Func) {
-      for (Instruction &inst : BB) {
-        if (auto call = dyn_cast<CallBase>(&inst)) {
-          auto called_func = call->getCalledFunction();
-          if (!called_func)
-            continue;
-          auto func_name = called_func->getName();
+      bool hasChanged;
+      do {
+        hasChanged = false;
+        DenseSet<CallBase *> tsan_calls;
 
-          if (not func_name.starts_with("__tsan"))
-            continue;
-          if (func_name == "__tsan_func_entry" ||
-              func_name == "__tsan_func_exit")
-            continue;
+        for (Instruction &inst : BB) {
+          if (auto call = dyn_cast<CallBase>(&inst)) {
+            auto called_func = call->getCalledFunction();
+            if (!called_func)
+              continue;
+            auto func_name = called_func->getName();
 
-          if (func_name.starts_with("__tsan_write") ||
-              func_name.starts_with("__tsan_read"))
-            tsan_calls.insert(call);
+            if (not func_name.starts_with("__tsan"))
+              continue;
+            if (func_name == "__tsan_func_entry" ||
+                func_name == "__tsan_func_exit")
+              continue;
+
+            if (func_name.starts_with("__tsan_write") ||
+                func_name.starts_with("__tsan_read"))
+              tsan_calls.insert(call);
+          }
         }
-      }
-    }
 
-    auto tc = remove_tsan_calls_in_func(tsan_calls, M);
-    removed_tsan_calls += tc.first;
-    added_tsan_calls += tc.second;
+        if (not tsan_calls.empty()) {
+          auto tc = remove_tsan_calls_in_bb(tsan_calls, M);
+          if (tc.first || tc.second)
+            hasChanged = true;
+          removed_tsan_calls += tc.first;
+          added_tsan_calls += tc.second;
+        }
+      } while (hasChanged);
+    }
   }
 
   // print statistics
