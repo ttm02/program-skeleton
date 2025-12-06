@@ -19,36 +19,39 @@
 
 using namespace llvm;
 
-#define b2c_map DenseMap<Instruction *, SmallDenseSet<CallBase *>>
-#define c2b_map DenseMap<CallBase *, SmallDenseSet<Instruction *>>
+#define b2c_map DenseMap<Value *, SmallDenseSet<CallBase *>>
+#define c2b_map DenseMap<CallBase *, SmallDenseSet<Value *>>
 
 static inline void collect_base_ptr_to_tsan_call(b2c_map &base_ptr_to_call,
                                                  c2b_map &call_to_base_ptr,
                                                  CallBase *tsan_call,
-                                                 Instruction *inst) {
-  base_ptr_to_call[inst].insert(tsan_call);
-  call_to_base_ptr[tsan_call].insert(inst);
-
-  // value is uncertain -> do not map these DFG values to TSAN call
-  if (isa<PHINode>(inst) || isa<CallBase>(inst) || isa<LoadInst>(inst) ||
-      isa<SelectInst>(inst) || isa<AllocaInst>(inst) || isa<FreezeInst>(inst) ||
-      isa<ExtractElementInst>(inst))
+                                                 Value *val) {
+  if (isa<Constant>(val))
     return;
 
-  if (not(isa<GetElementPtrInst>(inst) || isa<IntToPtrInst>(inst) ||
-          isa<CastInst>(inst) || isa<BinaryOperator>(inst))) {
-    inst->dump();
+  base_ptr_to_call[val].insert(tsan_call);
+  call_to_base_ptr[tsan_call].insert(val);
+
+  // value is uncertain -> do not map these DFG values to TSAN call
+  if (isa<PHINode>(val) || isa<CallBase>(val) || isa<LoadInst>(val) ||
+      isa<SelectInst>(val) || isa<AllocaInst>(val) || isa<FreezeInst>(val) ||
+      isa<ExtractElementInst>(val) || isa<Argument>(val))
+    return;
+
+  if (not(isa<GetElementPtrInst>(val) || isa<IntToPtrInst>(val) ||
+          isa<CastInst>(val) || isa<BinaryOperator>(val))) {
+    val->dump();
     llvm_unreachable("unexpected instruction in TSAN call DFG");
   }
 
+  auto *inst = dyn_cast<Instruction>(val);
+  assert(inst);
   for (auto &u : inst->operands())
-    if (auto useGep = dyn_cast<Instruction>(u.get()))
-      collect_base_ptr_to_tsan_call(base_ptr_to_call, call_to_base_ptr,
-                                    tsan_call, useGep);
+    collect_base_ptr_to_tsan_call(base_ptr_to_call, call_to_base_ptr, tsan_call,
+                                  u.get());
 }
 
-static inline void remove_inst_from_func(CallBase *call,
-                                         const Instruction *base_ptr,
+static inline void remove_inst_from_func(CallBase *call, const Value *base_ptr,
                                          b2c_map &base_ptr_to_call,
                                          c2b_map &call_to_base_ptr) {
   remove_inst_from_func(call);
@@ -109,8 +112,8 @@ CallInst *createTSANrange(Module &M, Instruction *base_ptr,
   return createTSANrange(M, builder, base_ptr, struct_size_value, isWrite);
 }
 
-static inline const Instruction *
-check_path_to_base_ptr(const Instruction *inst, const Instruction *base_ptr) {
+static inline const Instruction *check_path_to_base_ptr(const Instruction *inst,
+                                                        const Value *base_ptr) {
   if (not inst)
     return nullptr;
   if (not isa<CastInst>(inst)) {
@@ -126,13 +129,11 @@ check_path_to_base_ptr(const Instruction *inst, const Instruction *base_ptr) {
   return check_path_to_base_ptr(arg0, base_ptr);
 }
 
-static void
-range_replace_struct(Module &M, GetElementPtrInst *base_ptr,
-                     b2c_map &base_ptr_to_call, c2b_map &call_to_base_ptr,
-                     unsigned *removed_tsan_calls, unsigned *added_tsan_calls,
-                     bool isWrite,
-                     const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
-                     const Instruction *bp) {
+static void range_replace_struct(
+    Module &M, GetElementPtrInst *base_ptr, b2c_map &base_ptr_to_call,
+    c2b_map &call_to_base_ptr, unsigned *removed_tsan_calls,
+    unsigned *added_tsan_calls, bool isWrite,
+    const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values) {
   // replace:
   //   %struct.a = type { i32, i32, i32 }
   //   %base = getelementptr inbounds %struct.a, ptr %a, i64 0, ...
@@ -203,17 +204,17 @@ range_replace_struct(Module &M, GetElementPtrInst *base_ptr,
     }
     return offset;
   };
-  auto range_replace_struct_part = [&](Instruction *base_ptr,
+  auto range_replace_struct_part = [&](Instruction *base_ptr_part,
                                        unsigned range_size,
                                        DenseSet<CallBase *> calls) {
     assert(0 < range_size);
-    auto newCall = createTSANrange(M, base_ptr, range_size, isWrite);
+    auto newCall = createTSANrange(M, base_ptr_part, range_size, isWrite);
     newCall->setDebugLoc((*calls.begin())->getDebugLoc());
     (*added_tsan_calls)++;
 
     // cleanup replaced TSAN calls
     for (auto call : calls) {
-      remove_inst_from_func(call, bp, base_ptr_to_call, call_to_base_ptr);
+      remove_inst_from_func(call, base_ptr, base_ptr_to_call, call_to_base_ptr);
       (*removed_tsan_calls)++;
     }
   };
@@ -273,12 +274,13 @@ range_replace_struct(Module &M, GetElementPtrInst *base_ptr,
   }
 }
 
-static void range_replace_array(
-    Module &M, GetElementPtrInst *call_gep, b2c_map &base_ptr_to_call,
-    c2b_map &call_to_base_ptr, unsigned *removed_tsan_calls,
-    unsigned *added_tsan_calls, bool isWrite,
-    const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
-    const Instruction *bp, const SmallDenseSet<CallBase *> &calls) {
+static void
+range_replace_array(Module &M, GetElementPtrInst *call_gep,
+                    b2c_map &base_ptr_to_call, c2b_map &call_to_base_ptr,
+                    unsigned *removed_tsan_calls, unsigned *added_tsan_calls,
+                    bool isWrite,
+                    const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
+                    const Value *bp, const SmallDenseSet<CallBase *> &calls) {
   // replace;
   //   %base = ...
   //   %base0 = sext i32 %base to i64
@@ -424,7 +426,7 @@ remove_tsan_calls_in_bb(const DenseSet<CallBase *> &tsan_calls, Module &M) {
                      bool isWrite) {
         range_replace_struct(M, base_ptr, base_ptr_to_call, call_to_base_ptr,
                              &removed_tsan_calls, &added_tsan_calls, isWrite,
-                             ptr_values, bp);
+                             ptr_values);
       };
       rrs(ptr_values_write, true);
       rrs(ptr_values_read, false);
