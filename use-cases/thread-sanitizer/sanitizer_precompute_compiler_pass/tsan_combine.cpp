@@ -19,10 +19,13 @@
 
 using namespace llvm;
 
-static inline void collect_base_ptr_to_tsan_call(
-    DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
-    DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr,
-    CallBase *tsan_call, Instruction *inst) {
+#define b2c_map DenseMap<Instruction *, SmallDenseSet<CallBase *>>
+#define c2b_map DenseMap<CallBase *, SmallDenseSet<Instruction *>>
+
+static inline void collect_base_ptr_to_tsan_call(b2c_map &base_ptr_to_call,
+                                                 c2b_map &call_to_base_ptr,
+                                                 CallBase *tsan_call,
+                                                 Instruction *inst) {
   base_ptr_to_call[inst].insert(tsan_call);
   call_to_base_ptr[tsan_call].insert(inst);
 
@@ -44,10 +47,10 @@ static inline void collect_base_ptr_to_tsan_call(
                                     tsan_call, useGep);
 }
 
-static inline void remove_inst_from_func(
-    CallBase *call, const Instruction *base_ptr,
-    DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
-    DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr) {
+static inline void remove_inst_from_func(CallBase *call,
+                                         const Instruction *base_ptr,
+                                         b2c_map &base_ptr_to_call,
+                                         c2b_map &call_to_base_ptr) {
   remove_inst_from_func(call);
   // remove from all other lists to avoid segmentation fault
   for (auto bp : call_to_base_ptr[call])
@@ -123,13 +126,13 @@ check_path_to_base_ptr(const Instruction *inst, const Instruction *base_ptr) {
   return check_path_to_base_ptr(arg0, base_ptr);
 }
 
-static void range_replace_struct(
-    Module &M, GetElementPtrInst *base_ptr,
-    DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
-    DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr,
-    unsigned *removed_tsan_calls, unsigned *added_tsan_calls, bool isWrite,
-    const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
-    const Instruction *bp) {
+static void
+range_replace_struct(Module &M, GetElementPtrInst *base_ptr,
+                     b2c_map &base_ptr_to_call, c2b_map &call_to_base_ptr,
+                     unsigned *removed_tsan_calls, unsigned *added_tsan_calls,
+                     bool isWrite,
+                     const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
+                     const Instruction *bp) {
   // replace:
   //   %struct.a = type { i32, i32, i32 }
   //   %base = getelementptr inbounds %struct.a, ptr %a, i64 0, ...
@@ -271,10 +274,9 @@ static void range_replace_struct(
 }
 
 static void range_replace_array(
-    Module &M, GetElementPtrInst *call_gep,
-    DenseMap<Instruction *, SmallDenseSet<CallBase *>> &base_ptr_to_call,
-    DenseMap<CallBase *, SmallDenseSet<Instruction *>> &call_to_base_ptr,
-    unsigned *removed_tsan_calls, unsigned *added_tsan_calls, bool isWrite,
+    Module &M, GetElementPtrInst *call_gep, b2c_map &base_ptr_to_call,
+    c2b_map &call_to_base_ptr, unsigned *removed_tsan_calls,
+    unsigned *added_tsan_calls, bool isWrite,
     const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
     const Instruction *bp, const SmallDenseSet<CallBase *> &calls) {
   // replace;
@@ -383,8 +385,8 @@ remove_tsan_calls_in_bb(const DenseSet<CallBase *> &tsan_calls, Module &M) {
   unsigned removed_tsan_calls = 0;
   unsigned added_tsan_calls = 0;
 
-  DenseMap<Instruction *, SmallDenseSet<CallBase *>> base_ptr_to_call;
-  DenseMap<CallBase *, SmallDenseSet<Instruction *>> call_to_base_ptr;
+  b2c_map base_ptr_to_call;
+  c2b_map call_to_base_ptr;
 
   for (auto *ts : tsan_calls) {
     auto arg0 = ts->getArgOperand(0);
