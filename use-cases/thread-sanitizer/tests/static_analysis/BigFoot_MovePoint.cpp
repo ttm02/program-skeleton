@@ -35,12 +35,19 @@ struct Point {
 };
 
 static inline void moveWithOffset(Point *a, unsigned i) {
+  auto j = i + 1;
+  auto m = std::rand() % 20;
+
   a[i].move(1, 1, 1);
-  a[i + 1].move(1, 1, 1);
-  a[i + 2].move(1, 1, 1);
+  a[j].move(1, 1, 1);
+  a[j + 1].move(1, 1, 1);
+
   a[i + 20].moveYZ(2, 2);
   a[i + 21].moveXY(2, 2);
+
   a[i + 23].moveXZ(3, 3);
+
+  a[i + m].moveXZ(3, 3);
 }
 
 void movePtsConst(Point *a) {

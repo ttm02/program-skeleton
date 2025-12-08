@@ -22,6 +22,13 @@ using namespace llvm;
 #define b2c_map DenseMap<Value *, SmallDenseSet<CallBase *>>
 #define c2b_map DenseMap<CallBase *, SmallDenseSet<Value *>>
 
+#define common_parameter                                                       \
+  Module &M, b2c_map &base_ptr_to_call, c2b_map &call_to_base_ptr,             \
+      unsigned *removed_tsan_calls, unsigned *added_tsan_calls,                \
+      const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values_write,         \
+      const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values_read,          \
+      Value *base_ptr
+
 static inline void collect_base_ptr_to_tsan_call(b2c_map &base_ptr_to_call,
                                                  c2b_map &call_to_base_ptr,
                                                  CallBase *tsan_call,
@@ -129,11 +136,12 @@ static inline const Instruction *check_path_to_base_ptr(const Instruction *inst,
   return check_path_to_base_ptr(arg0, base_ptr);
 }
 
-static void range_replace_struct(
-    Module &M, GetElementPtrInst *base_ptr, b2c_map &base_ptr_to_call,
-    c2b_map &call_to_base_ptr, unsigned *removed_tsan_calls,
-    unsigned *added_tsan_calls, bool isWrite,
-    const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values) {
+static void
+range_replace_struct(Module &M, b2c_map &base_ptr_to_call,
+                     c2b_map &call_to_base_ptr, unsigned *removed_tsan_calls,
+                     unsigned *added_tsan_calls, bool isWrite,
+                     const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
+                     GetElementPtrInst *base_ptr) {
   // replace:
   //   %struct.a = type { i32, i32, i32 }
   //   %base = getelementptr inbounds %struct.a, ptr %a, i64 0, ...
@@ -208,7 +216,7 @@ static void range_replace_struct(
                                        unsigned range_size,
                                        DenseSet<CallBase *> calls) {
     assert(0 < range_size);
-    auto newCall = createTSANrange(M, base_ptr_part, range_size, isWrite);
+    auto *newCall = createTSANrange(M, base_ptr_part, range_size, isWrite);
     newCall->setDebugLoc((*calls.begin())->getDebugLoc());
     (*added_tsan_calls)++;
 
@@ -230,6 +238,7 @@ static void range_replace_struct(
   startPtr = nullptr;
   lastPtr = offset_ptrs.back();
 
+  // check for contingous part ranges
   for (auto *offPtr : offset_ptrs) {
     auto memberOffset = getMemberOffset(base_ptr, offPtr);
     auto idxMember = SL->getElementContainingOffset(memberOffset);
@@ -276,12 +285,11 @@ static void range_replace_struct(
 }
 
 static void
-range_replace_array(Module &M, GetElementPtrInst *call_gep,
-                    b2c_map &base_ptr_to_call, c2b_map &call_to_base_ptr,
-                    unsigned *removed_tsan_calls, unsigned *added_tsan_calls,
-                    bool isWrite,
+range_replace_array(Module &M, b2c_map &base_ptr_to_call,
+                    c2b_map &call_to_base_ptr, unsigned *removed_tsan_calls,
+                    unsigned *added_tsan_calls, bool isWrite,
                     const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
-                    const Value *bp, const SmallDenseSet<CallBase *> &calls) {
+                    const Value *base_ptr, GetElementPtrInst *call_gep) {
   // replace;
   //   %base = ...
   //   %base0 = sext i32 %base to i64
@@ -311,9 +319,9 @@ range_replace_array(Module &M, GetElementPtrInst *call_gep,
       continue;
 
     auto *idx0 = dyn_cast<Instruction>(ptr_gep->indices().begin()->get());
-    auto *base = check_path_to_base_ptr(idx0, bp);
+    auto *base = check_path_to_base_ptr(idx0, base_ptr);
     if (base) {
-      if (base == bp) {
+      if (base == base_ptr) {
         offset_ptrs.push_back({ptr_gep, base});
       } else if (auto *base_inst = dyn_cast<BinaryOperator>(base)) {
         if (base_inst->getOpcode() == Instruction::Add)
@@ -329,10 +337,10 @@ range_replace_array(Module &M, GetElementPtrInst *call_gep,
   auto byOffset = [&](std::pair<GetElementPtrInst *, const Instruction *> LHS,
                       std::pair<GetElementPtrInst *, const Instruction *> RHS) {
     assert(RHS.second);
-    if (RHS.second == bp)
+    if (RHS.second == base_ptr)
       return false;
     assert(LHS.second);
-    if (LHS.second == bp)
+    if (LHS.second == base_ptr)
       return true;
     auto *LHS_o1 = cast<ConstantInt>(LHS.second->getOperand(1));
     auto *RHS_o1 = cast<ConstantInt>(RHS.second->getOperand(1));
@@ -345,8 +353,8 @@ range_replace_array(Module &M, GetElementPtrInst *call_gep,
   unsigned n = 0;
   for (auto offPtr : offset_ptrs) {
     auto offAdd = offPtr.second;
-    assert(bp == offAdd || bp == offAdd->getOperand(0));
-    if (n == 0 && bp != offAdd) {
+    assert(base_ptr == offAdd || base_ptr == offAdd->getOperand(0));
+    if (n == 0 && base_ptr != offAdd) {
       return; // no contingous range
     } else if (0 < n) {
       auto *offInt = cast<ConstantInt>(offAdd->getOperand(1));
@@ -356,6 +364,7 @@ range_replace_array(Module &M, GetElementPtrInst *call_gep,
     n++;
   }
 
+  /*
   // TODO allow partial ranges of only read or only write
   auto base_ptr = offset_ptrs.begin()->first;
   auto *elemTy = base_ptr->getSourceElementType();
@@ -381,10 +390,12 @@ range_replace_array(Module &M, GetElementPtrInst *call_gep,
       }
     }
   }
+  */
 }
 
 static std::pair<unsigned, unsigned>
-remove_tsan_calls_in_bb(const DenseSet<CallBase *> &tsan_calls, Module &M) {
+remove_wrapper(std::function<void(common_parameter)> replace_func, Module &M,
+               const DenseSet<CallBase *> &tsan_calls) {
   unsigned removed_tsan_calls = 0;
   unsigned added_tsan_calls = 0;
 
@@ -418,42 +429,55 @@ remove_tsan_calls_in_bb(const DenseSet<CallBase *> &tsan_calls, Module &M) {
     if (ptr_values_write.empty() && ptr_values_read.empty())
       continue;
 
-    auto *bp = bp2call.getFirst();
-    if (auto *base_ptr = dyn_cast<GetElementPtrInst>(bp)) {
-      auto rrs = [&](DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
-                     bool isWrite) {
-        range_replace_struct(M, base_ptr, base_ptr_to_call, call_to_base_ptr,
-                             &removed_tsan_calls, &added_tsan_calls, isWrite,
-                             ptr_values);
-      };
-      rrs(ptr_values_write, true);
-      rrs(ptr_values_read, false);
-    } else {
-      auto rra = [&](DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
-                     bool isWrite) {
-        if (ptr_values.empty())
-          return;
-        auto *pvb = (*ptr_values.begin()).getFirst();
-        assert(pvb);
-        if (auto *call_gep = dyn_cast<GetElementPtrInst>(pvb)) {
-          range_replace_array(M, call_gep, base_ptr_to_call, call_to_base_ptr,
-                              &removed_tsan_calls, &added_tsan_calls, isWrite,
-                              ptr_values, bp, call_list);
-        }
-      };
-      rra(ptr_values_write, true);
-      rra(ptr_values_read, false);
-    }
+    replace_func(M, base_ptr_to_call, call_to_base_ptr, &removed_tsan_calls,
+                 &added_tsan_calls, ptr_values_write, ptr_values_read,
+                 bp2call.getFirst());
+    if (removed_tsan_calls || added_tsan_calls)
+      return std::make_pair(removed_tsan_calls, added_tsan_calls);
   }
 
   return std::make_pair(removed_tsan_calls, added_tsan_calls);
 }
 
-std::string reduce_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
-  errs() << "Combine multiple TSAN calls with range call\n";
-  unsigned removed_tsan_calls = 0;
-  unsigned added_tsan_calls = 0;
+static void struct_wrapper(common_parameter) {
+  if (auto *bp = dyn_cast<GetElementPtrInst>(base_ptr)) {
+    auto rrs = [&](const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
+                   bool isWrite) {
+      range_replace_struct(M, base_ptr_to_call, call_to_base_ptr,
+                           removed_tsan_calls, added_tsan_calls, isWrite,
+                           ptr_values, bp);
+    };
+    rrs(ptr_values_write, true);
+    rrs(ptr_values_read, false);
+  }
+}
 
+static void array_wrapper(common_parameter) {
+  // TODO really?
+  if (isa<GetElementPtrInst>(base_ptr))
+    return;
+
+  auto rra = [&](const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
+                 bool isWrite) {
+    if (ptr_values.empty())
+      return;
+    auto *pvb = (*ptr_values.begin()).getFirst();
+    assert(pvb);
+    if (auto *call_gep = dyn_cast<GetElementPtrInst>(pvb)) {
+      errs() << call_gep->getFunction()->getName() << "\n";
+      range_replace_array(M, base_ptr_to_call, call_to_base_ptr,
+                          removed_tsan_calls, added_tsan_calls, isWrite,
+                          ptr_values, base_ptr, call_gep);
+      errs() << "\n";
+    }
+  };
+  rra(ptr_values_write, true);
+  rra(ptr_values_read, false);
+}
+
+static void wrap_BB_replace(std::function<void(common_parameter)> replace_func,
+                            Module &M, unsigned *removed_tsan_calls,
+                            unsigned *added_tsan_calls) {
   for (Function &Func : M) {
     // do not instrument tsan itself
     if (Func.getName().starts_with("tsan.module_ctor"))
@@ -485,15 +509,24 @@ std::string reduce_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
         }
 
         if (not tsan_calls.empty()) {
-          auto tc = remove_tsan_calls_in_bb(tsan_calls, M);
+          auto tc = remove_wrapper(replace_func, M, tsan_calls);
           if (tc.first || tc.second)
             hasChanged = true;
-          removed_tsan_calls += tc.first;
-          added_tsan_calls += tc.second;
+          *removed_tsan_calls += tc.first;
+          *added_tsan_calls += tc.second;
         }
       } while (hasChanged);
     }
   }
+}
+
+std::string reduce_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
+  errs() << "Combine multiple TSAN calls with range call\n";
+  unsigned removed_tsan_calls = 0;
+  unsigned added_tsan_calls = 0;
+
+  wrap_BB_replace(struct_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
+  wrap_BB_replace(array_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
 
   // print statistics
   return "removed TSAN calls: " + std::to_string(removed_tsan_calls) +
