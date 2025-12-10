@@ -55,6 +55,14 @@ void timeStep(int n, double *u0, double *u1, double r)
                 u1[(i * n + j) * n + k] = (1.0 - 6.0 * r) * u0[(i * n + j) * n + k] + r * (u0[((i + 1) * n + j) * n + k] + u0[((i - 1) * n + j) * n + k] + u0[(i * n + j + 1) * n + k] + u0[(i * n + j - 1) * n + k] + u0[(i * n + j) * n + k + 1] + u0[(i * n + j) * n + k - 1]);
 }
 
+
+bool is_perfect_cube(long long n) {
+  if (n < 0) return false;   // or handle separately if you want negative cubes
+
+  long long r = llround(cbrt((double)n));  // nearest integer to the real cube root
+  return r*r*r == n;
+}
+
 void solveMPI(int n, double *u0, double r, int nt, int argc, char **argv)
 {
     int i, j, k;
@@ -65,6 +73,11 @@ void solveMPI(int n, double *u0, double r, int nt, int argc, char **argv)
     MPI_Comm_size(MPI_COMM_WORLD, &nproc);
     MPI_Status stat;
     MPI_Request req;
+
+    if (! is_perfect_cube(nproc)) {
+      printf("Error: number of processes must be a cube of an integer\n");
+      MPI_Abort(MPI_COMM_WORLD,-1);
+    }
 
     int sub_n = (int) cbrt(pow(n-2,3)/nproc);
     double *sub_u0 = (double *)malloc(sizeof(double) * (sub_n+2) * (sub_n+2) * (sub_n+2));
@@ -97,18 +110,29 @@ void solveMPI(int n, double *u0, double r, int nt, int argc, char **argv)
     double *i_neg_send = (double *)malloc(sizeof(double) * (sub_n+2) * (sub_n+2));
     double *i_neg_recv = (double *)malloc(sizeof(double) * (sub_n+2) * (sub_n+2));
     int i_neg_rank = rank - pow((n-2)/sub_n,2);
+
+    assert(!i_pos || (0<=i_pos_rank && i_pos_rank<nproc));
+    assert(!i_neg || (0<=i_neg_rank && i_neg_rank<nproc));
+
     double *j_pos_send = (double *)malloc(sizeof(double) * (sub_n+2) * (sub_n+2));
     double *j_pos_recv = (double *)malloc(sizeof(double) * (sub_n+2) * (sub_n+2));
     int j_pos_rank = rank + (n-2)/sub_n;
     double *j_neg_send = (double *)malloc(sizeof(double) * (sub_n+2) * (sub_n+2));
     double *j_neg_recv = (double *)malloc(sizeof(double) * (sub_n+2) * (sub_n+2));
     int j_neg_rank = rank - (n-2)/sub_n;
+
+    assert(!j_pos || (0<=j_pos_rank && j_pos_rank<nproc));
+    assert(!j_neg || (0<=j_neg_rank && j_neg_rank<nproc));
+
     double *k_pos_send = (double *)malloc(sizeof(double) * (sub_n+2) * (sub_n+2));
     double *k_pos_recv = (double *)malloc(sizeof(double) * (sub_n+2) * (sub_n+2));
     int k_pos_rank = rank + 1;
     double *k_neg_send = (double *)malloc(sizeof(double) * (sub_n+2) * (sub_n+2));
     double *k_neg_recv = (double *)malloc(sizeof(double) * (sub_n+2) * (sub_n+2));
     int k_neg_rank = rank - 1;
+
+    assert(!k_pos || (0<=k_pos_rank && k_pos_rank<nproc));
+    assert(!k_neg || (0<=k_neg_rank && k_neg_rank<nproc));
 
     int t;
     MPI_Barrier(MPI_COMM_WORLD);
@@ -386,7 +410,7 @@ int main(int argc, char **argv)
      boundaries : index 0 and n-1
      inner part : index 1 to n-2
      mesh size (discretization) is 1.0/(n-1) */
-    n = 222+2;//16+2;
+    n = 16+2;//16+2;
 
     double *u0 = malloc(sizeof(double) * n * n * n);
     double *u1 = malloc(sizeof(double) * n * n * n);
@@ -418,7 +442,7 @@ int main(int argc, char **argv)
                 u0[(i * n + j) * n + k] = 1.0;
 
     double T = 0.02;
-    int nt = 6000;//200;
+    int nt = 200;//200;
     double dt = T / nt;
     double dx = 1.0 / (n - 1);
     double kappa = 1.0;
