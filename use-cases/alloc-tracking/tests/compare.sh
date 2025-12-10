@@ -9,6 +9,7 @@ TEST_CASE=$2
 # flags about MPI usage
 MPI_USAGE=$3
 MPI_MODE=$4
+NUM_PROCS=$5
 
 # the python script used to compare teh output
 SCRIPT_DIR=$(dirname "$0")
@@ -54,9 +55,9 @@ if [[ -x "./skeleton/a.out" ]]; then
     # skeletonization successfull
     if [[ "$MPI_USAGE" == "USE_MPI" ]]; then
           cd original
-          mpirun -n 2 ./a.out
+          mpirun -n $NUM_PROCS ./a.out
           cd ../skeleton
-          mpirun -n 2 ./a.out
+          mpirun -n $NUM_PROCS ./a.out
           cd ..
     else
       cd original
