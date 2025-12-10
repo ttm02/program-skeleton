@@ -520,7 +520,7 @@ static void wrap_BB_replace(std::function<void(common_parameter)> replace_func,
   }
 }
 
-std::string reduce_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
+std::string combine_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Combine multiple TSAN calls with range call\n";
   unsigned removed_tsan_calls = 0;
   unsigned added_tsan_calls = 0;

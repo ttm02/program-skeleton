@@ -14,7 +14,8 @@
 #include "llvm/IR/Type.h"
 
 std::string Optimize_loops(llvm::Module &M, llvm::ModuleAnalysisManager &AM);
-std::string reduce_tsan_calls(llvm::Module &M, llvm::ModuleAnalysisManager &AM);
+std::string combine_tsan_calls(llvm::Module &M,
+                               llvm::ModuleAnalysisManager &AM);
 std::string eliminate_only_in_critical(llvm::Module &M,
                                        llvm::ModuleAnalysisManager &AM);
 std::string remove_all_single_thread_regions(llvm::Module &M,
