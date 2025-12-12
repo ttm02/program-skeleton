@@ -5,6 +5,7 @@
 #include "tsan_precompute_cleanup.h"
 
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
@@ -12,8 +13,13 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Transforms/IPO/GlobalDCE.h"
+#include "llvm/Transforms/IPO/ModuleInliner.h"
+#include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
 
 #include <cassert>
+#include <cstdint>
 
 #include "precompute/compiler/analysis_results.h"
 
@@ -56,6 +62,23 @@ static inline void collect_base_ptr_to_tsan_call(b2c_map &base_ptr_to_call,
   for (auto &u : inst->operands())
     collect_base_ptr_to_tsan_call(base_ptr_to_call, call_to_base_ptr, tsan_call,
                                   u.get());
+}
+
+static void replace_invoke_term(Instruction *inst) {
+  auto invoke = dyn_cast<InvokeInst>(inst);
+  assert(invoke);
+
+  IRBuilder<> builder(invoke);
+  BasicBlock *normalDest = invoke->getNormalDest();
+  builder.CreateBr(normalDest);
+}
+
+void remove_inst_from_func(Instruction *inst) {
+  if (not inst->use_empty())
+    inst->replaceAllUsesWith(PoisonValue::get(inst->getType()));
+  if (inst->isTerminator())
+    replace_invoke_term(inst);
+  inst->eraseFromParent();
 }
 
 static inline void remove_inst_from_func(CallBase *call, const Value *base_ptr,
@@ -119,21 +142,57 @@ CallInst *createTSANrange(Module &M, Instruction *base_ptr,
   return createTSANrange(M, builder, base_ptr, struct_size_value, isWrite);
 }
 
-static inline const Instruction *check_path_to_base_ptr(const Instruction *inst,
-                                                        const Value *base_ptr) {
+static inline bool check_path_to_base_ptr(const Instruction *inst,
+                                          const Value *base_ptr) {
   if (not inst)
-    return nullptr;
+    return false;
+  if (inst == base_ptr)
+    return true;
+  if (auto *gep = dyn_cast<GetElementPtrInst>(inst)) {
+    auto ptr = gep->getPointerOperand();
+    return base_ptr == ptr;
+  }
   if (not isa<CastInst>(inst)) {
-    if (inst == base_ptr)
-      return inst;
     for (auto &u : inst->operands())
       if (u.get() == base_ptr)
-        return inst;
-    return nullptr;
+        return true;
+    return false;
   }
   assert(inst->getNumOperands() == 1);
   auto arg0 = dyn_cast<Instruction>(inst->getOperand(0));
   return check_path_to_base_ptr(arg0, base_ptr);
+}
+
+const SCEV *removeCastInSCEV(const SCEV *scev, ScalarEvolution &SE) {
+  if (auto *scev_cast = dyn_cast<SCEVCastExpr>(scev)) {
+    // TODO could there be nested casts?
+    return scev_cast->getOperand();
+  }
+  if (isa<SCEVConstant>(scev))
+    return scev;
+  // probably base_ptr or other variable
+  if (isa<SCEVUnknown>(scev))
+    return scev;
+  // this might not be constant
+  if (isa<SCEVAddRecExpr>(scev))
+    return nullptr;
+
+  SmallVector<const SCEV *, 4> newOperands;
+  for (const SCEV *operand : scev->operands()) {
+    const SCEV *scev_operand = removeCastInSCEV(operand, SE);
+    if (not scev_operand)
+      return nullptr;
+    newOperands.push_back(scev_operand);
+  }
+
+  if (isa<SCEVAddExpr>(scev))
+    return SE.getAddExpr(newOperands);
+  if (isa<SCEVMulExpr>(scev))
+    return SE.getMulExpr(newOperands);
+
+  errs() << scev->getSCEVType() << ": ";
+  scev->dump();
+  llvm_unreachable("unknown SCEV operation");
 }
 
 static void
@@ -222,7 +281,6 @@ range_replace_struct(Module &M, b2c_map &base_ptr_to_call,
 
     // cleanup replaced TSAN calls
     for (auto call : calls) {
-      assert(not call->getCalledFunction()->getName().ends_with("_range"));
       remove_inst_from_func(call, base_ptr, base_ptr_to_call, call_to_base_ptr);
       (*removed_tsan_calls)++;
     }
@@ -289,7 +347,7 @@ range_replace_array(Module &M, b2c_map &base_ptr_to_call,
                     c2b_map &call_to_base_ptr, unsigned *removed_tsan_calls,
                     unsigned *added_tsan_calls, bool isWrite,
                     const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
-                    const Value *base_ptr, GetElementPtrInst *call_gep) {
+                    const Value *base_ptr) {
   // replace;
   //   %base = ...
   //   %base0 = sext i32 %base to i64
@@ -303,94 +361,176 @@ range_replace_array(Module &M, b2c_map &base_ptr_to_call,
   // with:
   //   call void @__tsan_write_range(ptr %base_ptr, i64 32)
 
-  SmallVector<std::pair<GetElementPtrInst *, const Instruction *>, 10>
-      offset_ptrs;
+  auto *cb = *ptr_values.begin()->getSecond().begin();
+  auto *SE = analysis_results->getSE(*cb->getFunction());
+  SmallVector<std::pair<Value *, const SCEV *>, 10> offset_ptrs;
+
+  uint64_t align = 0;
+  if (auto *arg = dyn_cast<Argument>(base_ptr))
+    if (arg->hasAttribute(Attribute::Alignment))
+      align = arg->getAttribute(Attribute::Alignment).getValueAsInt();
+
   for (auto p2c : ptr_values) {
     auto *ptr = p2c.getFirst();
-    // LULESH fails with this assertion
-    // assert(p2c.getSecond().size() == 1);
-    auto *ptr_gep = dyn_cast<GetElementPtrInst>(ptr);
-    if (not ptr_gep)
-      continue;
-    if (ptr_gep->getPointerOperand() != call_gep->getPointerOperand())
-      continue;
-    assert(1 <= ptr_gep->getNumIndices());
-    if (ptr_gep->getNumIndices() != 1)
-      continue;
 
-    auto *idx0 = dyn_cast<Instruction>(ptr_gep->indices().begin()->get());
-    auto *base = check_path_to_base_ptr(idx0, base_ptr);
-    if (base) {
-      if (base == base_ptr) {
-        offset_ptrs.push_back({ptr_gep, base});
-      } else if (auto *base_inst = dyn_cast<BinaryOperator>(base)) {
-        if (base_inst->getOpcode() == Instruction::Add)
-          if (isa<ConstantInt>(base_inst->getOperand(1)))
-            offset_ptrs.push_back({ptr_gep, base_inst});
+    if (auto *ptr_gep = dyn_cast<GetElementPtrInst>(ptr)) {
+      if (not check_path_to_base_ptr(ptr_gep, base_ptr))
+        continue;
+
+      if (getGEPstructTy(ptr_gep)) {
+        // if struct, array should have gep + add pattern
+        if (1 < ptr_gep->getNumIndices())
+          continue;
+        if (isa<ConstantInt>(ptr_gep->indices().begin()->get()))
+          continue;
+      } else if (align) {
+        // try eliminating struct replacement by checking alignment
+        for (auto *call : p2c.getSecond())
+          if (get_size_of_tsan_access(call)->getZExtValue() != align)
+            return;
+      } else {
+        // try eliminating struct replacement by checking alignment
+        for (auto *call : p2c.getSecond()) {
+          auto align_tsan = get_size_of_tsan_access(call)->getZExtValue();
+          for (auto *user : call->getArgOperand(0)->users()) {
+            if (auto *load = dyn_cast<LoadInst>(user))
+              if (align_tsan < load->getAlign().value())
+                return;
+            if (auto *store = dyn_cast<StoreInst>(user))
+              if (align_tsan < store->getAlign().value())
+                return;
+          }
+        }
       }
+      // primitive types are allowed to have a gep %base, %offset pattern
+    } else {
+      assert(base_ptr == ptr);
     }
+
+    const auto *scev_gep = SE->getSCEV(ptr);
+    if (not scev_gep)
+      continue;
+    // Without removing casts SCEV does not see a constant difference between
+    // pointers. For example zero extend in `24 * zext(2 + b) + (-24) * zext(b)`
+    // does not make it clear that the difference is a constant 48. We are only
+    // interested in the difference if it is constant.
+    // DO NEVER USE SCEVExpander on this!
+    scev_gep = removeCastInSCEV(scev_gep, *SE);
+    if (not scev_gep)
+      continue;
+    offset_ptrs.push_back(std::make_pair(ptr, scev_gep));
   }
 
   if (offset_ptrs.size() < 2)
     return;
 
-  auto byOffset = [&](std::pair<GetElementPtrInst *, const Instruction *> LHS,
-                      std::pair<GetElementPtrInst *, const Instruction *> RHS) {
-    assert(RHS.second);
-    if (RHS.second == base_ptr)
+  auto byOffset = [&SE](const std::pair<Value *, const SCEV *> LHS,
+                        const std::pair<Value *, const SCEV *> RHS) {
+    auto *ptr_diff = SE->getMinusSCEV(LHS.second, RHS.second);
+    if (not ptr_diff)
       return false;
-    assert(LHS.second);
-    if (LHS.second == base_ptr)
-      return true;
-    auto *LHS_o1 = cast<ConstantInt>(LHS.second->getOperand(1));
-    auto *RHS_o1 = cast<ConstantInt>(RHS.second->getOperand(1));
-    assert(not LHS_o1->isNegative());
-    assert(not RHS_o1->isNegative());
-    return LHS_o1->getZExtValue() < RHS_o1->getZExtValue();
+    if (auto *ptr_diff_const = dyn_cast<SCEVConstant>(ptr_diff))
+      return ptr_diff_const->getAPInt().isNegative();
+    return false;
   };
   sort(offset_ptrs, byOffset);
 
-  unsigned n = 0;
-  for (auto offPtr : offset_ptrs) {
-    auto offAdd = offPtr.second;
-    assert(base_ptr == offAdd || base_ptr == offAdd->getOperand(0));
-    if (n == 0 && base_ptr != offAdd) {
-      return; // no contingous range
-    } else if (0 < n) {
-      auto *offInt = cast<ConstantInt>(offAdd->getOperand(1));
-      if (n != offInt->getZExtValue())
-        return;
-    }
-    n++;
-  }
+  auto getCall = [&](Value *gep) {
+    CallBase *call = nullptr;
+    auto calls2ptr = ptr_values.lookup(gep);
+    if (calls2ptr.size() != 1)
+      return call;
+    call = *calls2ptr.begin();
+    return call;
+  };
+  auto replace_array_or_reset = [&](Value *base_ptr_part,
+                                    const unsigned range_size,
+                                    const SmallVector<CallBase *, 8> &calls) {
+    auto *firstCall = *calls.begin();
+    IRBuilder<> b(firstCall);
+    auto int64Ty = Type::getInt64Ty(firstCall->getContext());
+    Value *range_val = ConstantInt::get(int64Ty, range_size, false);
+    auto *newCall = createTSANrange(M, b, base_ptr_part, range_val, isWrite);
+    newCall->setDebugLoc((*calls.begin())->getDebugLoc());
+    (*added_tsan_calls)++;
 
-  /*
-  // TODO allow partial ranges of only read or only write
-  auto base_ptr = offset_ptrs.begin()->first;
-  auto *elemTy = base_ptr->getSourceElementType();
-  const DataLayout &DL = M.getDataLayout();
-  unsigned elemBitwidth = DL.getTypeSizeInBits(elemTy);
-  unsigned byte_offset = bits2bytes(n * elemBitwidth);
-  auto newCall = createTSANrange(M, base_ptr, byte_offset, isWrite);
-  newCall->setDebugLoc((*calls.begin())->getDebugLoc());
-  (*added_tsan_calls)++;
-
-  // cleanup replaced TSAN calls
-  for (auto call : calls) {
-    auto arg0 = call->getArgOperand(0);
-    if (arg0 == base_ptr) {
-      remove_inst_from_func(call, bp, base_ptr_to_call, call_to_base_ptr);
+    // cleanup replaced TSAN calls
+    unsigned sumOldSizes = 0;
+    for (auto call : calls) {
+      sumOldSizes += get_size_of_tsan_access(call)->getZExtValue();
+      remove_inst_from_func(call, base_ptr, base_ptr_to_call, call_to_base_ptr);
       (*removed_tsan_calls)++;
-    } else {
-      for (auto offPtr : offset_ptrs) {
-        if (arg0 == offPtr.first) {
-          remove_inst_from_func(call, bp, base_ptr_to_call, call_to_base_ptr);
-          (*removed_tsan_calls)++;
-        }
+    }
+    assert(sumOldSizes == range_size);
+  };
+
+  SmallVector<CallBase *, 8> calls;
+  std::pair<Value *, const SCEV *> lastPtr, curPtr;
+  Value *start_ptr;
+  ConstantInt *lastTsanSize, *tsan_size;
+  CallBase *call_cur, *call_last;
+  curPtr = *offset_ptrs.begin();
+  start_ptr = curPtr.first;
+  call_cur = getCall(start_ptr);
+  // TODO allow multiple calls to the same gep
+  if (not call_cur)
+    return;
+  tsan_size = get_size_of_tsan_access(call_cur);
+  unsigned accSize = 0;
+
+  // check for contingous part ranges
+  for (auto offPtr : offset_ptrs) {
+    lastTsanSize = tsan_size;
+    lastPtr = curPtr;
+    call_last = call_cur;
+
+    calls.push_back(call_last);
+    accSize += lastTsanSize->getZExtValue();
+    curPtr = offPtr;
+    auto *ptr_gep = curPtr.first;
+    call_cur = getCall(ptr_gep);
+    // TODO allow multiple calls to the same gep
+    if (not call_cur)
+      return;
+    tsan_size = get_size_of_tsan_access(call_cur);
+
+    auto raor = [&]() {
+      if (2 <= calls.size()) {
+        assert(start_ptr);
+        assert(0 < accSize);
+        replace_array_or_reset(start_ptr, accSize, calls);
       }
+
+      accSize = 0;
+      calls.clear();
+      start_ptr = ptr_gep;
+    };
+
+    auto *ptr_diff = SE->getMinusSCEV(curPtr.second, lastPtr.second);
+    if (not ptr_diff) {
+      raor();
+      continue;
+    }
+
+    auto *ptr_diff_const = dyn_cast<SCEVConstant>(ptr_diff);
+    if (not ptr_diff_const) {
+      raor();
+      continue;
+    }
+
+    const auto const_diff = ptr_diff_const->getAPInt();
+    assert(not const_diff.isNegative());
+    if (lastTsanSize->getValue() != const_diff) {
+      raor();
+      continue;
+    }
+
+    if (offPtr == offset_ptrs.back()) {
+      calls.push_back(call_cur);
+      accSize += tsan_size->getZExtValue();
+      raor();
     }
   }
-  */
 }
 
 static std::pair<unsigned, unsigned>
@@ -463,12 +603,10 @@ static void array_wrapper(common_parameter) {
       return;
     auto *pvb = (*ptr_values.begin()).getFirst();
     assert(pvb);
-    if (auto *call_gep = dyn_cast<GetElementPtrInst>(pvb)) {
-      errs() << call_gep->getFunction()->getName() << "\n";
+    if (isa<GetElementPtrInst>(pvb)) {
       range_replace_array(M, base_ptr_to_call, call_to_base_ptr,
                           removed_tsan_calls, added_tsan_calls, isWrite,
-                          ptr_values, base_ptr, call_gep);
-      errs() << "\n";
+                          ptr_values, base_ptr);
     }
   };
   rra(ptr_values_write, true);
@@ -520,13 +658,28 @@ static void wrap_BB_replace(std::function<void(common_parameter)> replace_func,
   }
 }
 
+static inline void opt_cleanup(Module &M, ModuleAnalysisManager &AM) {
+  auto inliner = llvm::ModuleInlinerPass();
+  inliner.run(M, AM);
+
+  auto dce = llvm::GlobalDCEPass();
+  dce.run(M, AM);
+}
+
 std::string combine_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Combine multiple TSAN calls with range call\n";
   unsigned removed_tsan_calls = 0;
   unsigned added_tsan_calls = 0;
 
-  wrap_BB_replace(struct_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
-  wrap_BB_replace(array_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
+  unsigned old_removed, old_added;
+
+  do {
+    old_removed = removed_tsan_calls;
+    old_added = added_tsan_calls;
+    wrap_BB_replace(struct_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
+    wrap_BB_replace(array_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
+    opt_cleanup(M, AM);
+  } while (old_removed != removed_tsan_calls || old_added != added_tsan_calls);
 
   // print statistics
   return "removed TSAN calls: " + std::to_string(removed_tsan_calls) +

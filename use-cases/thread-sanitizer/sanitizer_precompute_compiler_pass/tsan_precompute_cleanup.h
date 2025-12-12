@@ -30,6 +30,7 @@ llvm::CallInst *createTSANrange(llvm::Module &M, llvm::IRBuilder<> &builder,
                                 const bool isWrite);
 llvm::CallInst *createTSANrange(llvm::Module &M, llvm::Instruction *base_ptr,
                                 const unsigned struct_size, const bool isWrite);
+void remove_inst_from_func(llvm::Instruction *inst);
 
 inline void splitBBexecOnce(
     llvm::Instruction *inst,
@@ -58,12 +59,6 @@ inline llvm::ConstantInt *get_size_of_tsan_access(llvm::CallBase *tsan_call) {
   auto num = std::stoi(name.substr(len).str());
   auto type = llvm::Type::getInt64Ty(tsan_call->getContext());
   return llvm::ConstantInt::get(type, num);
-}
-
-inline void remove_inst_from_func(llvm::Instruction *inst) {
-  if (not inst->use_empty())
-    inst->replaceAllUsesWith(llvm::PoisonValue::get(inst->getType()));
-  inst->eraseFromParent();
 }
 
 #endif // TSAN_PRECOMPUTE_CLEANUP_H

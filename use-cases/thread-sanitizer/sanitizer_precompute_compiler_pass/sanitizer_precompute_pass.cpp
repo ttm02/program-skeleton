@@ -299,7 +299,7 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
     // static analysis before slicing
     if (EnableStaticAnalysis) {
-      run_optimization_passes(M, AM, combine_tsan_calls);
+      run_optimization_passes(M, AM, combine_tsan_calls, false);
       run_optimization_passes(M, AM, eliminate_only_in_critical);
       run_optimization_passes(M, AM, wrap_non_openmp_tsan_calls);
     }
@@ -319,7 +319,7 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 #endif
     // static analysis after slicing
     if (EnableStaticAnalysis) {
-      run_optimization_passes(M, AM, combine_tsan_calls);
+      run_optimization_passes(M, AM, combine_tsan_calls, false);
       // HPCCG does not detect data race when this runs before precompute
       run_optimization_passes(M, AM, remove_all_single_thread_regions);
       // precomputation does not allow int2ptr casts

@@ -34,6 +34,22 @@ struct Point {
   }
 };
 
+static inline void moveWithBasePointer(Point *a) {
+  auto j = 1;
+  auto m = std::rand() % 20;
+
+  a[0].move(1, 1, 1);
+  a[j].move(1, 1, 1);
+  a[j + 1].move(1, 1, 1);
+
+  a[0 + 20].moveYZ(2, 2);
+  a[0 + 21].moveXY(2, 2);
+
+  a[0 + 23].moveXZ(3, 3);
+
+  a[0 + m].moveXZ(3, 3);
+}
+
 static inline void moveWithOffset(Point *a, unsigned i) {
   auto j = i + 1;
   auto m = std::rand() % 20;
@@ -52,14 +68,18 @@ static inline void moveWithOffset(Point *a, unsigned i) {
 
 void movePtsConst(Point *a) {
 #pragma omp parallel for firstprivate(a)
-  for (unsigned i = 5; i < 5 + 15; i += 3)
+  for (unsigned i = 5; i < 5 + 15; i += 3) {
     moveWithOffset(a, i);
+    moveWithBasePointer(&a[i + 50]);
+  }
 }
 
 void movePts(Point *a, const unsigned lo) {
 #pragma omp parallel for firstprivate(a, lo)
-  for (unsigned i = lo; i < lo + 15; i += 3)
+  for (unsigned i = lo; i < lo + 15; i += 3) {
     moveWithOffset(a, i);
+    moveWithBasePointer(&a[i + 50]);
+  }
 }
 
 void changeB(double *b, int lo, int hi) {
@@ -103,13 +123,13 @@ int main() {
   movePtsConst(a);
   unsigned lo = std::rand() % (N);
   unsigned hi = std::rand() % (N);
-  movePts(a, lo);
+  movePts(a, (lo - 100) % (N));
   changeB(b, lo, hi - 4);
 
   for (unsigned i = 0; i < N; i++) {
     if (i % 50)
       printf("\n");
-    printf("[%d, %d, %d]\t", a[i].x, a[i].y, a[i].z);
+    printf("[%d, %ld, %d]\t", a[i].x, a[i].y, a[i].z);
     printf("{%lf}\t", b[i]);
   }
   return 0;
