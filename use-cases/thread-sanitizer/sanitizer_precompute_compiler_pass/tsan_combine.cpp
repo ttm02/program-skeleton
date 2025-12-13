@@ -593,10 +593,6 @@ static void struct_wrapper(common_parameter) {
 }
 
 static void array_wrapper(common_parameter) {
-  // TODO really?
-  if (isa<GetElementPtrInst>(base_ptr))
-    return;
-
   auto rra = [&](const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
                  bool isWrite) {
     if (ptr_values.empty())
