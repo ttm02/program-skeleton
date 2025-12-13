@@ -164,10 +164,9 @@ static inline bool check_path_to_base_ptr(const Instruction *inst,
 }
 
 const SCEV *removeCastInSCEV(const SCEV *scev, ScalarEvolution &SE) {
-  if (auto *scev_cast = dyn_cast<SCEVCastExpr>(scev)) {
-    // TODO could there be nested casts?
-    return scev_cast->getOperand();
-  }
+  if (auto *scev_cast = dyn_cast<SCEVCastExpr>(scev))
+    return removeCastInSCEV(scev_cast->getOperand(), SE);
+
   if (isa<SCEVConstant>(scev))
     return scev;
   // probably base_ptr or other variable
@@ -472,7 +471,6 @@ range_replace_array(Module &M, b2c_map &base_ptr_to_call,
   curPtr = *offset_ptrs.begin();
   start_ptr = curPtr.first;
   call_cur = getCall(start_ptr);
-  // TODO allow multiple calls to the same gep
   if (not call_cur)
     return;
   tsan_size = get_size_of_tsan_access(call_cur);
@@ -489,7 +487,6 @@ range_replace_array(Module &M, b2c_map &base_ptr_to_call,
     curPtr = offPtr;
     auto *ptr_gep = curPtr.first;
     call_cur = getCall(ptr_gep);
-    // TODO allow multiple calls to the same gep
     if (not call_cur)
       return;
     tsan_size = get_size_of_tsan_access(call_cur);
