@@ -2,7 +2,7 @@ add_library(sanitizer_precompute_pass MODULE
         # List your source files here.
         aggressive_single_thread_removal.cpp
         critical_region_cleanup.cpp
-        LoopOptimize.cpp
+        loop_optimize.cpp
         pthread_mitigation.cpp
         sanitizer_precompute_pass.cpp
         tsan_combine.cpp

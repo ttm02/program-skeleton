@@ -323,7 +323,7 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
       // HPCCG does not detect data race when this runs before precompute
       run_optimization_passes(M, AM, remove_all_single_thread_regions);
       // precomputation does not allow int2ptr casts
-      run_optimization_passes(M, AM, Optimize_loops);
+      run_optimization_passes(M, AM, optimize_loops);
     }
 
     // try to eliminate even more things

@@ -208,9 +208,6 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
   if (not SE->hasComputableLoopEvolution(scev, loop)) {
     // Ptr in loop has non computable Scalar Evolution
     return false;
-    // TODO else: we could compute the memory accesses before the loop
-    // without running it and tell tsan that whole region is accessed
-    // at once effectively
   }
 
   auto *addRec = dyn_cast<SCEVAddRecExpr>(scev);
@@ -250,6 +247,7 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
 
   Value *base_ptr;
   auto origInserter = [&](IRBuilder<> &origBuilder) {
+    // TODO does different loop scheduling effect false negatives?
     base_ptr = origBuilder.CreateIntToPtr(val_min, ptrTy);
     Value *isEQ = origBuilder.CreateICmpEQ(call_arg_0, base_ptr);
     return isEQ;
@@ -299,7 +297,6 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
   SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
   seExpander.setInsertPoint(insert_builder.GetInsertPoint());
 
-  // TODO writes only when follow-up loop was also optimized
   for (auto *call : tsan_in_loop)
     if (replace_tsan_ranges(M, SE, loop, call))
       removed_tsan_calls++;
@@ -314,7 +311,7 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
   return removed_tsan_calls;
 }
 
-std::string Optimize_loops(Module &M, ModuleAnalysisManager &AM) {
+std::string optimize_loops(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Optimize Loops\n";
   unsigned removed_tsan_calls = 0;
 
