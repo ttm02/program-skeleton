@@ -110,18 +110,12 @@ static void collect_and_cleanup(Module &M, unsigned *removed_tsan_calls) {
       continue;
 
     DenseSet<Instruction *> to_be_erased;
-    for (BasicBlock &BB : Func) {
-      for (Instruction &Inst : BB) {
-        if (auto call = dyn_cast<CallBase>(&Inst)) {
-          auto *called_func = call->getCalledFunction();
-          // remove all TSAN calls in single-threaded functions
-          auto func_name = called_func->getName();
-          if (func_name.starts_with("__tsan_read") ||
-              func_name.starts_with("__tsan_write"))
+    for (BasicBlock &BB : Func)
+      for (Instruction &Inst : BB)
+        if (auto *call = dyn_cast<CallBase>(&Inst))
+          if (isAcceptableTsanCall(call))
             to_be_erased.insert(call);
-        }
-      }
-    }
+
     for (auto *Inst : to_be_erased) {
       (*removed_tsan_calls)++;
       remove_inst_from_func(Inst);

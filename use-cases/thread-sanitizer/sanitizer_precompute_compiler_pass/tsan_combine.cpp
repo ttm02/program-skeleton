@@ -622,20 +622,17 @@ static void wrap_BB_replace(std::function<void(common_parameter)> replace_func,
 
         for (Instruction &inst : BB) {
           if (auto call = dyn_cast<CallBase>(&inst)) {
+            if (not isAcceptableTsanCall(call))
+              continue;
+
             auto called_func = call->getCalledFunction();
-            if (!called_func)
-              continue;
+            assert(called_func);
             auto func_name = called_func->getName();
-
-            if (not func_name.starts_with("__tsan"))
-              continue;
-            if (func_name == "__tsan_func_entry" ||
-                func_name == "__tsan_func_exit")
+            assert(func_name.starts_with("__tsan"));
+            if (func_name.starts_with("__tsan_unaligned"))
               continue;
 
-            if (func_name.starts_with("__tsan_write") ||
-                func_name.starts_with("__tsan_read"))
-              tsan_calls.insert(call);
+            tsan_calls.insert(call);
           }
         }
 

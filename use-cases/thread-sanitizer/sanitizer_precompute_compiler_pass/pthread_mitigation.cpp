@@ -154,21 +154,12 @@ std::string wrap_non_openmp_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
       if (ParallelFunctions.contains(&func))
         continue;
       DenseSet<CallBase *> tsan_calls;
-      for (auto &bb : func) {
-        for (auto &inst : bb) {
-          if (auto *call = dyn_cast<CallBase>(&inst)) {
-            auto *called_func = call->getCalledFunction();
-            auto func_name = called_func->getName();
-            if (not func_name.starts_with("__tsan"))
-              continue;
-            if (func_name.starts_with("__tsan_func"))
-              continue;
-            if (func_name.starts_with("__tsan_read") ||
-                func_name.starts_with("__tsan_write"))
+      for (auto &bb : func)
+        for (auto &inst : bb)
+          if (auto *call = dyn_cast<CallBase>(&inst))
+            if (isAcceptableTsanCall(call))
               tsan_calls.insert(call);
-          }
-        }
-      }
+
       if (not tsan_calls.empty()) {
         wrap_tsan_calls(tsan_calls);
         wrapped_tsan_calls += tsan_calls.size();

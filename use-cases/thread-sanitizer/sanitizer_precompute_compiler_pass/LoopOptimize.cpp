@@ -169,12 +169,6 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
   auto called_func = call->getCalledFunction();
   auto func_name = called_func->getName();
 
-  if (not func_name.starts_with("__tsan_read") &&
-      not func_name.starts_with("__tsan_write")) {
-    return false;
-  }
-  assert(not func_name.starts_with("__tsan_read_write"));
-
   auto *call_arg_0 = call->getArgOperand(0);
   auto *tsan_size = get_size_of_tsan_access(call);
   if (not tsan_size) {
@@ -267,7 +261,8 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
     auto *count_full = tsanBuilder.CreateAdd(iter_count, constOne);
     auto *range_full = tsanBuilder.CreateMul(count_full, tsan_size);
 
-    bool isWrite = func_name.starts_with("__tsan_write");
+    bool isWrite = func_name.starts_with("__tsan_write") ||
+                   func_name.starts_with("__tsan_unaligned_write");
     auto newCall =
         createTSANrange(M, tsanBuilder, base_ptr, range_full, isWrite);
     newCall->setDebugLoc(call->getDebugLoc());
@@ -328,23 +323,13 @@ std::string Optimize_loops(Module &M, ModuleAnalysisManager &AM) {
       auto li = analysis_results->getLoopInfo(f);
       for (auto loop : li->getLoopsInPreorder()) {
         std::vector<llvm::CallBase *> tsan_calls;
-        for (auto &bb : loop->getBlocks()) {
-          for (auto &inst : *bb) {
-            if (auto *call = dyn_cast<CallBase>(&inst)) {
-              auto called_func = call->getCalledFunction();
-              if (not called_func)
-                continue;
-              auto func_name = called_func->getName();
-              if (not called_func->getName().starts_with("__tsan"))
-                continue;
 
-              if (func_name != "__tsan_func_entry" &&
-                  func_name != "__tsan_func_exit") {
+        for (auto &bb : loop->getBlocks())
+          for (auto &inst : *bb)
+            if (auto *call = dyn_cast<CallBase>(&inst))
+              if (isAcceptableTsanCall(call))
                 tsan_calls.push_back(call);
-              }
-            }
-          }
-        }
+
         removed_tsan_calls += perform_tsan_licm(M, loop, tsan_calls);
       }
     }

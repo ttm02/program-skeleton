@@ -37,6 +37,25 @@ void splitBBexecOnce(
 
 inline unsigned bits2bytes(const unsigned bits) { return (bits + 7) / 8; };
 
+inline bool isAcceptableTsanCall(llvm::CallBase *call) {
+  auto *called_func = call->getCalledFunction();
+  if (!called_func)
+    return false;
+
+  auto func_name = called_func->getName();
+  if (not func_name.starts_with("__tsan"))
+    return false;
+
+  if (func_name.starts_with("__tsan_read") ||
+      func_name.starts_with("__tsan_write") ||
+      func_name.starts_with("__tsan_unaligned_read") ||
+      func_name.starts_with("__tsan_unaligned_write")) {
+    assert(not func_name.contains("read_write"));
+    return true;
+  }
+  return false;
+}
+
 inline llvm::ConstantInt *get_size_of_tsan_access(llvm::CallBase *tsan_call) {
   auto name = tsan_call->getCalledFunction()->getName();
   auto len = 0;
