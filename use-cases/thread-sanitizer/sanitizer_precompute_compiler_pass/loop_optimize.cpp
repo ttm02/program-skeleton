@@ -211,7 +211,7 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
   }
 
   auto *addRec = dyn_cast<SCEVAddRecExpr>(scev);
-  if (!addRec) {
+  if (not addRec) {
     // Could not compute start and end values of ptr
     return false;
   }
@@ -224,6 +224,8 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
     return false;
 
   auto *tripCount = SE->getSymbolicMaxBackedgeTakenCount(loop);
+  assert(tripCount);
+  assert(not isa<SCEVCouldNotCompute>(tripCount));
   auto *start = addRec->getStart();
   auto *stop = addRec->evaluateAtIteration(tripCount, *SE);
 

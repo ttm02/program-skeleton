@@ -163,6 +163,10 @@ static inline bool check_path_to_base_ptr(const Instruction *inst,
   return check_path_to_base_ptr(arg0, base_ptr);
 }
 
+#define createSCEV(Ty, Getter)                                                 \
+  if (isa<Ty>(scev))                                                           \
+    return SE.Getter(newOperands);
+
 const SCEV *removeCastInSCEV(const SCEV *scev, ScalarEvolution &SE) {
   if (auto *scev_cast = dyn_cast<SCEVCastExpr>(scev))
     return removeCastInSCEV(scev_cast->getOperand(), SE);
@@ -172,9 +176,10 @@ const SCEV *removeCastInSCEV(const SCEV *scev, ScalarEvolution &SE) {
   // probably base_ptr or other variable
   if (isa<SCEVUnknown>(scev))
     return scev;
-  // this might not be constant
-  if (isa<SCEVAddRecExpr>(scev))
-    return nullptr;
+
+  if (auto *udiv = dyn_cast<SCEVUDivExpr>(scev))
+    return SE.getUDivExpr(removeCastInSCEV(udiv->getLHS(), SE),
+                          removeCastInSCEV(udiv->getRHS(), SE));
 
   SmallVector<const SCEV *, 4> newOperands;
   for (const SCEV *operand : scev->operands()) {
@@ -184,10 +189,12 @@ const SCEV *removeCastInSCEV(const SCEV *scev, ScalarEvolution &SE) {
     newOperands.push_back(scev_operand);
   }
 
-  if (isa<SCEVAddExpr>(scev))
-    return SE.getAddExpr(newOperands);
-  if (isa<SCEVMulExpr>(scev))
-    return SE.getMulExpr(newOperands);
+  createSCEV(SCEVAddExpr, getAddExpr);
+  createSCEV(SCEVMulExpr, getMulExpr);
+  createSCEV(SCEVSMaxExpr, getSMaxExpr);
+  if (auto *addRec = dyn_cast<SCEVAddRecExpr>(scev))
+    return SE.getAddRecExpr(newOperands, addRec->getLoop(),
+                            addRec->getNoWrapFlags());
 
   errs() << scev->getSCEVType() << ": ";
   scev->dump();
