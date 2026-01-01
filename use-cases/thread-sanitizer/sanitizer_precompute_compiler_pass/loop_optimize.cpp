@@ -119,16 +119,29 @@ static void getBoundLoadStoreReplacement(
   }
 }
 
-static void
+static uint64_t
 openMPboundFix(Function *func,
-               DenseMap<Value *, SmallDenseSet<Use *>> &boundReplacement) {
+               DenseMap<Value *, SmallDenseSet<Use *>> &boundReplacement,
+               Loop **loop) {
   if (not func->getName().contains(".omp_outlined."))
-    return;
+    return 0;
 
   auto call_pair = getCallInFunc(func, "__kmpc_for_static_init", true);
   auto *omp_for_static = call_pair.second;
   if (not omp_for_static)
-    return;
+    return 0;
+
+  // because we are reducing `a[i] = a[i+1]` to `a[0] = a[1]`,
+  // there exists a risk the first thread executes both conflicting pointers,
+  // if `1 < chunk_size`.
+  auto *chunk_size = dyn_cast<ConstantInt>(omp_for_static->getArgOperand(8));
+  if (not chunk_size)
+    return 0;
+  assert(not chunk_size->isNegative());
+  auto cs = chunk_size->getZExtValue();
+  if (cs != 1)
+    return cs;
+  return 0;
 
   auto omp_lower = omp_for_static->getArgOperand(4);
   getBoundLoadStoreReplacement(omp_lower, boundReplacement);
@@ -165,7 +178,7 @@ void splitBBexecOnce(
 }
 
 static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
-                                CallBase *call) {
+                                CallBase *call, const unsigned chunk_size) {
   auto called_func = call->getCalledFunction();
   auto func_name = called_func->getName();
 
@@ -175,44 +188,52 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
     return false;
   }
 
+  auto runTSANonlyOnce =
+      [&](std::function<void(IRBuilder<> & tsanBuilder)> tsanInserter) {
+        // There was the idea to just use a PhiNode, but sometimes the loop
+        // inside the OpenMP outlined function is nested. Therefore, we flip a
+        // boolean on first use.
+        auto *bbEntry = &call->getFunction()->getEntryBlock();
+        auto insertEntry = bbEntry->getFirstNonPHIOrDbgOrAlloca();
+        IRBuilder<> entryBuilder(bbEntry);
+        entryBuilder.SetInsertPoint(insertEntry);
+
+        auto *ctx = &call->getContext();
+        auto *i1Ty = entryBuilder.getInt1Ty();
+        auto *constTrue = entryBuilder.getTrue();
+        auto *flag = entryBuilder.CreateAlloca(i1Ty);
+        entryBuilder.CreateStore(constTrue, flag);
+
+        auto origInserter = [&](IRBuilder<> &origBuilder) {
+          auto *flagLoad = origBuilder.CreateLoad(i1Ty, flag);
+          Value *isEQ = origBuilder.CreateICmpEQ(flagLoad, constTrue);
+          return isEQ;
+        };
+        auto tsanInserterGeneric = [&](IRBuilder<> &tsanBuilder) {
+          tsanBuilder.CreateStore(ConstantInt::getFalse(*ctx), flag);
+          tsanInserter(tsanBuilder);
+        };
+        splitBBexecOnce(call, origInserter, tsanInserterGeneric);
+      };
+
   if (loop->isLoopInvariant(call_arg_0)) {
-    BasicBlock *incoming, *backedge, *header;
-    loop->getIncomingAndBackEdge(incoming, backedge);
-    assert(incoming && backedge);
-    header = loop->getHeader();
-    assert(header);
-
-    // only in first loop iteration
-    // makes it effectively invariant in (OpenMP) parallel context
-    auto *ctx = &call->getContext();
-    IRBuilder<> headerBuilder(header);
-    headerBuilder.SetInsertPoint(header->getFirstNonPHIIt());
-    auto *phi = headerBuilder.CreatePHI(Type::getInt1Ty(*ctx), 2, "flag");
-    auto *constTrue = ConstantInt::getTrue(*ctx);
-    phi->addIncoming(constTrue, incoming);
-    phi->addIncoming(ConstantInt::getFalse(*ctx), backedge);
-
-    auto origInserter = [&](IRBuilder<> &origBuilder) {
-      Value *isEQ = origBuilder.CreateICmpEQ(phi, constTrue);
-      return isEQ;
-    };
     auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
       call->moveAfter(tsanBuilder.GetInsertPoint());
     };
-    splitBBexecOnce(call, origInserter, tsanInserter);
-
-    return true;
-  }
-
-  auto scev = SE->getSCEV(call_arg_0);
-  if (not SE->hasComputableLoopEvolution(scev, loop)) {
-    // Ptr in loop has non computable Scalar Evolution
+    // runTSANonlyOnce(tsanInserter);
+    // return true;
     return false;
   }
 
+  auto scev = SE->getSCEV(call_arg_0);
+  if (not SE->hasComputableLoopEvolution(scev, loop))
+    return false;
+
   auto *addRec = dyn_cast<SCEVAddRecExpr>(scev);
-  if (not addRec) {
-    // Could not compute start and end values of ptr
+  if (not addRec)
+    return false;
+  if (addRec->getLoop() != loop) {
+    // could be AddRec for different loop
     return false;
   }
 
@@ -223,9 +244,21 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
   if (stepConstant->getAPInt().abs() != tsan_size->getValue())
     return false;
 
-  auto *tripCount = SE->getSymbolicMaxBackedgeTakenCount(loop);
-  assert(tripCount);
-  assert(not isa<SCEVCouldNotCompute>(tripCount));
+  // TODO i64 might not always be applicable
+  auto *ctx = &M.getContext();
+  auto ptrTy = PointerType::get(*ctx, 0);
+  auto int64Ty = Type::getInt64Ty(*ctx);
+  auto constOne = ConstantInt::get(int64Ty, 1);
+
+  const SCEV *tripCount;
+  if (1 < chunk_size) {
+    // tsanInserter adds the one back later
+    tripCount = SE->getConstant(int64Ty, chunk_size - 1);
+  } else {
+    tripCount = SE->getSymbolicMaxBackedgeTakenCount(loop);
+    assert(tripCount);
+    assert(not isa<SCEVCouldNotCompute>(tripCount));
+  }
   auto *start = addRec->getStart();
   auto *stop = addRec->evaluateAtIteration(tripCount, *SE);
 
@@ -236,41 +269,46 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
   SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
   seExpander.setInsertPoint(call);
 
-  // TODO i64 might not always be applicable
-  auto *ctx = &M.getContext();
-  auto ptrTy = PointerType::get(*ctx, 0);
-  auto int64Ty = Type::getInt64Ty(*ctx);
-  auto constOne = ConstantInt::get(int64Ty, 1);
-
   auto *lower_bound = stepConstant->getAPInt().isNegative() ? stop : start;
   auto *val_min = seExpander.expandCodeFor(lower_bound, int64Ty);
   if (isa<PoisonValue>(val_min))
     return false;
 
-  Value *base_ptr;
-  auto origInserter = [&](IRBuilder<> &origBuilder) {
-    // TODO does different loop scheduling effect false negatives?
-    base_ptr = origBuilder.CreateIntToPtr(val_min, ptrTy);
-    Value *isEQ = origBuilder.CreateICmpEQ(call_arg_0, base_ptr);
-    return isEQ;
-  };
-  auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
+  CallBase *newCall;
+  auto createTSANcall = [&](IRBuilder<> &builder, Value *base_ptr) {
     // length = size_of(element) * (abs(last - base) + 1)
-    seExpander.setInsertPoint(tsanBuilder.GetInsertPoint());
+    seExpander.setInsertPoint(builder.GetInsertPoint());
     auto *iter_count = seExpander.expandCodeFor(tripCount, int64Ty);
-    auto *count_full = tsanBuilder.CreateAdd(iter_count, constOne);
-    auto *range_full = tsanBuilder.CreateMul(count_full, tsan_size);
-
+    auto *count_full = builder.CreateAdd(iter_count, constOne);
+    auto *range_full = builder.CreateMul(count_full, tsan_size);
     bool isWrite = func_name.starts_with("__tsan_write") ||
                    func_name.starts_with("__tsan_unaligned_write");
-    auto newCall =
-        createTSANrange(M, tsanBuilder, base_ptr, range_full, isWrite);
-    newCall->setDebugLoc(call->getDebugLoc());
+    newCall = createTSANrange(M, builder, base_ptr, range_full, isWrite);
   };
 
-  splitBBexecOnce(call, origInserter, tsanInserter);
-  remove_inst_from_func(call);
+  Value *base_ptr;
+  if (1 < chunk_size) {
+    auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
+      base_ptr = tsanBuilder.CreateIntToPtr(val_min, ptrTy);
+      createTSANcall(tsanBuilder, base_ptr);
+    };
+    runTSANonlyOnce(tsanInserter);
+  } else {
+    return false;
 
+    auto origInserter = [&](IRBuilder<> &origBuilder) {
+      base_ptr = origBuilder.CreateIntToPtr(val_min, ptrTy);
+      Value *isEQ = origBuilder.CreateICmpEQ(call_arg_0, base_ptr);
+      return isEQ;
+    };
+    auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
+      createTSANcall(tsanBuilder, base_ptr);
+    };
+    splitBBexecOnce(call, origInserter, tsanInserter);
+  }
+
+  newCall->setDebugLoc(call->getDebugLoc());
+  remove_inst_from_func(call);
   return true;
 }
 
@@ -278,10 +316,14 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
                                   const std::vector<CallBase *> &tsan_in_loop) {
   unsigned removed_tsan_calls = 0;
 
+  auto *func = loop->getHeader()->getParent();
+  DenseMap<Value *, SmallDenseSet<Use *>> boundReplacement;
+  auto chunk_size = openMPboundFix(func, boundReplacement, &loop);
+
   BasicBlock *incoming;
   BasicBlock *backedge;
   if (not loop->getIncomingAndBackEdge(incoming, backedge))
-    return removed_tsan_calls;
+    return 0;
 
   IRBuilder<> insert_builder(incoming);
   BasicBlock::iterator insert_dummy;
@@ -291,16 +333,12 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
   else
     insert_dummy = incoming->begin();
 
-  auto *func = loop->getHeader()->getParent();
-  DenseMap<Value *, SmallDenseSet<Use *>> boundReplacement;
-  openMPboundFix(func, boundReplacement);
-
   auto *SE = analysis_results->getSE(*func);
   SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
   seExpander.setInsertPoint(insert_builder.GetInsertPoint());
 
   for (auto *call : tsan_in_loop)
-    if (replace_tsan_ranges(M, SE, loop, call))
+    if (replace_tsan_ranges(M, SE, loop, call, chunk_size))
       removed_tsan_calls++;
 
   // Rollback: Do not break OpenMP thread handling

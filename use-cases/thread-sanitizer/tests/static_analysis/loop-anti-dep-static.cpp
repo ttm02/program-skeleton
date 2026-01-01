@@ -4,30 +4,26 @@
 
 #define N 256
 
-void loopAntiDep(double *a, int *b) {
-#pragma omp parallel for firstprivate(a, b) schedule(static, 2)
+void loopAntiDep(int *a) {
+#pragma omp parallel for firstprivate(a) schedule(static, 2)
   for (unsigned i = 1; i < N; i++) {
-    a[i - 1] = b[i] * 3.141;
-    b[i - 1] = a[i] / 2.718;
+    a[i - 1] = a[i] + 3;
   }
 }
 
 int main() {
-  double a[N];
-  int b[N];
+  int a[N];
 
   std::srand(std::time(0));
 #pragma omp parallel for
   for (unsigned i = 0; i < N; i++) {
     a[i] = std::rand();
-    b[i] = std::rand();
   }
 
-  loopAntiDep(a, b);
+  loopAntiDep(a);
 
   for (unsigned i = 0; i < N; i++) {
-    printf("{%lf}\t", a[i]);
-    printf("{%d}\t", b[i]);
+    printf("{%d}\t", a[i]);
   }
   return 0;
 }

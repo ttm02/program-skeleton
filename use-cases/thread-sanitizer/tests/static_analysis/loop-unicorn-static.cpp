@@ -2,21 +2,16 @@
 #include <ctime>
 #include <stdio.h>
 
-#define N 256
+#define N 100
 
 void loopUnicorn(double *a, double *b) {
-#pragma omp parallel for firstprivate(a, b) schedule(static, 5)
-  for (long unsigned i = 0; i < N; i++) {
-    if (5 <= i) {
-      a[i] = b[i] * 3.141;
-    }
-    if (i % 5 == 0) {
-      b[i] = 0;
-      b[i + 1] = 1;
-      b[i + 2] = 2;
-      b[i + 3] = 3;
-      b[i + 4] = 4;
-    }
+#pragma omp parallel for firstprivate(a, b) schedule(static, 3)
+  for (long unsigned i = 0; i < N; i += 5) {
+    b[i] = 0;
+    b[i + 1] = 1;
+    b[i + 2] = 2;
+    b[i + 3] = 3;
+    b[i + 4] = 4;
   }
 }
 
