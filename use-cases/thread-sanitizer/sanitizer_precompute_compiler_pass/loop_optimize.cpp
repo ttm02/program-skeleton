@@ -325,18 +325,7 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
   if (not loop->getIncomingAndBackEdge(incoming, backedge))
     return 0;
 
-  IRBuilder<> insert_builder(incoming);
-  BasicBlock::iterator insert_dummy;
-  auto *incomingTerm = incoming->getTerminator();
-  if (incomingTerm)
-    insert_dummy = incomingTerm->getIterator();
-  else
-    insert_dummy = incoming->begin();
-
   auto *SE = analysis_results->getSE(*func);
-  SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
-  seExpander.setInsertPoint(insert_builder.GetInsertPoint());
-
   for (auto *call : tsan_in_loop)
     if (replace_tsan_ranges(M, SE, loop, call, chunk_size))
       removed_tsan_calls++;

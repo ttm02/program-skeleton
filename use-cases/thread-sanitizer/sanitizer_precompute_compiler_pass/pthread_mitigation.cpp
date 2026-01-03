@@ -119,6 +119,7 @@ static void wrap_parallel_calls() {
     auto *called_func = call->getCalledFunction();
     assert(called_func);
     auto func_name = called_func->getName();
+    // TODO there might be other calls
     if (func_name == "pthread_create") {
       wrap_fork(call);
     } else if (func_name == "pthread_join") {
