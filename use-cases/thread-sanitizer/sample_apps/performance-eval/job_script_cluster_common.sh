@@ -2,7 +2,13 @@ PRECOMPUTE_DIR=$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)
 BUILD_DIR="${PRECOMPUTE_DIR}/build-perf-tests"
 EXEC_DIR="${BUILD_DIR}/use-cases/thread-sanitizer/sample_apps"
 
-source "${BUILD_DIR}/use-cases/thread-sanitizer/setup_env.sh"
+SETUP_ENV_FILE="${BUILD_DIR}/use-cases/thread-sanitizer/setup_env.sh"
+# TODO build on cluster (and remove the following three lines)
+if ! grep -q "$BUILD_DIR" "$SETUP_ENV_FILE"; then
+    sed -i 's|=.*/build-perf-tests/|='"${BUILD_DIR}"'/|g' "${SETUP_ENV_FILE}"
+fi
+
+source "${SETUP_ENV_FILE}"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OMP_PLACES=cores
 
@@ -15,9 +21,21 @@ APP_LOG_NAME="${SLURM_ARRAY_JOB_ID}"
 APP_PARAMS_ESCAPED=$(echo "$APP_PARAMS" | tr ' ' '_' | tr '-' '_' | tr ',' '_')
 OUTPUT_DIR="${HPC_SCRATCH}/precompute/${APPNAME_UPPER}/${OMP_NUM_THREADS}/${APP_PARAMS_ESCAPED}"
 
+REAL_HOME=$(realpath "$HOME")
+CONTAINER_IMAGE_PATH="${HOME}/myCont/precompute-devshell"
+
 setup_resources() {
-    # TODO now using LLVM/Clang 21.1
-    ml gcc/8.5.0 clang/16.0.6
+    export TMPDIR="${HPC_SCRATCH}/tmp"
+    export APPTAINER_TMPDIR=${TMPDIR}
+    if ! [ -f "${CONTAINER_IMAGE_PATH}.sif" ] || ! [ -f "${CONTAINER_IMAGE_PATH}.env" ]; then
+        echo "Missing container setup!"
+        exit 42
+    fi
+    MY_LD_PATH=$(echo "$LD_LIBRARY_PATH" | cut -d':' -f1)
+    if ! grep -q "LD_LIBRARY_PATH=$MY_LD_PATH" "${CONTAINER_IMAGE_PATH}.env"; then
+        sed -i '/LD_LIBRARY_PATH=/d' "${CONTAINER_IMAGE_PATH}.env"
+        echo "LD_LIBRARY_PATH=$MY_LD_PATH" >>"${CONTAINER_IMAGE_PATH}.env"
+    fi
 }
 
 exec_internal() {
@@ -29,7 +47,14 @@ exec_internal() {
     else
         RUN_DIR=${EXEC_DIR}
     fi
-    /usr/bin/env time -f "%e" -o "${OUTPUT_DIR}/time/${APP_LOG_NAME}_${MODE}.log" \
+
+    apptainer run \
+        --mount "type=bind,source=${REAL_HOME},destination=${REAL_HOME}" \
+        --mount "type=bind,source=${HPC_SCRATCH},destination=${HPC_SCRATCH}" \
+        --env-file "${CONTAINER_IMAGE_PATH}.env" \
+        "${CONTAINER_IMAGE_PATH}.sif" \
+        /usr/bin/env time -f '%e' \
+        -o "${OUTPUT_DIR}/time/${APP_LOG_NAME}_${MODE}.log" \
         "${RUN_DIR}/${APPNAME_UPPER}_${MODE}.exe" $APP_PARAMS
 }
 

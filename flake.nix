@@ -14,7 +14,7 @@
   }:
   let
     pkgs = import nixpkgs { system = "x86_64-linux"; };
-    inherit (pkgs) lib;
+    inherit (pkgs) lib dockerTools;
 
     LLVM_VER = "21";
     LLVM_PKGS = pkgs."llvmPackages_${LLVM_VER}";
@@ -55,8 +55,20 @@
       fi
       exec -a ${binName} "''$${varName}" $@
     '');
+
+    # QoL change for testing
+    shellHook = ''
+      GIT_REPO_ROOT=$(git rev-parse --show-toplevel)
+      THREAD_SAN_PATH="''${GIT_REPO_ROOT}/build/use-cases/thread-sanitizer"
+
+      # enable precompile pass in wrapper
+      ENV_SCRIPT="''${THREAD_SAN_PATH}/setup_env.sh"
+      if [ -f "$ENV_SCRIPT" ]; then
+        source "$ENV_SCRIPT"
+      fi
+    '';
   in
-  {
+  rec {
     # nix develop
     devShells.x86_64-linux.default = pkgs.mkShell.override {
       # set the Clang/LLVM toolchain as default
@@ -82,22 +94,35 @@
         gnupatch
         python3
         rsync
+        time
         # aliases for wrappers
         (wrapper-alias "clang_wrap_cc"  "CLANG_WRAP_CC")
         (wrapper-alias "clang_wrap_cxx" "CLANG_WRAP_CXX")
         (wrapper-alias "flang_wrap"     "CLANG_WRAP_FC")
       ];
-      # QoL change for testing
-      shellHook = ''
-        GIT_REPO_ROOT=$(git rev-parse --show-toplevel)
-        THREAD_SAN_PATH="''${GIT_REPO_ROOT}/build/use-cases/thread-sanitizer"
-
-        # enable precompile pass in wrapper
-        ENV_SCRIPT="''${THREAD_SAN_PATH}/setup_env.sh"
-        if [ -f "$ENV_SCRIPT" ]; then
-          source "$ENV_SCRIPT"
-        fi
-      '';
+      inherit shellHook;
+    };
+    packages.x86_64-linux.docker-image = pkgs.dockerTools.buildNixShellImage {
+      name = "localhost/precompute-devshell";
+      tag = "latest";
+      drv = devShells.x86_64-linux.default.overrideAttrs (final: prev: {
+        shellHookScript = pkgs.writeShellScript "shellHook" (''
+          if [ -n "$HPC_SCRATCH" ] && [ -d "$HPC_SCRATCH" ]; then
+            export TMP=$HPC_SCRATCH
+            export TMPDIR=$HPC_SCRATCH
+            export TEMP=$HPC_SCRATCH
+            export TEMPDIR=$HPC_SCRATCH
+          fi
+          export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+        '' + shellHook);
+        shellHook = "source ${final.shellHookScript}";
+        packages = prev.nativeBuildInputs ++ (with pkgs; [
+          dockerTools.binSh dockerTools.usrBinEnv
+          coreutils util-linux
+          curl gnugrep ncurses
+        ]);
+      });
+      shell = "${pkgs.bashInteractive}/bin/bash";
     };
   };
 }

@@ -106,7 +106,28 @@ use-cases/thread-sanitizer/sample_apps/performance-eval/run_local.sh LULESH use-
 The last parameter (number) selects the parameter line inside the given parameters file (second parameter).
 Your system might start swapping a lot when running the program compiled with the pass if you selected a line of the end the file.
 
-#### References
+#### Lichtenberg Cluster
+
+As we are now using LLVM/Clang 21.1 and the Lichtenberg clusters module systems newest LLVM version is 17 or 18.
+We will make use of the container system. For this we first have to create an image with all prerequisites.
+Luckily our Nix DevShell already has everything and the only need to convert it into a container image and copy it to the clusters HOME directory.
+If you do not have Nix on your system refer to https://nixos.org/download/
+```bash
+nix build -L .'#'packages.x86_64-linux.docker-image
+rsync -ze ssh $(realpath ./result) lcluster:precompute-devshell.tar.gz
+```
+On the cluster itself we are not allowed to run docker/podman containers directly.
+Thus, we need to "convert" the image to get a shell inside the container image environment.
+For this a prepared a little script. But the HRZ also has some documentation for this: https://www.hrz.tu-darmstadt.de/hlr/betrieb_hlr/software_hlr/container/index.en.jsp
+```bash
+use-cases/thread-sanitizer/sample_apps/performance-eval/lcluster-setup-image.sh ~/precompute-devshell.tar.gz
+```
+Then this is finished we can launch the environment with:
+```bash
+apptainer shell ~/myCont/precompute-devshell.sif
+```
+
+## References
 
 TODO!
 <table style="border:0px">
