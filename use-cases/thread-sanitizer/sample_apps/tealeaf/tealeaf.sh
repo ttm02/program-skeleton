@@ -8,7 +8,7 @@ TEALEAF_PATCH_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 # used to test if the injected datarace is still found
 TEST_INVOCATION_PARAMETER=""
 
-APP_NAME="TeaLeaf"
+APP_NAME="TEALEAF"
 APP_CXX_FLAGS="-flto -fwhole-program-vtables -fuse-ld=lld -O3"
 APP_CMAKE_PARAMETER="-DCMAKE_CXX_COMPILER=$CLANG_WRAP_CXX -DMODEL=omp"
 

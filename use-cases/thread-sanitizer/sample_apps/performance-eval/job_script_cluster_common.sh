@@ -6,11 +6,14 @@ source "${BUILD_DIR}/use-cases/thread-sanitizer/setup_env.sh"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OMP_PLACES=cores
 
-OUTPUT_DIR="/work/scratch/${USER}/precompute/${APPNAME}/${SLURM_ARRAY_JOB_ID}"
-
 # get parameter
 PARAM_LINE=$SLURM_ARRAY_TASK_ID
+PARAMETER_FILE="${SCRIPT_DIR}/parameters_${APPNAME_LOWER}.txt"
 APP_PARAMS=$(sed -n "${PARAM_LINE}p" "$PARAMETER_FILE")
+
+APP_LOG_NAME="${SLURM_ARRAY_JOB_ID}"
+APP_PARAMS_ESCAPED=$(echo "$APP_PARAMS" | tr ' ' '_' | tr '-' '_' | tr ',' '_')
+OUTPUT_DIR="${HPC_SCRATCH}/precompute/${APPNAME_UPPER}/${OMP_NUM_THREADS}/${APP_PARAMS_ESCAPED}"
 
 setup_resources() {
     # TODO now using LLVM/Clang 21.1
@@ -19,8 +22,15 @@ setup_resources() {
 
 exec_internal() {
     MODE="$1"
-    /usr/bin/env time -f "%e" -o "${OUTPUT_DIR}/time/${APPNAME}_${PARAM_LINE}_${MODE}.log" \
-        "${EXEC_DIR}/${APPNAME}_${MODE}.exe" $APP_PARAMS
+    if [ -n "$RUN_DIR" ]; then
+        # TeaLeaf workaround
+        cd "$RUN_DIR" || exit 1
+        cp "${EXEC_DIR}/${APPNAME_UPPER}_${MODE}.exe" ./
+    else
+        RUN_DIR=${EXEC_DIR}
+    fi
+    /usr/bin/env time -f "%e" -o "${OUTPUT_DIR}/time/${APP_LOG_NAME}_${MODE}.log" \
+        "${RUN_DIR}/${APPNAME_UPPER}_${MODE}.exe" $APP_PARAMS
 }
 
 exec_test() {
@@ -33,17 +43,17 @@ exec_test() {
 write_result() {
     mkdir -p "${OUTPUT_DIR}/timings"
 
-    echo 'testcase,parameter,time_orig,time_pass,time_stan' | tee "${OUTPUT_DIR}/timings/${APPNAME}_${PARAM_LINE}.log"
+    echo 'testcase,parameter,time_orig,time_pass,time_stan' | tee "${OUTPUT_DIR}/timings/${APP_LOG_NAME}.log"
     (
-        echo -n "${APP_NAME}"
+        echo -n "${APPNAME_LOWER}"
         echo -n ","
-        echo -n "${APP_PARAMS}"
+        echo -n "${APP_PARAMS_ESCAPED}"
         echo -n ","
-        cat "${OUTPUT_DIR}/time/${APPNAME}_${PARAM_LINE}_orig.log" | tr -d "\n"
+        cat "${OUTPUT_DIR}/time/${APP_LOG_NAME}_orig.log" | tr -d "\n"
         echo -n ","
-        cat "${OUTPUT_DIR}/time/${APPNAME}_${PARAM_LINE}_pass.log" | tr -d "\n"
+        cat "${OUTPUT_DIR}/time/${APP_LOG_NAME}_pass.log" | tr -d "\n"
         echo -n ","
-        cat "${OUTPUT_DIR}/time/${APPNAME}_${PARAM_LINE}_stan.log" | tr -d "\n"
+        cat "${OUTPUT_DIR}/time/${APP_LOG_NAME}_stan.log" | tr -d "\n"
         echo ""
-    ) | tee -a "${OUTPUT_DIR}/timings/${APPNAME}_${PARAM_LINE}.log"
+    ) | tee -a "${OUTPUT_DIR}/timings/${APP_LOG_NAME}.log"
 }

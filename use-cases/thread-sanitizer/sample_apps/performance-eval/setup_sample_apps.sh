@@ -24,8 +24,8 @@ if ! echo "$SANITIZER_PASS" | grep -q "$BUILD_DIR"; then
 fi
 
 init_app() {
-  APP_SCRIPT="$1"
-  source "$APP_SCRIPT"
+  unset APP_NAME
+  source "${SCRIPT_DIR}/../$1/$1.sh"
   [ -z "$APP_NAME" ] && exit 31
 
   if [ ! -d "$APP_NAME" ]; then
@@ -56,9 +56,9 @@ init_app() {
   echo "successfully build $APP_NAME"
 }
 
-init_app "${SCRIPT_DIR}/../lulesh/lulesh.sh"
-init_app "${SCRIPT_DIR}/../hpccg/hpccg.sh"
-init_app "${SCRIPT_DIR}/../teaLeaf/teaLeaf.sh"
+init_app 'lulesh'
+init_app 'hpccg'
+init_app 'tealeaf'
 
 echo "setup for all sample apps completed"
 echo "$WORK_DIR"

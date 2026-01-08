@@ -19,7 +19,7 @@ set_tests_properties(HPCCG PROPERTIES TIMEOUT 500)
 
 # TeaLeaf
 add_test(NAME TEALEAF
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_mini_app.sh ${CMAKE_CURRENT_SOURCE_DIR}/teaLeaf/teaLeaf.sh
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_mini_app.sh ${CMAKE_CURRENT_SOURCE_DIR}/tealeaf/tealeaf.sh
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 # mini app test take longer
