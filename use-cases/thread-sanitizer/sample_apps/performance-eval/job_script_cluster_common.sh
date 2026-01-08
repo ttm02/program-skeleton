@@ -68,9 +68,11 @@ exec_test() {
 write_result() {
     mkdir -p "${OUTPUT_DIR}/timings"
 
-    echo 'testcase,parameter,time_orig,time_pass,time_stan' | tee "${OUTPUT_DIR}/timings/${APP_LOG_NAME}.log"
+    echo 'testcase,threads,parameter,time_orig,time_pass,time_stan' | tee "${OUTPUT_DIR}/timings/${APP_LOG_NAME}.log"
     (
         echo -n "${APPNAME_LOWER}"
+        echo -n ","
+        echo -n "${OMP_NUM_THREADS}"
         echo -n ","
         echo -n "${APP_PARAMS_ESCAPED}"
         echo -n ","
