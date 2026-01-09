@@ -76,11 +76,9 @@ exec_test() {
 write_result() {
     mkdir -p "${OUTPUT_DIR}/timings"
 
-    CSV_FILE="${HPC_SCRATCH}/precompute/results/${APPNAME_LOWER}.csv"
+    CSV_FILE="${HPC_SCRATCH}/precompute/results/${APPNAME_LOWER}/${APP_LOG_NAME}.csv"
     mkdir -p "$(dirname "$CSV_FILE")"
-    if ! [ -f "$CSV_FILE" ]; then
-        echo 'id,name,threads,config,mode,time' >"$CSV_FILE"
-    fi
+    echo 'id,name,threads,config,mode,time' >"$CSV_FILE"
     (
         echo -n "${SLURM_ARRAY_JOB_ID}"
         echo -n ","
