@@ -127,6 +127,15 @@ Then this is finished we can launch the environment with:
 apptainer shell ~/myCont/precompute-devshell.sif
 ```
 
+Queueing the jobs is possible through a wrapper script that constantly tries to submit jobs with 1 to 96 threads.
+It tries that without getting suppressed by the MaxJobLimit enforced by our slurm partition.
+Therefore, it might be useful to detach this script into the background (e.g. `screen` or `tmux`).
+```bash
+use-cases/thread-sanitizer/sample_apps/performance-eval/sbatch_wrapper.sh LULESH
+use-cases/thread-sanitizer/sample_apps/performance-eval/sbatch_wrapper.sh HPCCG
+```
+Optionally, the second parameter limits it to a specific thread count instead of iterating from 1 to 96 threads.
+
 ## References
 
 TODO!

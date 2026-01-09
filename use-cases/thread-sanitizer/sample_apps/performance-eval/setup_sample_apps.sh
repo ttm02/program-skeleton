@@ -35,6 +35,8 @@ init_app() {
 
   echo "building $APP_NAME"
 
+  build_app "$APP_NAME" 'norm' false &>/dev/null
+  pid_compile_norm=$!
   build_app "$APP_NAME" 'orig' false &>/dev/null
   pid_compile_orig=$!
   build_app "$APP_NAME" 'pass' true &>/dev/null
@@ -44,6 +46,7 @@ init_app() {
   pid_compile_stan=$!
   unset USE_STATIC_ANALYSIS
 
+  wait $pid_compile_norm
   wait $pid_compile_orig
   wait $pid_compile_pass
   wait $pid_compile_stan

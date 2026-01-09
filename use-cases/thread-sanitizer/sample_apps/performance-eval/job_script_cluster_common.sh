@@ -12,7 +12,7 @@ source "${SETUP_ENV_FILE}"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OMP_PLACES=cores
 
-MODE_COUNT='3'
+MODE_COUNT='4'
 MODE_NUM=$((SLURM_ARRAY_TASK_ID % MODE_COUNT))
 PARAM_LINE=$((SLURM_ARRAY_TASK_ID / MODE_COUNT + 1))
 
@@ -21,9 +21,10 @@ PARAMETER_FILE="${SCRIPT_DIR}/parameters_${APPNAME_LOWER}.txt"
 APP_PARAMS=$(sed -n "${PARAM_LINE}p" "$PARAMETER_FILE")
 
 case "$MODE_NUM" in
-0) MODE='orig' ;;
-1) MODE='pass' ;;
-2) MODE='stan' ;;
+0) MODE='orig' ;; # TSAN
+1) MODE='pass' ;; # TSAN + slicing
+2) MODE='stan' ;; # TSAN + slicing + static analysis
+3) MODE='norm' ;; # without
 *) exit 1 ;;
 esac
 
@@ -74,7 +75,7 @@ exec_test() {
 write_result() {
     mkdir -p "${OUTPUT_DIR}/timings"
 
-    echo 'id,testcase,threads,parameter,mode,time' | tee "${OUTPUT_DIR}/timings/${APP_LOG_NAME}.log"
+    echo 'id,name,threads,config,mode,time' | tee "${OUTPUT_DIR}/timings/${APP_LOG_NAME}.log"
     (
         echo -n "${SLURM_ARRAY_JOB_ID}"
         echo -n ","

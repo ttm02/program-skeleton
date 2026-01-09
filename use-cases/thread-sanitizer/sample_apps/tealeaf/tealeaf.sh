@@ -52,8 +52,10 @@ build_app() {
   BUILD_DIR="${APP_DIR}/build_${BUILD_MODE}"
   TARGET_BIN=$(realpath "${PWD}/${APP_NAME}_${BUILD_MODE}.exe")
 
-  # for testing we need this
-  APP_CXX_FLAGS="$APP_CXX_FLAGS -fsanitize=thread"
+  if [ "$BUILD_MODE" != 'norm' ]; then
+    # for testing we need this
+    APP_CXX_FLAGS="$APP_CXX_FLAGS -fsanitize=thread"
+  fi
 
   # clean up any previous build
   rm -f "$TARGET_BIN"

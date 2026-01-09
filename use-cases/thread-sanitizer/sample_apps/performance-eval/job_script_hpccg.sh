@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 9 lines (config arguments) * 3 modes
-#SBATCH --array 0-26
+#SBATCH --array 0-35
 
 #SBATCH --mem-per-cpu=3072
 

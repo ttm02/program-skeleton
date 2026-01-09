@@ -51,8 +51,10 @@ build_app() {
 
   TARGET_BIN=$(realpath "${PWD}/${APP_NAME}_${BUILD_MODE}.exe")
 
-  # for testing we need this
-  export SANITIZE_FLAG="-fsanitize=thread"
+  if [ "$BUILD_MODE" != 'norm' ]; then
+    # for testing we need this
+    export SANITIZE_FLAG="-fsanitize=thread"
+  fi
 
   # clean up any previous build
   rm -f "$TARGET_BIN"
