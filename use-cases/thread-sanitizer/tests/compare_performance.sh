@@ -5,6 +5,7 @@ usage() {
   exit 1
 }
 
+MY_TESTCASE_TIMEOUT='42'
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 PRECOMPUTE_DIR=$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)
 
@@ -58,7 +59,7 @@ save_time_to_file() {
 
 time_testcase() {
   /usr/bin/env time -f "%e" -o "${MY_TMP_DIR}/time_${1}.log" \
-    --quiet timeout 300 "$2" 2>&1
+    --quiet timeout "$MY_TESTCASE_TIMEOUT" "$2" 2>&1
 }
 
 run_binary() {
