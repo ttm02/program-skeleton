@@ -12,12 +12,22 @@ source "${SETUP_ENV_FILE}"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OMP_PLACES=cores
 
-# get parameter
-PARAM_LINE=$SLURM_ARRAY_TASK_ID
+MODE_COUNT='3'
+MODE_NUM=$((SLURM_ARRAY_TASK_ID % MODE_COUNT))
+PARAM_LINE=$((SLURM_ARRAY_TASK_ID / MODE_COUNT + 1))
+
+# get config parameter
 PARAMETER_FILE="${SCRIPT_DIR}/parameters_${APPNAME_LOWER}.txt"
 APP_PARAMS=$(sed -n "${PARAM_LINE}p" "$PARAMETER_FILE")
 
-APP_LOG_NAME="${SLURM_ARRAY_JOB_ID}"
+case "$MODE_NUM" in
+0) MODE='orig' ;;
+1) MODE='pass' ;;
+2) MODE='stan' ;;
+*) exit 1 ;;
+esac
+
+APP_LOG_NAME="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 APP_PARAMS_ESCAPED=$(echo "$APP_PARAMS" | tr ' ' '_' | tr '-' '_' | tr ',' '_')
 OUTPUT_DIR="${HPC_SCRATCH}/precompute/${APPNAME_UPPER}/${OMP_NUM_THREADS}/${APP_PARAMS_ESCAPED}"
 
@@ -27,6 +37,7 @@ CONTAINER_IMAGE_PATH="${HOME}/myCont/precompute-devshell"
 setup_resources() {
     export TMPDIR="${HPC_SCRATCH}/tmp"
     export APPTAINER_TMPDIR=${TMPDIR}
+    mkdir -p "$TMPDIR"
     if ! [ -f "${CONTAINER_IMAGE_PATH}.sif" ] || ! [ -f "${CONTAINER_IMAGE_PATH}.env" ]; then
         echo "Missing container setup!"
         exit 42
@@ -38,8 +49,9 @@ setup_resources() {
     fi
 }
 
-exec_internal() {
-    MODE="$1"
+exec_test() {
+    mkdir -p "${OUTPUT_DIR}/time"
+
     if [ -n "$RUN_DIR" ]; then
         # TeaLeaf workaround
         cd "$RUN_DIR" || exit 1
@@ -48,6 +60,7 @@ exec_internal() {
         RUN_DIR=${EXEC_DIR}
     fi
 
+    cd "$TMPDIR" || exit 23
     apptainer run \
         --mount "type=bind,source=${REAL_HOME},destination=${REAL_HOME}" \
         --mount "type=bind,source=${HPC_SCRATCH},destination=${HPC_SCRATCH}" \
@@ -58,17 +71,10 @@ exec_internal() {
         "${RUN_DIR}/${APPNAME_UPPER}_${MODE}.exe" $APP_PARAMS
 }
 
-exec_test() {
-    mkdir -p "${OUTPUT_DIR}/time"
-    exec_internal 'orig'
-    exec_internal 'pass'
-    exec_internal 'stan'
-}
-
 write_result() {
     mkdir -p "${OUTPUT_DIR}/timings"
 
-    echo 'id,testcase,threads,parameter,time_orig,time_pass,time_stan' | tee "${OUTPUT_DIR}/timings/${APP_LOG_NAME}.log"
+    echo 'id,testcase,threads,parameter,mode,time' | tee "${OUTPUT_DIR}/timings/${APP_LOG_NAME}.log"
     (
         echo -n "${SLURM_ARRAY_JOB_ID}"
         echo -n ","
@@ -78,11 +84,9 @@ write_result() {
         echo -n ","
         echo -n "${APP_PARAMS_ESCAPED}"
         echo -n ","
-        cat "${OUTPUT_DIR}/time/${APP_LOG_NAME}_orig.log" | tr -d "\n"
+        echo -n "${MODE}"
         echo -n ","
-        cat "${OUTPUT_DIR}/time/${APP_LOG_NAME}_pass.log" | tr -d "\n"
-        echo -n ","
-        cat "${OUTPUT_DIR}/time/${APP_LOG_NAME}_stan.log" | tr -d "\n"
+        cat "${OUTPUT_DIR}/time/${APP_LOG_NAME}_${MODE}.log" | tr -d "\n"
         echo ""
     ) | tee -a "${OUTPUT_DIR}/timings/${APP_LOG_NAME}.log"
 }

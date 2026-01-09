@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-#SBATCH --array 1-9
+# 9 lines (config arguments) * 3 modes
+#SBATCH --array 0-26
+
 #SBATCH --mem-per-cpu=3072
 
 source "${SCRIPT_DIR}/job_script_cluster_common.sh"
