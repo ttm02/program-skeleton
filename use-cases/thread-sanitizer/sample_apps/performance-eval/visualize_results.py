@@ -6,32 +6,36 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from io import StringIO
 
-NUM_T_TO_SHOW = 96
 
 colors = ["#DDAA33", "#BB5566", "#004488", "#3377FF"]
-mode_order = [
-    "norm",  # vanilla
-    "orig",  # TSAN
-    "pass",  # TSAN + slicing
-    "stan",  # TSAN + slicing + static analysis
-]
-mode_to_color = dict(zip(mode_order, colors))
 
 
 def get_plot(df, name):
     fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True, figsize=(12, 5))
 
+    mode_mapping = {
+        "norm": "vanilla",
+        "orig": "TSAN",
+        "pass": "TSAN + slicing",
+        "stan": "TSAN + slicing + static analysis",
+    }
+    mode_order = list(mode_mapping.values())
+    df["mode_readable"] = df["mode"].replace(mode_mapping)
+    mode_to_color = dict(zip(mode_mapping.keys(), colors))
+    mode_to_color_plot = dict(zip(mode_order, colors))
+
+    max_threads = df["threads"].max()
     sns.lineplot(
-        data=df[df["threads"] == NUM_T_TO_SHOW],
+        data=df[df["threads"] == max_threads],
         x="size",
         y="time",
-        hue="mode",
+        hue="mode_readable",
         hue_order=mode_order,
-        palette=mode_to_color,
+        palette=mode_to_color_plot,
         marker="o",
         ax=ax1,
     )
-    ax1.set_title(f"{name}: Overhead vs Problem size ({NUM_T_TO_SHOW} threads)")
+    ax1.set_title(f"{name}: Overhead vs Problem size ({max_threads} threads)")
     ax1.set_xlabel("Problem Size")
     ax1.set_ylabel("Time (s)")
     ax1.legend(title="Tsan Runtime")
@@ -41,9 +45,9 @@ def get_plot(df, name):
         data=df[df["size"] == max_size],
         x="threads",
         y="time",
-        hue="mode",
+        hue="mode_readable",
         hue_order=mode_order,
-        palette=mode_to_color,
+        palette=mode_to_color_plot,
         marker="o",
         ax=ax2,
     )
