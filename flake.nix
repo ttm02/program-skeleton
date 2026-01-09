@@ -44,6 +44,12 @@
       )));
     });
 
+    python-custom = (pkgs.python3.withPackages (ps: with ps; [
+      pandas
+      matplotlib
+      seaborn
+    ]));
+
     wrapper-alias = (binName: varName: pkgs.writeShellScriptBin binName ''
       if [ -z "''$${varName}" ]; then
         echo "environment variable \"${varName}\" not set!"
@@ -92,7 +98,7 @@
         git
         gnumake
         gnupatch
-        python3
+        python-custom
         rsync
         time
         # aliases for wrappers

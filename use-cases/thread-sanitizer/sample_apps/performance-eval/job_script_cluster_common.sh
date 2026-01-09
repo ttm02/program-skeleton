@@ -30,7 +30,7 @@ esac
 
 APP_LOG_NAME="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 APP_PARAMS_ESCAPED=$(echo "$APP_PARAMS" | tr ' ' '_' | tr '-' '_' | tr ',' '_')
-OUTPUT_DIR="${HPC_SCRATCH}/precompute/${APPNAME_UPPER}/${OMP_NUM_THREADS}/${APP_PARAMS_ESCAPED}"
+OUTPUT_DIR="${HPC_SCRATCH}/precompute/timings/${APPNAME_UPPER}/${OMP_NUM_THREADS}/${APP_PARAMS_ESCAPED}"
 
 REAL_HOME=$(realpath "$HOME")
 CONTAINER_IMAGE_PATH="${HOME}/myCont/precompute-devshell"
@@ -51,7 +51,8 @@ setup_resources() {
 }
 
 exec_test() {
-    mkdir -p "${OUTPUT_DIR}/time"
+    mkdir -p "${OUTPUT_DIR}"
+    LOG_FILE="${OUTPUT_DIR}/${APP_LOG_NAME}_${MODE}.log"
 
     if [ -n "$RUN_DIR" ]; then
         # TeaLeaf workaround
@@ -68,14 +69,18 @@ exec_test() {
         --env-file "${CONTAINER_IMAGE_PATH}.env" \
         "${CONTAINER_IMAGE_PATH}.sif" \
         /usr/bin/env time -f '%e' \
-        -o "${OUTPUT_DIR}/time/${APP_LOG_NAME}_${MODE}.log" \
+        -o "$LOG_FILE" \
         "${RUN_DIR}/${APPNAME_UPPER}_${MODE}.exe" $APP_PARAMS
 }
 
 write_result() {
     mkdir -p "${OUTPUT_DIR}/timings"
 
-    echo 'id,name,threads,config,mode,time' | tee "${OUTPUT_DIR}/timings/${APP_LOG_NAME}.log"
+    CSV_FILE="${HPC_SCRATCH}/precompute/results/${APPNAME_LOWER}.csv"
+    mkdir -p "$(dirname "$CSV_FILE")"
+    if ! [ -f "$CSV_FILE" ]; then
+        echo 'id,name,threads,config,mode,time' >"$CSV_FILE"
+    fi
     (
         echo -n "${SLURM_ARRAY_JOB_ID}"
         echo -n ","
@@ -87,7 +92,7 @@ write_result() {
         echo -n ","
         echo -n "${MODE}"
         echo -n ","
-        cat "${OUTPUT_DIR}/time/${APP_LOG_NAME}_${MODE}.log" | tr -d "\n"
+        cat "$LOG_FILE" | tr -d "\n"
         echo ""
-    ) | tee -a "${OUTPUT_DIR}/timings/${APP_LOG_NAME}.log"
+    ) | tee -a "$CSV_FILE"
 }
