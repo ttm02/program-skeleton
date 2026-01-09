@@ -19,7 +19,6 @@ SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 
 enqueue_sbatch() {
     TC="$1"
-    echo "Queue Slurm tasks for $APPNAME_UPPER with $TC threads:"
     sbatch \
         --ntasks 1 \
         --exclusive \
@@ -30,20 +29,24 @@ enqueue_sbatch() {
         --job-name="${APPNAME_UPPER}_${TC}" \
         --export=APPNAME_LOWER="$APPNAME_LOWER",APPNAME_UPPER="$APPNAME_UPPER",SCRIPT_DIR="$SCRIPT_DIR" \
         "${SCRIPT_DIR}/job_script_${APPNAME_LOWER}.sh"
-    echo ""
 }
 
 if [[ "$THREAD_COUNT" =~ ^[0-9]+$ ]]; then
     enqueue_sbatch "$THREAD_COUNT"
 else
-    for i in $(seq 1 96); do
-        # avoid "AssocMaxSubmitJobLimit"
-        # "Batch job submission failed: Job violates accounting/QOS policy"
-        while [[ 32 -lt "$(squeue | wc -l)" ]]; do
-            echo "on hold until the job queue stabilizes"
-            echo "currently queued jobs: $(squeue | wc -l)"
-            sleep 10s
+    for i in 1 2 3 4 6 8 10 12 14 16 20 24 28 32 40 48 56 64 80 96; do
+        echo ""
+        date
+        echo "Trying to queue slurm job for $APPNAME_UPPER with $TC threads."
+        echo ""
+        while ! enqueue_sbatch "$i"; do
+            # avoid "AssocMaxSubmitJobLimit"
+            # "Batch job submission failed: Job violates accounting/QOS policy"
+            sleep 42s
         done
-        enqueue_sbatch "$i"
+        echo ""
+        date
+        echo "Queued slurm job for $APPNAME_UPPER with $TC threads."
+        echo ""
     done
 fi
