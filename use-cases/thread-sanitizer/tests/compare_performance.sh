@@ -36,23 +36,23 @@ MY_CUR_DIR=$(pwd)
 
 cd "$MY_TMP_DIR" || exit 10
 
-echo "testcase,found_orig,found_pass,found_stan,time_orig,time_pass,time_stan" | tee "${MY_CUR_DIR}/timing.csv"
+echo "id,threads,testcase,mode,found,time" | tee "${MY_CUR_DIR}/timing.csv"
 
 save_time_to_file() {
+  TEST_CASE="$1"
+  MODE="$2"
   (
-    echo -n "$(basename "$1")"
+    echo -n "${SLURM_ARRAY_JOB_ID:-0}"
     echo -n ","
-    cat "${MY_TMP_DIR}/found_orig.log" | tr -d "\n"
+    echo -n "${OMP_NUM_THREADS:-0}"
     echo -n ","
-    cat "${MY_TMP_DIR}/found_pass.log" | tr -d "\n"
+    echo -n "$(basename "$TEST_CASE")"
     echo -n ","
-    cat "${MY_TMP_DIR}/found_stan.log" | tr -d "\n"
+    echo -n "${MODE}"
     echo -n ","
-    cat "${MY_TMP_DIR}/time_orig.log" | tr -d "\n"
+    cat "${MY_TMP_DIR}/found_${MODE}.log" | tr -d "\n"
     echo -n ","
-    cat "${MY_TMP_DIR}/time_pass.log" | tr -d "\n"
-    echo -n ","
-    cat "${MY_TMP_DIR}/time_stan.log" | tr -d "\n"
+    cat "${MY_TMP_DIR}/time_${MODE}.log" | tr -d "\n"
     echo ""
   ) | tee -a "${MY_CUR_DIR}/timing.csv"
 }
@@ -102,7 +102,9 @@ run_testcase() {
     run_binary 'pass'
     run_binary 'stan'
 
-    save_time_to_file "$TEST_CASE"
+    save_time_to_file "$TEST_CASE" 'orig'
+    save_time_to_file "$TEST_CASE" 'pass'
+    save_time_to_file "$TEST_CASE" 'stan'
   else
     echo "Not a known Source Code file: $TEST_CASE"
     return
