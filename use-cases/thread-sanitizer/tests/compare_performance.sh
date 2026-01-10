@@ -31,7 +31,7 @@ source "${BINARY_DIR}/setup_env.sh"
 
 GREP_STRING="WARNING: ThreadSanitizer: data race"
 
-MY_TMP_DIR=$(mktemp -d --suffix="JustTheRaces-timing")
+MY_TMP_DIR=$(mktemp -d --suffix=".JustTheRaces-timing")
 MY_CUR_DIR=$(pwd)
 
 cd "$MY_TMP_DIR" || exit 10

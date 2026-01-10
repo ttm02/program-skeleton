@@ -136,6 +136,11 @@ use-cases/thread-sanitizer/sample_apps/performance-eval/sbatch_wrapper.sh HPCCG
 ```
 Optionally, the second parameter limits it to a specific thread count instead of iterating from 1 to 96 threads.
 
+Similarly with accuracy benchmarking. Running DRB a few times with different amounts of threads.
+```bash
+use-cases/thread-sanitizer/tests/sbatch_drc_accuracy.sh
+```
+
 ## References
 
 TODO!
