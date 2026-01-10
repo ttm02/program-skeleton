@@ -55,7 +55,7 @@ def get_largest_value_for_group(df, col_name):
         size_list_max_count = size_list["count"].max()
 
         for sl in size_list["count"]:
-            if sl < size_list_max_count * 0.9:
+            if sl < size_list_max_count * 0.75:
                 return False
 
         return True
@@ -200,8 +200,6 @@ def get_plot(df, name, pdf_name, plotter):
 
 
 def create_plots(df, name):
-    df["mode_readable"] = df["mode"].replace(mode_mapping)
-
     get_plot(df, name, "problem_size", get_plot_problem_size)
     get_plot(df, name, "thread_count", get_plot_thread_number)
 
@@ -210,6 +208,7 @@ def data_from_csv(name):
     DATAPATH = sys.argv[1]
     files = glob(DATAPATH + "/" + name + "/*.csv")
     df = pd.concat((pd.read_csv(f) for f in files), ignore_index=True)
+    df["mode_readable"] = df["mode"].replace(mode_mapping)
     return df
 
 
@@ -221,9 +220,22 @@ def visualize_hpccg():
 
 def visualize_lulesh():
     df_lulesh = data_from_csv("lulesh")
-    df_lulesh["size"] = df_lulesh["config"].str.extract(r"_s_(\d+)").astype(int)
-    df_lulesh["iterations"] = df_lulesh["config"].str.extract(r"_i_(\d+)").astype(int)
-    create_plots(df_lulesh, "LULESH")
+    df_lulesh["cfg_size"] = df_lulesh["config"].str.extract(r"_s_(\d+)").astype(int)
+    df_lulesh["cfg_iter"] = df_lulesh["config"].str.extract(r"_i_(\d+)").astype(int)
+    name = "LULESH"
+
+    df_lulesh["size"] = (
+        df_lulesh["cfg_size"].astype(str)
+        + "s+"
+        + df_lulesh["cfg_iter"].astype(str)
+        + "i"
+    )
+    get_plot(df_lulesh, name, "thread_count", get_plot_thread_number)
+
+    df_lulesh["size"] = df_lulesh["cfg_size"]
+    max_iter = get_largest_value_for_group(df_lulesh, "cfg_iter")
+    df_lulesh = df_lulesh[df_lulesh["cfg_iter"] == max_iter]
+    get_plot(df_lulesh, name, "problem_size", get_plot_problem_size)
 
 
 if __name__ == "__main__":
