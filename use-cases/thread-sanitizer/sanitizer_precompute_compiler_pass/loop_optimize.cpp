@@ -27,9 +27,9 @@
 
 using namespace llvm;
 
-static inline std::pair<BasicBlock *, CallBase *>
-getCallInFunc(Function *func, std::string func_target_name,
-              bool starts_with = false) {
+static inline CallBase *getCallInFunc(Function *func,
+                                      std::string func_target_name,
+                                      bool starts_with = false) {
   for (BasicBlock &bb : *func) {
     for (Instruction &inst : bb) {
       if (auto *call = dyn_cast<CallBase>(&inst)) {
@@ -39,15 +39,15 @@ getCallInFunc(Function *func, std::string func_target_name,
         auto func_name = called_func->getName();
         if (starts_with) {
           if (func_name.starts_with(func_target_name))
-            return std::make_pair(&bb, call);
+            return call;
         } else {
           if (func_name == func_target_name)
-            return std::make_pair(&bb, call);
+            return call;
         }
       }
     }
   }
-  return std::make_pair(nullptr, nullptr);
+  return nullptr;
 }
 
 template <typename T>
@@ -126,23 +126,31 @@ openMPboundFix(Function *func,
   if (not func->getName().contains(".omp_outlined."))
     return 0;
 
-  auto call_pair = getCallInFunc(func, "__kmpc_for_static_init", true);
-  auto *omp_for_static = call_pair.second;
-  if (not omp_for_static)
+  auto omp_for_static = getCallInFunc(func, "__kmpc_for_static_init", true);
+  auto omp_for_dynamic = getCallInFunc(func, "__kmpc_dispatch_init", true);
+  if (not omp_for_static && not omp_for_dynamic)
     return 0;
+  assert(not omp_for_static || not omp_for_dynamic);
 
   // because we are reducing `a[i] = a[i+1]` to `a[0] = a[1]`,
   // there exists a risk the first thread executes both conflicting pointers,
   // if `1 < chunk_size`.
-  auto *chunk_size = dyn_cast<ConstantInt>(omp_for_static->getArgOperand(8));
+  ConstantInt *chunk_size = nullptr;
+  if (omp_for_static)
+    chunk_size = dyn_cast<ConstantInt>(omp_for_static->getArgOperand(8));
+  else if (omp_for_dynamic)
+    chunk_size = dyn_cast<ConstantInt>(omp_for_dynamic->getArgOperand(6));
+
   if (not chunk_size)
     return 0;
   assert(not chunk_size->isNegative());
   auto cs = chunk_size->getZExtValue();
   if (cs != 1)
     return cs;
-  return 0;
 
+  // TODO chunk size of 1
+  // TODO non-constant iteration counts
+  return 0;
   auto omp_lower = omp_for_static->getArgOperand(4);
   getBoundLoadStoreReplacement(omp_lower, boundReplacement);
   auto omp_upper = omp_for_static->getArgOperand(5);
@@ -177,28 +185,57 @@ void splitBBexecOnce(
   insertIntoTsanBB(tsanBuilder);
 }
 
-static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
-                                CallBase *call, const unsigned chunk_size) {
-  auto called_func = call->getCalledFunction();
-  auto func_name = called_func->getName();
+struct loopTSANdata {
+  bool isWrite;
+  Value *val_min;
+  Value *call_arg_0;
+  CallBase *call;
+  ConstantInt *tsan_size;
+  const SCEV *tripCount;
 
-  auto *call_arg_0 = call->getArgOperand(0);
-  auto *tsan_size = get_size_of_tsan_access(call);
-  if (not tsan_size) {
-    return false;
+  bool operator==(const loopTSANdata &other) const {
+    return isWrite == other.isWrite && val_min == other.val_min &&
+           call_arg_0 == other.call_arg_0 && call == other.call &&
+           tsan_size == other.tsan_size && tripCount == other.tripCount;
   }
+};
+
+template <> struct DenseMapInfo<loopTSANdata> {
+  static inline loopTSANdata getEmptyKey() { return {}; }
+  static inline loopTSANdata getTombstoneKey() { return {}; }
+
+  static unsigned getHashValue(const loopTSANdata &V) {
+    return llvm::hash_combine(V.isWrite, V.val_min, V.call_arg_0, V.call,
+                              V.tsan_size, V.tripCount);
+  }
+
+  static bool isEqual(const loopTSANdata &LHS, const loopTSANdata &RHS) {
+    return LHS == RHS;
+  }
+};
+
+static bool create_tsan_replacement(Module &M, const loopTSANdata data,
+                                    ScalarEvolution *SE,
+                                    const unsigned chunk_size) {
+  auto *ctx = &M.getContext();
+  auto ptrTy = PointerType::get(*ctx, 0);
+  auto int64Ty = Type::getInt64Ty(*ctx);
+  auto constOne = ConstantInt::get(int64Ty, 1);
+
+  SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
+  seExpander.setInsertPoint(data.call);
 
   auto runTSANonlyOnce =
       [&](std::function<void(IRBuilder<> & tsanBuilder)> tsanInserter) {
         // There was the idea to just use a PhiNode, but sometimes the loop
         // inside the OpenMP outlined function is nested. Therefore, we flip a
         // boolean on first use.
-        auto *bbEntry = &call->getFunction()->getEntryBlock();
+        auto *bbEntry = &data.call->getFunction()->getEntryBlock();
         auto insertEntry = bbEntry->getFirstNonPHIOrDbgOrAlloca();
         IRBuilder<> entryBuilder(bbEntry);
         entryBuilder.SetInsertPoint(insertEntry);
 
-        auto *ctx = &call->getContext();
+        auto *ctx = &data.call->getContext();
         auto *i1Ty = entryBuilder.getInt1Ty();
         auto *constTrue = entryBuilder.getTrue();
         auto *flag = entryBuilder.CreateAlloca(i1Ty);
@@ -213,103 +250,118 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
           tsanBuilder.CreateStore(ConstantInt::getFalse(*ctx), flag);
           tsanInserter(tsanBuilder);
         };
-        splitBBexecOnce(call, origInserter, tsanInserterGeneric);
+        splitBBexecOnce(data.call, origInserter, tsanInserterGeneric);
       };
 
-  if (loop->isLoopInvariant(call_arg_0)) {
-    auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
-      call->moveAfter(tsanBuilder.GetInsertPoint());
-    };
-    // runTSANonlyOnce(tsanInserter);
-    // return true;
-    return false;
-  }
-
-  auto scev = SE->getSCEV(call_arg_0);
-  if (not SE->hasComputableLoopEvolution(scev, loop))
-    return false;
-
-  auto *addRec = dyn_cast<SCEVAddRecExpr>(scev);
-  if (not addRec)
-    return false;
-  if (addRec->getLoop() != loop) {
-    // could be AddRec for different loop
-    return false;
-  }
-
-  // only if contingous address range
-  auto *stepConstant = dyn_cast<SCEVConstant>(addRec->getStepRecurrence(*SE));
-  if (not stepConstant)
-    return false;
-  if (stepConstant->getAPInt().abs() != tsan_size->getValue())
-    return false;
-
-  // TODO i64 might not always be applicable
-  auto *ctx = &M.getContext();
-  auto ptrTy = PointerType::get(*ctx, 0);
-  auto int64Ty = Type::getInt64Ty(*ctx);
-  auto constOne = ConstantInt::get(int64Ty, 1);
-
-  const SCEV *tripCount;
-  if (1 < chunk_size) {
-    // tsanInserter adds the one back later
-    tripCount = SE->getConstant(int64Ty, chunk_size - 1);
-  } else {
-    tripCount = SE->getSymbolicMaxBackedgeTakenCount(loop);
-  }
-
-  // TODO non-constant iteration counts
-  assert(tripCount);
-  if (not isa<SCEVConstant>(tripCount))
-    return false;
-
-  auto *start = addRec->getStart();
-  auto *stop = addRec->evaluateAtIteration(tripCount, *SE);
-
-  SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
-  seExpander.setInsertPoint(call);
-
-  auto *lower_bound = stepConstant->getAPInt().isNegative() ? stop : start;
-  auto *val_min = seExpander.expandCodeFor(lower_bound, int64Ty);
-  if (isa<PoisonValue>(val_min))
-    return false;
-
-  CallBase *newCall;
+  CallBase *newCall = nullptr;
   auto createTSANcall = [&](IRBuilder<> &builder, Value *base_ptr) {
     // length = size_of(element) * (abs(last - base) + 1)
     seExpander.setInsertPoint(builder.GetInsertPoint());
-    auto *iter_count = seExpander.expandCodeFor(tripCount, int64Ty);
+    auto *iter_count = seExpander.expandCodeFor(data.tripCount, int64Ty);
     auto *count_full = builder.CreateAdd(iter_count, constOne);
-    auto *range_full = builder.CreateMul(count_full, tsan_size);
-    bool isWrite = func_name.starts_with("__tsan_write") ||
-                   func_name.starts_with("__tsan_unaligned_write");
-    newCall = createTSANrange(M, builder, base_ptr, range_full, isWrite);
+    auto *range_full = builder.CreateMul(count_full, data.tsan_size);
+    newCall = createTSANrange(M, builder, base_ptr, range_full, data.isWrite);
   };
 
   Value *base_ptr;
   if (1 < chunk_size) {
+    // only first iteration of chunk range
     auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
-      base_ptr = tsanBuilder.CreateIntToPtr(val_min, ptrTy);
+      base_ptr = tsanBuilder.CreateIntToPtr(data.val_min, ptrTy);
       createTSANcall(tsanBuilder, base_ptr);
     };
     runTSANonlyOnce(tsanInserter);
   } else {
+    // TODO unroll whole loop (if chunk size is 1)
     return false;
 
     auto origInserter = [&](IRBuilder<> &origBuilder) {
-      base_ptr = origBuilder.CreateIntToPtr(val_min, ptrTy);
-      Value *isEQ = origBuilder.CreateICmpEQ(call_arg_0, base_ptr);
+      base_ptr = origBuilder.CreateIntToPtr(data.val_min, ptrTy);
+      Value *isEQ = origBuilder.CreateICmpEQ(data.call_arg_0, base_ptr);
       return isEQ;
     };
     auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
       createTSANcall(tsanBuilder, base_ptr);
     };
-    splitBBexecOnce(call, origInserter, tsanInserter);
+    splitBBexecOnce(data.call, origInserter, tsanInserter);
   }
 
-  newCall->setDebugLoc(call->getDebugLoc());
-  remove_inst_from_func(call);
+  newCall->setDebugLoc(data.call->getDebugLoc());
+  remove_inst_from_func(data.call);
   return true;
+}
+
+static std::optional<loopTSANdata>
+prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
+                    const unsigned chunk_size) {
+  loopTSANdata data;
+
+  // TODO i64 might not always be applicable
+  auto *ctx = &M.getContext();
+  auto int64Ty = Type::getInt64Ty(*ctx);
+
+  auto called_func = call->getCalledFunction();
+  auto func_name = called_func->getName();
+  data.isWrite = func_name.starts_with("__tsan_write") ||
+                 func_name.starts_with("__tsan_unaligned_write");
+
+  data.call_arg_0 = call->getArgOperand(0);
+  data.tsan_size = get_size_of_tsan_access(call);
+  if (not data.tsan_size)
+    return {};
+
+  // TODO;
+  if (loop->isLoopInvariant(data.call_arg_0)) {
+    auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
+      call->moveAfter(tsanBuilder.GetInsertPoint());
+    };
+    // runTSANonlyOnce(tsanInserter);
+    return {};
+  }
+
+  auto scev = SE->getSCEV(data.call_arg_0);
+  if (not SE->hasComputableLoopEvolution(scev, loop))
+    return {};
+
+  auto *addRec = dyn_cast<SCEVAddRecExpr>(scev);
+  if (not addRec)
+    return {};
+  if (addRec->getLoop() != loop) {
+    // could be AddRec for different loop
+    return {};
+  }
+
+  // only if contingous address range
+  auto *stepConstant = dyn_cast<SCEVConstant>(addRec->getStepRecurrence(*SE));
+  if (not stepConstant)
+    return {};
+  if (stepConstant->getAPInt().abs() != data.tsan_size->getValue())
+    return {};
+
+  if (1 < chunk_size) {
+    // tsanInserter adds the one back later
+    data.tripCount = SE->getConstant(int64Ty, chunk_size - 1);
+  } else {
+    data.tripCount = SE->getSymbolicMaxBackedgeTakenCount(loop);
+  }
+
+  // TODO non-constant iteration counts
+  assert(data.tripCount);
+  if (not isa<SCEVConstant>(data.tripCount))
+    return {};
+
+  auto *start = addRec->getStart();
+  auto *stop = addRec->evaluateAtIteration(data.tripCount, *SE);
+
+  SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
+  seExpander.setInsertPoint(call);
+
+  auto *lower_bound = stepConstant->getAPInt().isNegative() ? stop : start;
+  data.val_min = seExpander.expandCodeFor(lower_bound, int64Ty);
+  if (isa<PoisonValue>(data.val_min))
+    return {};
+
+  return data;
 }
 
 static unsigned perform_tsan_licm(Module &M, Loop *loop,
@@ -326,8 +378,22 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
     return 0;
 
   auto *SE = analysis_results->getSE(*func);
-  for (auto *call : tsan_in_loop)
-    if (replace_tsan_ranges(M, SE, loop, call, chunk_size))
+  SmallDenseSet<loopTSANdata, 8> data;
+
+  // first collect analysis data of all TSAN calls
+  for (auto *call : tsan_in_loop) {
+    auto opt_d = prepare_tsan_ranges(M, SE, loop, call, chunk_size);
+    if (opt_d.has_value()) {
+      auto d = opt_d.value();
+      d.call = call;
+      data.insert(d);
+    }
+  }
+
+  // then apply transformation
+  // this avoids destroying analysis data of other TSAN calls
+  for (auto d : data)
+    if (create_tsan_replacement(M, d, SE, chunk_size))
       removed_tsan_calls++;
 
   // Rollback: Do not break OpenMP thread handling
