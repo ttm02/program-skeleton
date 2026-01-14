@@ -256,15 +256,15 @@ static bool replace_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop,
     tripCount = SE->getConstant(int64Ty, chunk_size - 1);
   } else {
     tripCount = SE->getSymbolicMaxBackedgeTakenCount(loop);
-    assert(tripCount);
-    assert(not isa<SCEVCouldNotCompute>(tripCount));
   }
-  auto *start = addRec->getStart();
-  auto *stop = addRec->evaluateAtIteration(tripCount, *SE);
 
   // TODO non-constant iteration counts
+  assert(tripCount);
   if (not isa<SCEVConstant>(tripCount))
     return false;
+
+  auto *start = addRec->getStart();
+  auto *stop = addRec->evaluateAtIteration(tripCount, *SE);
 
   SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
   seExpander.setInsertPoint(call);
