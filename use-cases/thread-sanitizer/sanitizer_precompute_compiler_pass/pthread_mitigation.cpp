@@ -78,8 +78,7 @@ static void collectAllParallelFunctions(Function *func, bool parallel = false) {
 static void wrap_tsan_calls(DenseSet<CallBase *> &tsan_calls) {
 
   for (auto *call : tsan_calls) {
-    const auto *called_func = call->getCalledFunction();
-    const auto func_name = called_func->getName();
+    const auto func_name = getCallName(call).value();
     assert(func_name.starts_with("__tsan"));
 
     auto origInserter = [&](IRBuilder<> &origBuilder) {
@@ -116,9 +115,9 @@ static inline void wrap_join(CallBase *call) {
 
 static void wrap_parallel_calls() {
   for (auto call : ParallelCalls) {
-    auto *called_func = call->getCalledFunction();
-    assert(called_func);
-    auto func_name = called_func->getName();
+    auto call_name = getCallName(call);
+    assert(call_name.has_value());
+    auto func_name = call_name.value();
     // TODO there might be other calls
     if (func_name == "pthread_create") {
       wrap_fork(call);

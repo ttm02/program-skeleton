@@ -33,10 +33,10 @@ static inline CallBase *getCallInFunc(Function *func,
   for (BasicBlock &bb : *func) {
     for (Instruction &inst : bb) {
       if (auto *call = dyn_cast<CallBase>(&inst)) {
-        auto *called_func = call->getCalledFunction();
-        if (!called_func)
+        auto call_name = getCallName(call);
+        if (not call_name.has_value())
           continue;
-        auto func_name = called_func->getName();
+        auto func_name = call_name.value();
         if (starts_with) {
           if (func_name.starts_with(func_target_name))
             return call;
@@ -300,8 +300,7 @@ prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
   auto *ctx = &M.getContext();
   auto int64Ty = Type::getInt64Ty(*ctx);
 
-  auto called_func = call->getCalledFunction();
-  auto func_name = called_func->getName();
+  auto func_name = getCallName(call).value();
   data.isWrite = func_name.starts_with("__tsan_write") ||
                  func_name.starts_with("__tsan_unaligned_write");
 

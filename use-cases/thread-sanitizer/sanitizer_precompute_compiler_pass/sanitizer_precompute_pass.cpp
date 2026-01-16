@@ -88,8 +88,7 @@ static bool is_tsan_cleanup_block(BasicBlock *block) {
   ++it;
   if (it == block->end() || not isa<CallInst>(it) ||
       not cast<CallInst>(it)->isIndirectCall() ||
-      not(cast<CallInst>(it)->getCalledFunction()->getName() ==
-          "__tsan_func_exit")) {
+      not(getCallName(cast<CallInst>(it)).value() == "__tsan_func_exit")) {
     return false;
   }
   ++it;

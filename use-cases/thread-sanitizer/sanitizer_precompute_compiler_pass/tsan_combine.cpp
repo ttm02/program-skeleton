@@ -561,7 +561,7 @@ remove_wrapper(std::function<void(common_parameter)> replace_func, Module &M,
     DenseMap<Value *, DenseSet<CallBase *>> ptr_values_read, ptr_values_write;
 
     for (auto call : call_list) {
-      auto func_name = call->getCalledFunction()->getName();
+      auto func_name = getCallName(call).value();
       auto arg0 = call->getArgOperand(0);
       if (func_name.starts_with("__tsan_write"))
         ptr_values_write[arg0].insert(call);
@@ -632,9 +632,9 @@ static void wrap_BB_replace(std::function<void(common_parameter)> replace_func,
             if (not isAcceptableTsanCall(call))
               continue;
 
-            auto called_func = call->getCalledFunction();
-            assert(called_func);
-            auto func_name = called_func->getName();
+            auto call_name = getCallName(call);
+            assert(call_name.has_value());
+            auto func_name = call_name.value();
             assert(func_name.starts_with("__tsan"));
             if (func_name.starts_with("__tsan_unaligned"))
               continue;
