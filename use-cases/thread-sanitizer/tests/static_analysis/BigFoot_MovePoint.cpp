@@ -40,6 +40,9 @@ static inline void moveWithBasePointer(Point *a) {
 
   a[0].move(1, 1, 1);
   a[j].move(1, 1, 1);
+#pragma omp critical(BP)
+  {
+  }
   a[j + 1].move(1, 1, 1);
 
   a[0 + 20].moveYZ(2, 2);
@@ -59,6 +62,9 @@ static inline void moveWithOffset(Point *a, unsigned i) {
   a[j + 1].move(1, 1, 1);
 
   a[i + 20].moveYZ(2, 2);
+#pragma omp critical(O)
+  {
+  }
   a[i + 21].moveXY(2, 2);
 
   a[i + 23].moveXZ(3, 3);

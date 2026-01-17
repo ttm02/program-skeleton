@@ -613,6 +613,48 @@ static void array_wrapper(common_parameter) {
   rra(ptr_values_read, false);
 }
 
+static bool
+wrap_happens_before_replace(std::function<void(common_parameter)> replace_func,
+                            BasicBlock::iterator *start, Module &M,
+                            BasicBlock &BB, unsigned *removed_tsan_calls,
+                            unsigned *added_tsan_calls) {
+  bool hasChanged = false;
+  DenseSet<CallBase *> tsan_calls;
+
+  auto end = BB.end();
+  for (auto it = *start; it != end; ++it) {
+    *start = it;
+    auto &inst = *it;
+    DenseSet<Function *> alreadyVisited;
+    if (mightInfluenceHappensBefore(&inst, alreadyVisited))
+      break;
+
+    if (auto *call = dyn_cast<CallBase>(&inst)) {
+      if (not isAcceptableTsanCall(call))
+        continue;
+
+      auto call_name = getCallName(call);
+      assert(call_name.has_value());
+      auto func_name = call_name.value();
+      assert(func_name.starts_with("__tsan"));
+      if (func_name.starts_with("__tsan_unaligned"))
+        continue;
+
+      tsan_calls.insert(call);
+    }
+  }
+
+  if (not tsan_calls.empty()) {
+    auto tc = remove_wrapper(replace_func, M, tsan_calls);
+    if (tc.first || tc.second)
+      hasChanged = true;
+    *removed_tsan_calls += tc.first;
+    *added_tsan_calls += tc.second;
+  }
+
+  return hasChanged;
+}
+
 static void wrap_BB_replace(std::function<void(common_parameter)> replace_func,
                             Module &M, unsigned *removed_tsan_calls,
                             unsigned *added_tsan_calls) {
@@ -625,31 +667,11 @@ static void wrap_BB_replace(std::function<void(common_parameter)> replace_func,
       bool hasChanged;
       do {
         hasChanged = false;
-        DenseSet<CallBase *> tsan_calls;
-
-        for (Instruction &inst : BB) {
-          if (auto call = dyn_cast<CallBase>(&inst)) {
-            if (not isAcceptableTsanCall(call))
-              continue;
-
-            auto call_name = getCallName(call);
-            assert(call_name.has_value());
-            auto func_name = call_name.value();
-            assert(func_name.starts_with("__tsan"));
-            if (func_name.starts_with("__tsan_unaligned"))
-              continue;
-
-            tsan_calls.insert(call);
-          }
+        for (auto it = BB.begin(); it != BB.end(); it++) {
+          hasChanged |= wrap_happens_before_replace(
+              replace_func, &it, M, BB, removed_tsan_calls, added_tsan_calls);
         }
 
-        if (not tsan_calls.empty()) {
-          auto tc = remove_wrapper(replace_func, M, tsan_calls);
-          if (tc.first || tc.second)
-            hasChanged = true;
-          *removed_tsan_calls += tc.first;
-          *added_tsan_calls += tc.second;
-        }
       } while (hasChanged);
     }
   }
