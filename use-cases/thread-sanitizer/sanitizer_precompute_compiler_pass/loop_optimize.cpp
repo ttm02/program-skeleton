@@ -230,7 +230,8 @@ static bool create_tsan_replacement(Module &M, const loopTSANdata data,
         // There was the idea to just use a PhiNode, but sometimes the loop
         // inside the OpenMP outlined function is nested. Therefore, we flip a
         // boolean on first use.
-        auto *bbEntry = &data.call->getFunction()->getEntryBlock();
+        auto *func = data.call->getFunction();
+        auto *bbEntry = &func->getEntryBlock();
         auto insertEntry = bbEntry->getFirstNonPHIOrDbgOrAlloca();
         IRBuilder<> entryBuilder(bbEntry);
         entryBuilder.SetInsertPoint(insertEntry);
@@ -240,6 +241,23 @@ static bool create_tsan_replacement(Module &M, const loopTSANdata data,
         auto *constTrue = entryBuilder.getTrue();
         auto *flag = entryBuilder.CreateAlloca(i1Ty);
         entryBuilder.CreateStore(constTrue, flag);
+
+        auto *omp_for_dynamic =
+            getCallInFunc(func, "__kmpc_dispatch_init", true);
+        if (omp_for_dynamic) {
+          for (auto *u : omp_for_dynamic->getArgOperand(0)->users()) {
+            if (auto *call = dyn_cast<CallBase>(u)) {
+              auto call_name = getCallName(call);
+              if (not call_name.has_value())
+                continue;
+              if (not call_name.value().starts_with("__kmpc_dispatch_next"))
+                continue;
+
+              IRBuilder<> dispatchBuilder(call);
+              dispatchBuilder.CreateStore(constTrue, flag);
+            }
+          }
+        }
 
         auto origInserter = [&](IRBuilder<> &origBuilder) {
           auto *flagLoad = origBuilder.CreateLoad(i1Ty, flag);
