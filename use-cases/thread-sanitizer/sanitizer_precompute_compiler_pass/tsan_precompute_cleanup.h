@@ -30,6 +30,11 @@ llvm::CallInst *createTSANrange(llvm::Module &M, llvm::Instruction *base_ptr,
                                 const unsigned struct_size, const bool isWrite);
 void remove_inst_from_func(llvm::Instruction *inst);
 
+bool mightInfluenceHappensBefore(
+    llvm::Function *func, llvm::DenseSet<llvm::Function *> &alreadyVisisted);
+bool mightInfluenceHappensBefore(
+    llvm::Instruction *inst, llvm::DenseSet<llvm::Function *> &alreadyVisisted);
+
 void splitBBexecOnce(
     llvm::Instruction *inst,
     std::function<llvm::Value *(llvm::IRBuilder<> &origBuilder)> origInserter,

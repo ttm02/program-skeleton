@@ -405,6 +405,56 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
   return removed_tsan_calls;
 }
 
+bool mightInfluenceHappensBefore(Function *func,
+                                 DenseSet<Function *> &alreadyVisited) {
+  if (alreadyVisited.contains(func))
+    return false;
+  alreadyVisited.insert(func);
+
+  for (BasicBlock &BB : *func)
+    for (Instruction &inst : BB)
+      if (mightInfluenceHappensBefore(&inst, alreadyVisited))
+        return true;
+
+  return false;
+}
+
+bool mightInfluenceHappensBefore(Instruction *inst,
+                                 DenseSet<Function *> &alreadyVisited) {
+  if (auto *call = dyn_cast<CallBase>(inst)) {
+    auto *called_func = call->getCalledFunction();
+    if (not called_func)
+      return false; // fingers crossed ....
+
+    if (is_thread_function(called_func))
+      return true;
+
+    if (mightInfluenceHappensBefore(called_func, alreadyVisited))
+      return true;
+  }
+
+  return false;
+}
+
+static void loopWrapper(unsigned *removed_tsan_calls, Module &M, Loop *loop) {
+  std::vector<llvm::CallBase *> tsan_calls;
+
+  for (auto &bb : loop->getBlocks()) {
+    for (auto &inst : *bb) {
+      DenseSet<Function *> alreadyVisited;
+      if (mightInfluenceHappensBefore(&inst, alreadyVisited))
+        return;
+
+      if (auto *call = dyn_cast<CallBase>(&inst)) {
+        if (isAcceptableTsanCall(call))
+          tsan_calls.push_back(call);
+      }
+    }
+  }
+
+  (*removed_tsan_calls) += perform_tsan_licm(M, loop, tsan_calls);
+}
+
 std::string optimize_loops(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Optimize Loops\n";
   unsigned removed_tsan_calls = 0;
@@ -412,17 +462,8 @@ std::string optimize_loops(Module &M, ModuleAnalysisManager &AM) {
   for (auto &f : M) {
     if (not f.isDeclaration() && not is_func_from_std(&f)) {
       auto li = analysis_results->getLoopInfo(f);
-      for (auto loop : li->getLoopsInPreorder()) {
-        std::vector<llvm::CallBase *> tsan_calls;
-
-        for (auto &bb : loop->getBlocks())
-          for (auto &inst : *bb)
-            if (auto *call = dyn_cast<CallBase>(&inst))
-              if (isAcceptableTsanCall(call))
-                tsan_calls.push_back(call);
-
-        removed_tsan_calls += perform_tsan_licm(M, loop, tsan_calls);
-      }
+      for (auto *loop : li->getLoopsInPreorder())
+        loopWrapper(&removed_tsan_calls, M, loop);
     }
   }
 
