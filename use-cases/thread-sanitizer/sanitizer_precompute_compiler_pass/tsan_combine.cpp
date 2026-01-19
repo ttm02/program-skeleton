@@ -35,6 +35,12 @@ using namespace llvm;
       const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values_read,          \
       Value *base_ptr
 
+typedef void (*replace_func_t)(Module &, b2c_map &, c2b_map &, unsigned *,
+                               unsigned *,
+                               const DenseMap<Value *, DenseSet<CallBase *>> &,
+                               const DenseMap<Value *, DenseSet<CallBase *>> &,
+                               Value *);
+
 static inline void collect_base_ptr_to_tsan_call(b2c_map &base_ptr_to_call,
                                                  c2b_map &call_to_base_ptr,
                                                  CallBase *tsan_call,
@@ -537,9 +543,41 @@ range_replace_array(Module &M, b2c_map &base_ptr_to_call,
   }
 }
 
+static void
+replace_same(Module &M, unsigned *removed_tsan_calls,
+             unsigned *added_tsan_calls, bool isWrite,
+             const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values) {
+  for (auto p2c : ptr_values) {
+    auto tsan_calls = p2c.getSecond();
+    if (tsan_calls.size() < 2)
+      continue;
+
+    auto *tsan = *tsan_calls.begin();
+    auto *tsan_size = get_size_of_tsan_access(tsan);
+
+    for (auto *call : tsan_calls) {
+      if (call == tsan)
+        continue;
+
+      assert(tsan_size == get_size_of_tsan_access(tsan));
+      remove_inst_from_func(call);
+      (*removed_tsan_calls)++;
+    }
+  }
+}
+
+static void same_wrapper(common_parameter) {
+  auto rrs = [&](const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
+                 bool isWrite) {
+    replace_same(M, removed_tsan_calls, added_tsan_calls, isWrite, ptr_values);
+  };
+  rrs(ptr_values_write, true);
+  rrs(ptr_values_read, false);
+}
+
 static std::pair<unsigned, unsigned>
-remove_wrapper(std::function<void(common_parameter)> replace_func, Module &M,
-               const DenseSet<CallBase *> &tsan_calls) {
+remove_wrapper(replace_func_t replace_func, Module &M,
+               const SmallDenseSet<CallBase *> &tsan_calls) {
   unsigned removed_tsan_calls = 0;
   unsigned added_tsan_calls = 0;
 
@@ -548,9 +586,13 @@ remove_wrapper(std::function<void(common_parameter)> replace_func, Module &M,
 
   for (auto *ts : tsan_calls) {
     auto arg0 = ts->getArgOperand(0);
-    if (Instruction *inst0 = dyn_cast<Instruction>(arg0))
-      collect_base_ptr_to_tsan_call(base_ptr_to_call, call_to_base_ptr, ts,
-                                    inst0);
+    if (replace_func == same_wrapper) {
+      base_ptr_to_call[arg0].insert(ts);
+    } else {
+      if (Instruction *inst0 = dyn_cast<Instruction>(arg0))
+        collect_base_ptr_to_tsan_call(base_ptr_to_call, call_to_base_ptr, ts,
+                                      inst0);
+    }
   }
 
   for (auto bp2call : base_ptr_to_call) {
@@ -613,13 +655,13 @@ static void array_wrapper(common_parameter) {
   rra(ptr_values_read, false);
 }
 
-static bool
-wrap_happens_before_replace(std::function<void(common_parameter)> replace_func,
-                            BasicBlock::iterator *start, Module &M,
-                            BasicBlock &BB, unsigned *removed_tsan_calls,
-                            unsigned *added_tsan_calls) {
+static bool wrap_happens_before_replace(replace_func_t replace_func,
+                                        BasicBlock::iterator *start, Module &M,
+                                        BasicBlock &BB,
+                                        unsigned *removed_tsan_calls,
+                                        unsigned *added_tsan_calls) {
   bool hasChanged = false;
-  DenseSet<CallBase *> tsan_calls;
+  SmallDenseSet<CallBase *> tsan_calls;
 
   auto end = BB.end();
   for (auto it = *start; it != end; ++it) {
@@ -655,8 +697,8 @@ wrap_happens_before_replace(std::function<void(common_parameter)> replace_func,
   return hasChanged;
 }
 
-static void wrap_BB_replace(std::function<void(common_parameter)> replace_func,
-                            Module &M, unsigned *removed_tsan_calls,
+static void wrap_BB_replace(replace_func_t replace_func, Module &M,
+                            unsigned *removed_tsan_calls,
                             unsigned *added_tsan_calls) {
   for (Function &Func : M) {
     // do not instrument tsan itself
@@ -695,6 +737,7 @@ std::string combine_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
   do {
     old_removed = removed_tsan_calls;
     old_added = added_tsan_calls;
+    wrap_BB_replace(same_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
     wrap_BB_replace(struct_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
     wrap_BB_replace(array_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
     opt_cleanup(M, AM);
