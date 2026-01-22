@@ -38,6 +38,8 @@ mode_mapping = {
 mode_order = list(mode_mapping.values())
 mode_to_color = dict(zip(mode_mapping.keys(), colors))
 mode_to_color_plot = dict(zip(mode_order, colors))
+mode_apply_list = list(mode_mapping.keys())
+mode_apply_list.remove("norm")
 
 
 # get largest size there all modes are present
@@ -55,7 +57,7 @@ def get_largest_value_for_group(df, col_name):
         size_list_max_count = size_list["count"].max()
 
         for sl in size_list["count"]:
-            if sl < size_list_max_count * 0.75:
+            if sl < size_list_max_count * 0.95:
                 return False
 
         return True
@@ -67,7 +69,7 @@ def get_largest_value_for_group(df, col_name):
     return df[col_name].max()
 
 
-def get_plot_problem_size(df, name, ax1, plt, y_offset):
+def create_plot_problem_size(df, name, ax1, plt, y_offset):
     max_threads = get_largest_value_for_group(df, "threads")
     sns.lineplot(
         data=df[df["threads"] == max_threads],
@@ -90,7 +92,7 @@ def get_plot_problem_size(df, name, ax1, plt, y_offset):
 
     # Annotate slowdown on plots
     for s in percentages.index:
-        for mode in ["orig", "pass", "stan"]:
+        for mode in mode_apply_list:
             time_val = df[
                 (df["threads"] == max_threads)
                 & (df["size"] == s)
@@ -159,7 +161,7 @@ def get_plot_thread_number(df, name, ax2, plt, y_offset):
 
     # Annotate slowdown on plots
     for thread in percentages.index:
-        for mode in ["orig", "pass", "stan"]:
+        for mode in mode_apply_list:
             time_val = df[
                 (df["size"] == max_size)
                 & (df["threads"] == thread)
@@ -200,7 +202,7 @@ def get_plot(df, name, pdf_name, plotter):
 
 
 def create_plots(df, name):
-    get_plot(df, name, "problem_size", get_plot_problem_size)
+    get_plot(df, name, "problem_size", create_plot_problem_size)
     get_plot(df, name, "thread_count", get_plot_thread_number)
 
 
@@ -209,6 +211,13 @@ def data_from_csv(name):
     files = glob(DATAPATH + "/" + name + "/*.csv")
     df = pd.concat((pd.read_csv(f) for f in files), ignore_index=True)
     df["mode_readable"] = df["mode"].replace(mode_mapping)
+
+    ### create better visibility what slicing or slicing + static analysis achieves
+    ### TSAN without mods has really very much overhead
+    df = df[~df["mode"].str.contains("orig")]
+    if 0 < mode_apply_list.count("orig"):
+        mode_apply_list.remove("orig")
+
     return df
 
 
@@ -235,7 +244,7 @@ def visualize_lulesh():
     df_lulesh["size"] = df_lulesh["cfg_size"]
     max_iter = get_largest_value_for_group(df_lulesh, "cfg_iter")
     df_lulesh = df_lulesh[df_lulesh["cfg_iter"] == max_iter]
-    get_plot(df_lulesh, name, "problem_size", get_plot_problem_size)
+    get_plot(df_lulesh, name, "problem_size", create_plot_problem_size)
 
 
 if __name__ == "__main__":
