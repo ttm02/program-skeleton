@@ -62,7 +62,10 @@ def split_dataframe(df, chunk_size):
 
 
 def create_plot(df, pdf, pdf_name):
-    fig, ax = plt.subplots(figsize=(7.6, 10.1))
+    df_tc_count = df["testcase"].nunique()
+    fig_factor = max(1 - df_tc_count * 0.04, 0)
+    fig_height = df_tc_count * (0.32 + fig_factor * 0.06) + (1.0 + fig_factor * 0.2)
+    fig, ax = plt.subplots(figsize=(7.6, fig_height))
 
     x_ticks = np.arange(0, 100 + 1, 10)
     x_levels = np.concatenate(([-5], x_ticks, [105]), axis=None)
@@ -84,6 +87,9 @@ def create_plot(df, pdf, pdf_name):
     # ax.autoscale(axis="x", enable=False)
     # ax.margins(x=5, tight=False)
 
+    ax.yaxis.set_label_position("right")
+    ax.yaxis.tick_right()
+
     sns.set(style="whitegrid")
     sns.boxplot(
         ax=ax,
@@ -96,8 +102,11 @@ def create_plot(df, pdf, pdf_name):
     )
     ax.set_title(f"DataRaceBench ({pdf_name}): Accuracy")
     ax.set_xlabel("Detection Percentage (in %)")
-    ax.set_ylabel("Testcase Names")
-    ax.legend(title="")
+    ax.set_ylabel("Testcase\nNames" if fig_height < 2.63 else "Testcase Names")
+
+    ax.legend(
+        title="", bbox_to_anchor=(1.05, -0.025), loc="upper left", borderaxespad=0
+    )
 
     plt.tight_layout()
     pdf.savefig(fig)
@@ -106,7 +115,10 @@ def create_plot(df, pdf, pdf_name):
 
 def get_plot(df, pdf_name):
     with PdfPages(f"DRB_Accuracy_{pdf_name}.pdf") as pdf:
-        for df_chunk in split_dataframe(df, 26):
+        # create dummy page as first page as it often renders not so nice
+        create_plot(df[df["testcase"] == df["testcase"].iloc[0]], pdf, "to be ignored")
+
+        for df_chunk in split_dataframe(df, 16):
             create_plot(df_chunk, pdf, pdf_name)
 
     print(f"Saving DRB_Accuracy_{pdf_name}.pdf")
@@ -128,6 +140,14 @@ def visualize_accuracy():
             .reset_index(name="df_value_count")
         )
         df_cat["df_value_count"] = df_cat["df_value_count"].mul(100)
+
+        # only show the interesting cases
+        df_cat = df_cat[
+            df_cat.groupby("testcase")["df_value_count"].transform(
+                lambda x: (x != 100).any()
+            )
+        ]
+
         return df_cat
 
     df_yes = get_df_tc_cat(df, "yes")
