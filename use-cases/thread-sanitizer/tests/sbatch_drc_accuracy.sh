@@ -56,17 +56,20 @@ else
   REAL_HOME=$(realpath "$HOME")
   CONTAINER_IMAGE_PATH="${HOME}/myCont/precompute-devshell"
 
-  export TMPDIR="/tmp"
-  export APPTAINER_TMPDIR="${HPC_SCRATCH}/tmp"
+  export TMPDIR="/dev/shm"
+  export APPTAINER_TMPDIR="$TMPDIR"
 
   export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
   export OMP_PLACES=cores
 
   cd "$TMPDIR" || exit 23
   apptainer run \
+    --mount "type=bind,source=${TMPDIR},destination=${HPC_SCRATCH}/tmp" \
     --mount "type=bind,source=${REAL_HOME},destination=${REAL_HOME}" \
     --mount "type=bind,source=${HPC_SCRATCH},destination=${HPC_SCRATCH}" \
     --env-file "${CONTAINER_IMAGE_PATH}.env" \
     "${CONTAINER_IMAGE_PATH}.sif" \
     "${SCRIPT_DIR}/cluster_run_wrapper.sh" "${SCRIPT_DIR}/compare_performance.sh"
+
+  rm -fr "${TMPDIR}"
 fi

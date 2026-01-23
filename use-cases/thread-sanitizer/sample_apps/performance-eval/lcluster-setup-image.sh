@@ -26,8 +26,9 @@ case "$INPUT_FILE" in
     ;;
 esac
 
-export TMPDIR=$HPC_SCRATCH
-export APPTAINER_TMPDIR=${HPC_SCRATCH}
+export TMPDIR="${HPC_SCRATCH}/tmp"
+export APPTAINER_TMPDIR=${TMPDIR}
+mkdir -p "$TMPDIR"
 export NIX_BUILD_TOP="${FILENAME_PREFIX}-tmp"
 mkdir -p "$NIX_BUILD_TOP"
 

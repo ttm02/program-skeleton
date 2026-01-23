@@ -13,7 +13,7 @@ TARGET_DIR=$(mktemp -d --suffix=".precompute")
 cd "${TARGET_DIR}/" || exit 23
 
 set -e
-rsync -aHAX --delete "${PRECOMPUTE_DIR}/" "${TARGET_DIR}/"
+rsync -aHAX "${PRECOMPUTE_DIR}/" "${TARGET_DIR}/"
 rm -fr ./build-cluster
 cmake -B 'build-cluster' -DCMAKE_EXPORT_COMPILE_COMMANDS='ON' -S . -G 'Ninja' \
     -DMPI_USE_CASE='OFF' -DALLOC_TRACKING_USE_CASE='OFF'
@@ -28,4 +28,5 @@ LOG_DIR="${HPC_SCRATCH}/precompute/results/DRB"
 mkdir -p "$LOG_DIR"
 cp "${TARGET_DIR}/timing.csv" "${LOG_DIR}/${APP_LOG_NAME}.csv"
 
+rm -fr "${TARGET_DIR}"
 exit 0

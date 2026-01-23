@@ -19,7 +19,9 @@ SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 
 enqueue_sbatch() {
     TC="$1"
+    # constraints limit job scheduling the cluster stage 1
     sbatch \
+        --constraint='i01' \
         --ntasks 1 \
         --exclusive \
         -o /dev/null \
