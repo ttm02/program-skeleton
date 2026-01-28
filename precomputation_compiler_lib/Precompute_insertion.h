@@ -56,6 +56,7 @@ public:
       : M(M), precompute_analyis_result(precompute_analyis_result),
         replace_allocation(replace_allocation),
         use_precompute_backend_library(use_precompute_backend_library) {
+    previous_instruction_count = M.getInstructionCount();
     insert_precomputation();
   };
 
@@ -79,6 +80,9 @@ public:
 
   // this removes all values in to_precompute_cfg
   void clean_precompute();
+
+  size_t removed_instructions_count = 0;
+  size_t previous_instruction_count = 0;
 
   // accessor (use it to modify the program slice if necessary)
   llvm::Value *get_precomputed_value(llvm::Value *v) const {

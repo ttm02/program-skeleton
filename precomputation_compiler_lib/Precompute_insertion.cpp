@@ -461,6 +461,8 @@ void PrecomputeInsertion::prune_function_copy(
     }
   }
 
+  removed_instructions_count += to_prune.size();
+
   // remove stuff
   for (auto *inst : to_prune) {
     if (inst->isTerminator()) {
@@ -603,6 +605,12 @@ void PrecomputeInsertion::insert_precomputation() {
   } else {
     precompute_main = nullptr;
   }
+
+  // print statistics
+  errs() << "Build Slice: Removed " << removed_instructions_count << " of "
+         << previous_instruction_count << " Instructions ("
+         << (double)removed_instructions_count / previous_instruction_count
+         << ")\n";
 }
 
 void PrecomputeInsertion::build_precomputed_values_map() {
