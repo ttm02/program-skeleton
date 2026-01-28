@@ -24,15 +24,18 @@ enable_testing()
 option(MPI_USE_CASE "Build the mpi usecase (precomputation of MPI message envelopes)" ON)
 
 if (MPI_USE_CASE)
+    message("Build MPI use case")
     add_subdirectory(use-cases/mpi-matching)
 endif ()
 
 option(SANITIZER_USE_CASE "Build the Thread sanitizer usecase" ON)
 if (SANITIZER_USE_CASE)
+    message("Build Tsan use case")
     add_subdirectory(use-cases/thread-sanitizer)
 endif ()
 
 option(ALLOC_TRACKING_USE_CASE "Build the Allocation Tracking usecase" ON)
 if (ALLOC_TRACKING_USE_CASE)
+    message("Build Allocation tracking use case")
     add_subdirectory(use-cases/alloc-tracking)
 endif ()
