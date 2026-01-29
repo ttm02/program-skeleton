@@ -198,6 +198,16 @@ bool is_func_from_std(llvm::Function *func) {
     return true;
   }
 
+  // rounding functions from math.h
+  if (func->getName().ends_with("lround") ||
+      func->getName().ends_with("lroundf") ||
+      func->getName().ends_with("lroundl") ||
+      func->getName().ends_with("llround") ||
+      func->getName().ends_with("llroundf") ||
+      func->getName().ends_with("llroundl")) {
+    return true;
+  }
+
   // scanf functions
   if (func->getName().ends_with("scanf") ||
       func->getName().ends_with("fscanf") ||

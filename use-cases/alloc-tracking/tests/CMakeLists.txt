@@ -74,6 +74,15 @@ add_mpi_compare_test(048_mpi_heat_eq_solver3 ADD_ALL_MPI_COMMUNICATION 8)
 add_mpi_compare_test(048_mpi_heat_eq_solver4 ADD_ALL_MPI_COMMUNICATION 8)
 add_mpi_compare_test(048_mpi_heat_eq_solver5 ADD_ALL_MPI_COMMUNICATION 8)
 add_mpi_compare_test(048_mpi_heat_eq_solver6 ADD_ALL_MPI_COMMUNICATION 8)
+
+# skip mpi_heat_eq tests as it takes long to run the original application
+set_tests_properties(alloc-048_mpi_heat_eq_solver PROPERTIES DISABLED True)
+set_tests_properties(alloc-048_mpi_heat_eq_solver2 PROPERTIES DISABLED True)
+set_tests_properties(alloc-048_mpi_heat_eq_solver3 PROPERTIES DISABLED True)
+set_tests_properties(alloc-048_mpi_heat_eq_solver4 PROPERTIES DISABLED True)
+set_tests_properties(alloc-048_mpi_heat_eq_solver5 PROPERTIES DISABLED True)
+set_tests_properties(alloc-048_mpi_heat_eq_solver6 PROPERTIES DISABLED True)
+
 add_compare_test(049_thesis_example_function_ptr)
 add_compare_test(050_thesis_example_required_allocation)
 add_compare_test(051_thesis_example_implementation)

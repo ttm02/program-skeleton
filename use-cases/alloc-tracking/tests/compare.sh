@@ -55,9 +55,9 @@ if [[ -x "./skeleton/a.out" ]]; then
     # skeletonization successfull
     if [[ "$MPI_USAGE" == "USE_MPI" ]]; then
           cd original
-          mpirun -n $NUM_PROCS ./a.out
+          mpirun -n $NUM_PROCS --map-by :OVERSUBSCRIBE ./a.out
           cd ../skeleton
-          mpirun -n $NUM_PROCS ./a.out
+          mpirun -n $NUM_PROCS --map-by :OVERSUBSCRIBE ./a.out
           cd ..
     else
       cd original
