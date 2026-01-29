@@ -1,5 +1,6 @@
 #include "alloc_tracker_lto_pass.hpp"
 
+
 bool AllocTrackerLTOPass::instrument_allocation_calls(
     Module &M, LLVMContext &Ctx, const std::vector<CallInst *> &alloc_calls,
     const AllocationInstrumentationConfig &config) {
@@ -299,7 +300,7 @@ void AllocTrackerLTOPass::add_required_mpi_function_to_slicing_criterion(
   //      precalculations.cpp) in the function visit_call_from_ptr().
   std::vector<llvm::StringRef> required_mpi_functions;
 
-  if (AddAllMPICommunication) {
+  if (arguments_.AddAllMPICommunication) {
     // In this case we want to add all the MPI_{Send, Recv, Bcast} calls to the
     // slice
     required_mpi_functions.push_back("MPI_Send");
@@ -493,7 +494,7 @@ bool AllocTrackerLTOPass::slice_module(Module &M, ModuleAnalysisManager &MAM) {
   // Analyse module for slicing
   precalc_analysis_ = std::make_shared<PrecalculationAnalysis>(
       M, main_F, to_precompute, precompute_locations, problematic_calls_,
-      IgnoreMPICommunication, AddAllMPICommunication);
+      arguments_.IgnoreMPICommunication, arguments_.AddAllMPICommunication);
 
   // Remove duplicates from problematic allocation call vector (are sometimes
   // added in slicing analysis)
@@ -655,13 +656,13 @@ bool AllocTrackerLTOPass::inline_allocation_wrapper_call(Module &M,
 }
 
 bool AllocTrackerLTOPass::is_allocation_wrapper(llvm::StringRef name) const {
-  if (AllocationWrapperFunctions.empty())
+  if (arguments_.AllocationWrapperFunctions.empty())
     return false;
 
-  auto it = std::find(AllocationWrapperFunctions.begin(),
-                      AllocationWrapperFunctions.end(), name.str());
+  auto it = std::find(arguments_.AllocationWrapperFunctions.begin(),
+                      arguments_.AllocationWrapperFunctions.end(), name.str());
 
-  return it != AllocationWrapperFunctions.end();
+  return it != arguments_.AllocationWrapperFunctions.end();
 }
 
 bool AllocTrackerLTOPass::inline_allocation_wrapper_calls(Module &M) {
@@ -733,9 +734,9 @@ bool AllocTrackerLTOPass::run_on_module(Module &M, ModuleAnalysisManager &MAM) {
   // Inline wrapper functions if present
   bool inlined = inline_allocation_wrapper_calls(M);
 
-  sliced_ = EnableSlicing ? slice_module(M, MAM) : false;
+  sliced_ = arguments_.EnableSlicing ? slice_module(M, MAM) : false;
 
-  bool replaced = EnableLogging
+  bool replaced = arguments_.EnableLogging
                       ? instrument_allocations_with_logging_functions(M, MAM)
                       : false;
 
@@ -750,9 +751,11 @@ bool AllocTrackerLTOPass::run_on_module(Module &M, ModuleAnalysisManager &MAM) {
 
 PreservedAnalyses AllocTrackerLTOPass::run(Module &M,
                                            ModuleAnalysisManager &MAM) {
+  arguments_=get_arguments();
   llvm::errs() << "[AllocTrackerLTOPass] Running pass on Module with name: "
                << M.getName() << "\n";
   check_and_print_pass_options();
+
 
   bool modified = run_on_module(M, MAM);
 

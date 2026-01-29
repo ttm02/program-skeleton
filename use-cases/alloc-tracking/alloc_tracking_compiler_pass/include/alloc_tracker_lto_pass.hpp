@@ -49,55 +49,9 @@
 #include "precompute_backend_funcs.h"
 #include "std_funcs.h"
 // Includes for precomputation compiler libs
-
+#include "arguments.hpp"
 
 using namespace llvm;
-
-
-/**
- * Command Line Parameter Options
- */
-namespace {
-
-// -at-pass-allocation-wrapper-functions command line option
-llvm::cl::list<std::string> AllocationWrapperFunctions(
-    "at-pass-allocation-wrapper-functions",
-    cl::desc("List of allocation wrapper function names"),
-    cl::CommaSeparated, // separate names by comma
-    cl::ZeroOrMore // allows for zero or more names
-);
-
-// -at-pass-enable-slicing command line option
-llvm::cl::opt<bool> EnableSlicing(
-    "at-pass-enable-slicing",
-    cl::desc("Enable slicing"),
-    cl::init(false) // default no slicing
-);
-
-// -at-pass-enable-logging command line option
-llvm::cl::opt<bool> EnableLogging(
-    "at-pass-enable-logging",
-    cl::desc("Enable logging"),
-    cl::init(false) // default no logging
-);
-
-// -at-pass-ignore-mpi-communication command line option
-llvm::cl::opt<bool> IgnoreMPICommunication(
-    "at-pass-ignore-mpi-communication",
-    cl::desc("Ignore MPI Communication"),
-    cl::init(false)
-);
-
-// -at-pass-add-all-mpi-communication command line option
-llvm::cl::opt<bool> AddAllMPICommunication(
-    "at-pass-add-all-mpi-communication",
-    cl::desc("Add all MPI Communication"),
-    cl::init(false)
-);
-
-} // end namespace
-
-
 
 RequiredAnalysisResults *analysis_results;
 
@@ -148,6 +102,8 @@ struct AllocationInstrumentationConfig {
 
 struct AllocTrackerLTOPass : public PassInfoMixin<AllocTrackerLTOPass> {
 private:
+    struct arguments arguments_={};
+
     std::shared_ptr<PrecalculationAnalysis> precalc_analysis_;
     std::shared_ptr<PrecomputeInsertion> precalculation_;
     std::vector<llvm::Instruction *> problematic_calls_;
@@ -193,19 +149,19 @@ public:
 
     void check_and_print_pass_options() const {
         llvm::errs() << "[AllocTrackerLTOPass] Running pass with the following options: \n";
-        if (EnableSlicing) llvm::errs() << "\t\tslicing enabled\n";
+        if (arguments_.EnableSlicing) llvm::errs() << "\t\tslicing enabled\n";
         else llvm::errs() << "\t\tslicing NOT enabled\n";
 
-        if (EnableLogging) llvm::errs() << "\t\tlogging enabled\n";
+        if (arguments_.EnableLogging) llvm::errs() << "\t\tlogging enabled\n";
         else llvm::errs() << "\t\tlogging NOT enabled\n";
 
         // Handling MPI Communication
-        if (IgnoreMPICommunication && AddAllMPICommunication) {
+        if (arguments_.IgnoreMPICommunication && AddAllMPICommunication) {
             llvm::report_fatal_error("Cannot specify both IgnoreMPICommunication and AddAllMPICommunication!");
         }
 
-        if (IgnoreMPICommunication) llvm::errs() << "\t\tignoring MPI communication\n";
-        if (AddAllMPICommunication) llvm::errs() << "\t\tadding all MPI communication\n";
+        if (arguments_.IgnoreMPICommunication) llvm::errs() << "\t\tignoring MPI communication\n";
+        if (arguments_.AddAllMPICommunication) llvm::errs() << "\t\tadding all MPI communication\n";
     }
         
 
