@@ -1,6 +1,5 @@
 #include "alloc_tracker_lto_pass.hpp"
 
-
 bool AllocTrackerLTOPass::instrument_allocation_calls(
     Module &M, LLVMContext &Ctx, const std::vector<CallInst *> &alloc_calls,
     const AllocationInstrumentationConfig &config) {
@@ -751,11 +750,10 @@ bool AllocTrackerLTOPass::run_on_module(Module &M, ModuleAnalysisManager &MAM) {
 
 PreservedAnalyses AllocTrackerLTOPass::run(Module &M,
                                            ModuleAnalysisManager &MAM) {
-  arguments_=get_arguments();
+  arguments_ = get_arguments();
   llvm::errs() << "[AllocTrackerLTOPass] Running pass on Module with name: "
                << M.getName() << "\n";
   check_and_print_pass_options();
-
 
   bool modified = run_on_module(M, MAM);
 

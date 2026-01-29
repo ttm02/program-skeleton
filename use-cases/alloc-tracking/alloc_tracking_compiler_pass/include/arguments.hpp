@@ -2,6 +2,9 @@
 #define ALLOCTRACKING_ARGUMENTS_H
 
 #include "llvm/Support/CommandLine.h"
+#include <string>
+#include <vector>
+#include <cstdlib>
 
 /**
  * Command Line Parameter Options
@@ -62,10 +65,37 @@ struct arguments {
 struct arguments get_arguments() {
   struct arguments args;
   args.AllocationWrapperFunctions = AllocationWrapperFunctions;
+  auto env_var = std::getenv("AT_PASS_ALLOCATION_WRAPPER_FUNCTIONS");
+  if (env_var) {
+    const char *delimiter = ",";
+    char *token = strtok(env_var, delimiter);
+    while (token != nullptr) {
+      AllocationWrapperFunctions.push_back(token);
+      // Get the next substring
+      token = strtok(nullptr, delimiter);
+    }
+  }
+
   args.EnableSlicing = EnableSlicing;
+  env_var = std::getenv("AT_PASS_ENABLE_SLICING");
+  if (env_var) {
+    args.EnableSlicing = true;
+  }
   args.EnableLogging = EnableLogging;
+  env_var = std::getenv("AT_PASS_ENABLE_LOGGING");
+  if (env_var) {
+    args.EnableLogging = true;
+  }
   args.IgnoreMPICommunication = IgnoreMPICommunication;
+  env_var = std::getenv("AT_PASS_IGNORE_MPI_COMMUNICATION");
+  if (env_var) {
+    args.IgnoreMPICommunication = true;
+  }
   args.AddAllMPICommunication = AddAllMPICommunication;
+  env_var = std::getenv("AT_PASS_ADD_ALL_MPI_COMMUNICATION");
+  if (env_var) {
+    args.AddAllMPICommunication = true;
+  }
 
   return args;
 
