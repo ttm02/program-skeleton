@@ -27,12 +27,12 @@ mkdir skeleton
 export USE_COMPILER_PASS=true
 # compile
 
-FC=flang
+FC=$FLANG_WRAP
 
-# all testcases are c
-echo "$FC -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS $CFLAGS -o ./original/a.out $ENABLE_ALLOC_TRACKING_ARG $2/*.f90"
-$FC -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS $CFLAGS -o ./original/a.out $ENABLE_ALLOC_TRACKING_ARG $2/*.f90
-$FC -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS $CFLAGS -o ./skeleton/a.out $ENABLE_ALLOC_TRACKING_ARG $SLICE_ALLOC_ARG $2/*.f90
+export "AT_PASS_ENABLE_LOGGING=true"
+$FC $CFLAGS -o ./original/a.out $LINK_ALLOC_TRACKING_LIB_ARG $2/*.f90
+export "AT_PASS_ENABLE_SLICING=true"
+$FC $CFLAGS -o ./skeleton/a.out $LINK_ALLOC_TRACKING_LIB_ARG $2/*.f90
 
 
 # execution

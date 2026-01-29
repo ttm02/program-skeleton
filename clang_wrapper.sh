@@ -66,11 +66,11 @@ if [ "$is_to_obj" == true ]; then
     if [ "$DEBUG_CLANG_WRAPPER" == true ]; then
         echo "MODE: to obj file"
     fi
-    if [ $has_multiple_src_file"" == true ]; then
-      echo "ERROR linking multiple src files directly into one object file is not supported"
-      echo "Compile one by one and link afterwards"
-      exit 1
-    fi
+    #if [ $has_multiple_src_file"" == true ]; then
+    #  echo "ERROR linking multiple src files directly into one object file is not supported"
+    #  echo "Compile one by one and link afterwards"
+    #  exit 1
+    #fi
     for arg in "$@"; do
         if [ "$arg" == "-c" ]; then
             COMPILER_INVOCATION="$COMPILER_INVOCATION -c -emit-llvm"
@@ -138,11 +138,11 @@ fi
 if [ "$DEBUG_CLANG_WRAPPER" == true ]; then
     echo "MODE: direct to Binary"
 fi
-if [ $has_multiple_src_file"" == true ]; then
-      echo "ERROR linking multiple src files directly into one binary file is not supported"
-      echo "Compile one by one and link afterwards"
-      exit 1
-fi
+#if [ $has_multiple_src_file"" == true ]; then
+#      echo "ERROR linking multiple src files directly into one binary file is not supported"
+#      echo "Compile one by one and link afterwards"
+#      exit 1
+#fi
 COMPILER_INVOCATION="$compiler"
 if [[ "$USE_COMPILER_PASS" == true ]]; then
     COMPILER_INVOCATION="$COMPILER_INVOCATION -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS -lprecompute"
