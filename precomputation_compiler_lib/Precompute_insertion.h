@@ -86,6 +86,7 @@ public:
 
   // accessor (use it to modify the program slice if necessary)
   llvm::Value *get_precomputed_value(llvm::Value *v) const {
+    assert(precomputed_values_map.count(v));
     return precomputed_values_map.at(v);
   };
 

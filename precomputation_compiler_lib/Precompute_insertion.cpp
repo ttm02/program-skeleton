@@ -150,6 +150,18 @@ void replace_allocation_call(llvm::CallBase *call) {
   call->eraseFromParent();
 }
 
+// replace MPI call directly with MPI_SUCCESS
+void replace_mpi_call(llvm::CallBase *call) {
+  assert(call);
+  if (isa<InvokeInst>(call)) {
+    assert(false && "Not implemented"); // should not happen
+    // add unconditional branch to invoke success target
+  }
+  auto *value = ConstantInt::get(call->getType(), 0); // MPI_SUCCESS
+  call->replaceAllUsesWith(value);
+  call->eraseFromParent();
+}
+
 // sometimes different member funcs of objects are relevant
 //  example: Base: foo, bar
 //  for inherited1: foo is relevant, for inherited2 bar is relevant
@@ -261,6 +273,10 @@ void PrecomputeInsertion::replace_calls_in_copy(
           to_replace.push_back(call);
         } else {
           auto *callee = call->getCalledFunction();
+          if (!callee) { // function cast
+            callee = llvm::dyn_cast<llvm::Function>(call->getCalledOperand());
+          }
+          assert(callee);
 
           if (callee == get_mpi_functions(M)->mpi_comm_rank ||
               callee == get_mpi_functions(M)->mpi_comm_size) {
@@ -302,6 +318,25 @@ void PrecomputeInsertion::replace_calls_in_copy(
                    is_func_from_std(callee) || is_mpi_function(callee) ||
                    callee->isIntrinsic());
             // it is not used: nothing to do, later pruning step will remove it
+            if (is_mpi_function(callee)) {
+              bool all_args_tainted = true;
+              auto *orig_call = cast<CallBase>(func->new_to_old_map[call]);
+              for (auto &arg : orig_call->args()) {
+                auto *arg_v = dyn_cast<Value>(&arg);
+                if (!isa<Constant>(arg_v)) {
+                  if (!precompute_analyis_result->is_included_in_precompute(
+                          arg_v)) {
+                    all_args_tainted = false;
+                    break;
+                  }
+                }
+              }
+              if (!all_args_tainted) {
+                to_replace.push_back(call);
+                // replace call to MPI with 0 as all MPI error checks are
+                // removed, mpi errors are considered fatal
+              }
+            }
           }
         }
       }
@@ -317,6 +352,10 @@ void PrecomputeInsertion::replace_calls_in_copy(
 
     if (is_allocation(call)) {
       replace_allocation_call(call);
+      continue;
+    }
+    if (is_mpi_call(call)) {
+      replace_mpi_call(call);
       continue;
     }
 

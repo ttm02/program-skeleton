@@ -1435,15 +1435,19 @@ void PrecalculationAnalysis::visit_call_for_retval(
   } else if (is_call_to_std(call)) {
     include_call_to_std(call_info);
   } else {
+
+    // calling MPI for retval is not necessary, usually they return an error
+    // code, we can assume MPI throws no error, since it is allowed to treat all
+    // errors as faral anyway
     for (auto *func : get_possible_call_targets(call)) {
-      if (func->isDeclaration() && not(func == mpi_func->mpi_wtime)) {
+      if (func->isDeclaration() && not is_mpi_function(func)) {
         errs() << "\n";
         call->dump();
         func->dump();
         errs() << "In: " << call->getFunction()->getName() << " intrinsic?"
                << func->isIntrinsic() << "\n";
       }
-      assert(func == mpi_func->mpi_wtime ||
+      assert(is_mpi_function(func) ||
              not func->isDeclaration() &&
                  "cannot analyze if calling external function for return value "
                  "has "
@@ -1453,6 +1457,9 @@ void PrecalculationAnalysis::visit_call_for_retval(
           insert_tainted_value(ret, call_info);
         }
       }
+      // no func arguments are tainted, MPI args are not needed, as retval will
+      // be ignored for other funcs, arguments will be tainted only if needed by
+      // visiting them later
     }
   }
 }
@@ -1599,7 +1606,10 @@ void PrecalculationAnalysis::visit_call_from_ptr(
       // TODO is there anything else in MPI we need to handle special??
       // call->dump();
       // errs() << "In: " << call->getFunction()->getName() << "\n";
-      assert(not is_included_in_precompute(call));
+      // assert(not is_included_in_precompute(call));
+      // if its included: it is included for its return value
+      assert(not is_included_in_precompute(call) ||
+             is_retval_of_call_needed(call));
       return;
     }
 
