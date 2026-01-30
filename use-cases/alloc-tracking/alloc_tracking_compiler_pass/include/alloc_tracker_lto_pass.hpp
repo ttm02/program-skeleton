@@ -199,8 +199,8 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
             //  - registerFullLinkTimeOptimizationLastEPCallback: pass is run
             //  after other optimizations and thus views a potentially highly
             //  transformed code due to different optimizations
-            PB.registerFullLinkTimeOptimizationEarlyEPCallback(
-                [&](ModulePassManager &MPM, OptimizationLevel Level) {
+            PB.registerOptimizerEarlyEPCallback(
+                [&](ModulePassManager &MPM, auto, auto) {
                   MPM.addPass(AllocTrackerLTOPass());
                 });
 
