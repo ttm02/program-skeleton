@@ -92,6 +92,12 @@ add_test(NAME "alloc-053_simple_fortran"
         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/053_simple_fortran/compare.sh ${USECASE_ALLOC_TRACKING_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/053_simple_fortran
 )
 
+#104.mlc mini app
+add_test(NAME "alloc-104.milc"
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/104.milc/compare.sh ${USECASE_ALLOC_TRACKING_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/104.milc
+)
+set_tests_properties(alloc-104.milc PROPERTIES DISABLED True)
+
 
 
 
