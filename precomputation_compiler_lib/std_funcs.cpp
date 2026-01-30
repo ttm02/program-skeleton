@@ -178,10 +178,10 @@ bool is_func_from_std(llvm::Function *func) {
       // as one should usa a random seed anyway it doesn't matter if we call
       // it in precompute
       func->getName() == "getrusage" || func->getName() == "time" ||
-      func->getName() == "localtime" || func->getName() == "clock_gettime" ||
-      func->getName() == "strftime" || func->getName() == "isspace" ||
-      func->getName() == "isalpha" || func->getName() == "isalnum" ||
-      func->getName() == "isdigit" ||
+      func->getName() == "ctime" || func->getName() == "localtime" ||
+      func->getName() == "clock_gettime" || func->getName() == "strftime" ||
+      func->getName() == "isspace" || func->getName() == "isalpha" ||
+      func->getName() == "isalnum" || func->getName() == "isdigit" ||
 
       // from gnu
       func->getName() == "__getdelim") {
@@ -208,10 +208,12 @@ bool is_func_from_std(llvm::Function *func) {
     return true;
   }
 
-  // scanf functions
   if (func->getName().ends_with("scanf") ||
       func->getName().ends_with("fscanf") ||
-      func->getName().ends_with("sscanf")) {
+      func->getName().ends_with("sscanf") ||
+      func->getName().ends_with("fseeko") ||
+      func->getName().ends_with("ftello") ||
+      func->getName().ends_with("lseek")) {
     return true;
   }
 
