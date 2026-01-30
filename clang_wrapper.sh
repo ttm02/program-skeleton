@@ -7,7 +7,7 @@ compiler=clang++
 if [ "$DEBUG_CLANG_WRAPPER" == true ]; then
     echo "INVOKE CLANG_WRAPPER"
     echo "clang_wrapper $@"
-    export LD_PRELOAD="$(clang -print-file-name=libclang_rt.asan.so):$LD_PRELOAD_PREV"
+    #export LD_PRELOAD="$(clang -print-file-name=libclang_rt.asan.so):$LD_PRELOAD_PREV"
 fi
 
 if [ "$USE_COMPILER_PASS" == 1 ]; then
@@ -145,7 +145,7 @@ fi
 #fi
 COMPILER_INVOCATION="$compiler"
 if [[ "$USE_COMPILER_PASS" == true ]]; then
-    COMPILER_INVOCATION="$COMPILER_INVOCATION -Wl,--load-pass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS -lprecompute"
+    COMPILER_INVOCATION="$COMPILER_INVOCATION -fpass-plugin=$COMPILER_PASS -Wl,-mllvm=-load=$COMPILER_PASS -lprecompute"
 fi
 for arg in "$@"; do
     COMPILER_INVOCATION="$COMPILER_INVOCATION $arg"
