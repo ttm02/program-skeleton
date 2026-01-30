@@ -175,6 +175,11 @@ inline bool should_call_intrinsic(llvm::Intrinsic::ID id) {
       id == llvm::Intrinsic::vastart || id == llvm::Intrinsic::vacopy ||
       id == llvm::Intrinsic::vaend ||
 
+      // bit manipulation
+      id == llvm::Intrinsic::bitreverse || id == llvm::Intrinsic::bswap ||
+      id == llvm::Intrinsic::ctpop || id == llvm::Intrinsic::ctlz ||
+      id == llvm::Intrinsic::cttz ||
+
       // vector instructions
       id == llvm::Intrinsic::vector_reduce_add ||
       id == llvm::Intrinsic::vector_reduce_mul ||
