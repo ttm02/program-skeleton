@@ -493,7 +493,8 @@ bool AllocTrackerLTOPass::slice_module(Module &M, ModuleAnalysisManager &MAM) {
   // Analyse module for slicing
   precalc_analysis_ = std::make_shared<PrecalculationAnalysis>(
       M, main_F, to_precompute, precompute_locations, problematic_calls_,
-      arguments_.IgnoreMPICommunication, arguments_.AddAllMPICommunication);
+      arguments_.IgnoreMPICommunication, arguments_.AddAllMPICommunication,
+      true);
 
   // Remove duplicates from problematic allocation call vector (are sometimes
   // added in slicing analysis)

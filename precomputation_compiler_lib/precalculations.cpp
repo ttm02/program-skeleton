@@ -183,7 +183,42 @@ bool PrecalculationAnalysis::is_invoke_necessary_for_control_flow(
   return is_invoke_exception_case_needed(invoke);
 }
 
+void PrecalculationAnalysis::remove_mpi_error_checks() {
+  std::vector<CallBase *> mpi_calls;
+
+  // collect MPI calls
+  for (auto &F : M.functions()) {
+    for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
+      if (auto *call = dyn_cast<CallBase>(&*I)) {
+        if (is_mpi_call(call) &&
+            call->getCalledFunction() != mpi_func->mpi_wtime) {
+          mpi_calls.push_back(call);
+          // wtime dont returns error code but the time instead
+        }
+      }
+    }
+  }
+  // replace with MPI_SUCCESS
+  for (auto *call : mpi_calls) {
+    if (isa<InvokeInst>(call)) {
+      assert(false && "Not implemented"); // should not happen
+      // add unconditional branch to invoke success target
+    }
+    auto *value = ConstantInt::get(call->getType(), 0); // MPI_SUCCESS
+    call->replaceAllUsesWith(value);
+  }
+  // TODO should now run some other transform passes to simplify CFG
+}
+
 void PrecalculationAnalysis::analyze() {
+  // Before Analysis: replace all return of MPI functions with MPI_SUCCES
+  // as MPI implementation can consider any error as fatal anyway
+  // this reduces analysis complexity
+
+  if (remove_mpi_error_checking) {
+    remove_mpi_error_checks();
+  }
+
   analyze_functions();
 
   for (const auto &val : this->to_precompute_value) {
