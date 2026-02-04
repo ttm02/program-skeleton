@@ -82,6 +82,10 @@ inline bool is_mpi_function(llvm::Function *f) {
 }
 
 inline bool is_mpi_call(llvm::CallBase *call) {
+  if (call->getCalledFunction() == NULL && !call->isIndirectCall()) {
+    return is_mpi_function(
+        llvm::dyn_cast<llvm::Function>(call->getCalledOperand()));
+  }
   return is_mpi_function(call->getCalledFunction());
 }
 
