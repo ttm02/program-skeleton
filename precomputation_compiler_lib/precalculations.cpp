@@ -1475,8 +1475,12 @@ void PrecalculationAnalysis::visit_call_for_retval(
         errs() << "\n";
         call->dump();
         func->dump();
+
         errs() << "In: " << call->getFunction()->getName() << " intrinsic?"
                << func->isIntrinsic() << "\n";
+        /*for (auto u : call->users()) {
+          u->dump();
+        }*/
       }
       assert(func == mpi_func->mpi_wtime ||
              not func->isDeclaration() &&
@@ -1629,11 +1633,16 @@ void PrecalculationAnalysis::visit_call_from_ptr(
       // something important
       return;
     }
+    if (func->getName() == "MPI_Errhandler_set" ||
+        func->getName() == "MPI_Errhandler_create") {
+      // we treat all mpi errors as fatal, no need to set errhandler
+      return;
+    }
 
     if (is_mpi_function(func)) {
       // TODO is there anything else in MPI we need to handle special??
-      // call->dump();
-      // errs() << "In: " << call->getFunction()->getName() << "\n";
+      call->dump();
+      errs() << "In: " << call->getFunction()->getName() << "\n";
       assert(not is_included_in_precompute(call));
       return;
     }
