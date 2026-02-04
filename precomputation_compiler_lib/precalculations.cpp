@@ -187,17 +187,21 @@ void PrecalculationAnalysis::remove_mpi_error_checks() {
   std::vector<CallBase *> mpi_calls;
 
   // collect MPI calls
-  for (auto &F : M.functions()) {
-    for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
-      if (auto *call = dyn_cast<CallBase>(&*I)) {
-        if (is_mpi_call(call) &&
-            call->getCalledFunction() != mpi_func->mpi_wtime) {
+  for (auto &F : M) {
+    for (auto &I : llvm::instructions(F)) {
+      if (auto *call = dyn_cast<CallBase>(&I)) {
+        if (is_mpi_call(call)) {
+          if (mpi_func->mpi_wtime != NULL &&
+              mpi_func->mpi_wtime == call->getCalledFunction()) {
+            continue;
+            // wtime don't return error code but the time instead
+          }
           mpi_calls.push_back(call);
-          // wtime dont returns error code but the time instead
         }
       }
     }
   }
+
   // replace with MPI_SUCCESS
   for (auto *call : mpi_calls) {
     if (isa<InvokeInst>(call)) {
@@ -207,14 +211,13 @@ void PrecalculationAnalysis::remove_mpi_error_checks() {
     auto *value = ConstantInt::get(call->getType(), 0); // MPI_SUCCESS
     call->replaceAllUsesWith(value);
   }
-  // TODO should now run some other transform passes to simplify CFG
+  // TODO should now run some other transform passes to simplify CFG?
 }
 
 void PrecalculationAnalysis::analyze() {
   // Before Analysis: replace all return of MPI functions with MPI_SUCCES
   // as MPI implementation can consider any error as fatal anyway
   // this reduces analysis complexity
-
   if (remove_mpi_error_checking) {
     remove_mpi_error_checks();
   }
@@ -1476,11 +1479,12 @@ void PrecalculationAnalysis::visit_call_for_retval(
         call->dump();
         func->dump();
 
-        errs() << "In: " << call->getFunction()->getName() << " intrinsic?"
-               << func->isIntrinsic() << "\n";
-        /*for (auto u : call->users()) {
+        errs() << "In: " << call->getFunction()->getName() << " intrinsic? "
+               << func->isIntrinsic() << " MPI? " << is_mpi_call(call)
+               << " users:\n";
+        for (auto *u : call->users()) {
           u->dump();
-        }*/
+        }
       }
       assert(func == mpi_func->mpi_wtime ||
              not func->isDeclaration() &&
