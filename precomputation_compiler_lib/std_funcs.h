@@ -61,17 +61,14 @@ inline bool is_allocation(llvm::Function *func) {
 }
 
 inline bool is_allocation(llvm::CallBase *call) {
-  assert(call);
   if (call->isIndirectCall()) {
     return false;
   }
   if (call->getCalledFunction()) {
     return is_allocation(call->getCalledFunction());
   }
-  return false;
-  // happens when a function is casted - not applicable to allocation
+  // happens when a function is casted
   auto *func = llvm::dyn_cast<llvm::Function>(call->getCalledOperand());
-  assert(func);
   // some function cast
   return is_allocation(func);
 }
