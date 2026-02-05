@@ -70,11 +70,15 @@ public:
   }
 
   bool is_func_included_in_precompute(llvm::Function *F) const {
+    assert(F);
+    assert(function_analysis.count(F));
     return function_analysis.at(F)->include_in_precompute;
   }
 
   std::shared_ptr<PrecalculationFunctionAnalysis>
   get_function_analysis(llvm::Function *F) const {
+    assert(F);
+    assert(function_analysis.count(F));
     return function_analysis.at(F);
   }
 
