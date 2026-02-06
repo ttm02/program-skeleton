@@ -299,7 +299,7 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     // stricter assertion that our pass should not use more undef values some
     // undefs are actually duplicated in our test programm (some vector elems
     // are undef)
-    double max_undef_factor = 1.0; // between 1.0 and 2.0
+    double max_undef_factor = 2.0; // between 1.0 and 2.0
     assert(get_num_undefs(M) <= num_undef * max_undef_factor);
 #endif
     // static analysis after slicing

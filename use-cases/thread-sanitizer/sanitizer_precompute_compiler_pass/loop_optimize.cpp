@@ -283,6 +283,7 @@ static bool create_tsan_replacement(Module &M, const loopTSANdata data,
 
   Value *base_ptr;
   if (1 < chunk_size) {
+    return false;
     // only first iteration of chunk range
     auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
       base_ptr = tsanBuilder.CreateIntToPtr(data.val_min, ptrTy);
