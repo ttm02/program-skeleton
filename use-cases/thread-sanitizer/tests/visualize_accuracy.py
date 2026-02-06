@@ -80,7 +80,7 @@ def split_dataframe(df, chunk_size):
     yield df_chunk_filter(df, df_cn)
 
 
-def create_plot(df, pdf, pdf_name):
+def create_boxplot(df, pdf, pdf_name):
     df_tc_count = df["testcase"].nunique()
     fig_factor = max(1 - df_tc_count * 0.04, 0)
     fig_height = df_tc_count * (0.32 + fig_factor * 0.06) + (1.0 + fig_factor * 0.2)
@@ -133,45 +133,29 @@ def create_plot(df, pdf, pdf_name):
 
 
 def create_heat(df, pdf, pdf_name):
-    df_tc_count = df["testcase"].nunique()
-    fig_factor = max(1 - df_tc_count * 0.05, 0)
-    fig_height = df_tc_count * (0.32 + fig_factor * 0.06) + (0.8 + fig_factor * 0.3)
-    fig, ax = plt.subplots(figsize=(8.4, fig_height))
-
-    bins = [0, 5, 10, 20, 40, 60, 80, 90, 95, 100]
-    labels = [
-        "0–5",
-        "5-10",
-        "10-20",
-        "20-40",
-        "40-60",
-        "60-80",
-        "80-90",
-        "90-95",
-        "95-100",
-    ]
-
     df = df.copy()
-    df["value_bin"] = pd.cut(
-        df["df_value_count"], bins=bins, labels=labels, include_lowest=True
+    fig, ax = plt.subplots(figsize=(33.3, 1.82))
+
+    heatmap_data = df.pivot_table(
+        index="mode_readable",
+        columns="threads",
+        values="df_value_count",
+        aggfunc="first",
     )
-    freq = pd.crosstab(df["testcase"], df["value_bin"])
-    percent = freq.div(freq.sum(axis=1), axis=0) * 100
-
-    # ax.yaxis.set_label_position("right")
-    # ax.yaxis.tick_right()
-
     sns.heatmap(
-        percent,
-        annot=True,
-        fmt=".0f",
-        cmap="YlOrRd",
-        cbar_kws={"label": "Percentage (%)"},
+        heatmap_data, annot=True, fmt=".0f", cmap="YlOrRd", cbar=False
+    )  # cmap="viridis"
+
+    tc_name = df["testcase"].iloc[0]
+    tc_case = (
+        "expecting at least one data race"
+        if pdf_name == "yes"
+        else "expecting no data races"
     )
 
-    ax.set_title(f"DataRaceBench ({pdf_name}): Accuracy")
-    ax.set_xlabel("Detection Percentage (in %)")
-    ax.set_ylabel("Testcase\nNames" if fig_height < 2.63 else "Testcase Names")
+    ax.set_title(f"{tc_name}: Detection Percentage ({tc_case})")
+    ax.set_xlabel("Thread Count")
+    ax.set_ylabel("")
 
     plt.tight_layout()
     pdf.savefig(fig)
@@ -179,20 +163,21 @@ def create_heat(df, pdf, pdf_name):
 
 
 def get_plot(df, pdf_name):
-    with PdfPages(f"DRB_Accuracy_{pdf_name}.pdf") as pdf:
+    file_name = f"DRB_Accuracy_{pdf_name}_boxplot.pdf"
+    with PdfPages(file_name) as pdf:
         # create dummy page as first page as it often renders not so nice
-        create_plot(df[df["testcase"] == df["testcase"].iloc[0]], pdf, "to be ignored")
+        create_boxplot(
+            df[df["testcase"] == df["testcase"].iloc[0]], pdf, "to be ignored"
+        )
+        for df_chunk in split_dataframe(df, 18):
+            create_boxplot(df_chunk, pdf, pdf_name)
+        print(f"Saving {file_name}")
 
-        for df_chunk in split_dataframe(df, 16):
-            create_plot(df_chunk, pdf, pdf_name)
-            for mo in mode_order:
-                create_heat(
-                    df_chunk[df_chunk["mode_readable"] == mo],
-                    pdf,
-                    pdf_name + " - " + mo,
-                )
-
-    print(f"Saving DRB_Accuracy_{pdf_name}.pdf")
+    file_name = f"DRB_Accuracy_{pdf_name}_heatmap.pdf"
+    with PdfPages(file_name) as pdf:
+        for df_chunk in split_dataframe(df, 1):
+            create_heat(df_chunk, pdf, pdf_name)
+        print(f"Saving {file_name}")
 
 
 def get_df_tc_cat(cat):
@@ -204,10 +189,6 @@ def get_df_tc_cat(cat):
     global df
     if df is None:
         df = data_from_csv()
-
-
-def visualize_accuracy():
-    df = data_from_csv()
 
     df_cat = (
         df[df["tc_cat"] == cat]
