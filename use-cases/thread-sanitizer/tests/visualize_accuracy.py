@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import re
 import sys
 import numpy as np
@@ -10,6 +11,10 @@ from matplotlib.scale import FuncScale
 from matplotlib.backends.backend_pdf import PdfPages
 from io import StringIO
 from glob import glob
+
+DATAPATH = sys.argv[1]
+files_DRB = DATAPATH + "/DRB"
+df = None
 
 
 def usage():
@@ -40,10 +45,24 @@ mode_to_color_plot = dict(zip(mode_order, colors))
 
 
 def data_from_csv():
-    DATAPATH = sys.argv[1]
-    files = glob(DATAPATH + "/DRB/*.csv")
-    df = pd.concat((pd.read_csv(f) for f in files), ignore_index=True)
-    df["mode_readable"] = df["mode"].replace(mode_mapping)
+    files_combined = files_DRB + "_combined.csv"
+
+    if os.path.isfile(files_combined):
+        # if cache file exist, use it (speed up)
+        df = pd.read_csv(files_combined)
+    else:
+        files_csv = glob(files_DRB + "/*.csv")
+        df = pd.concat((pd.read_csv(f) for f in files_csv), ignore_index=True)
+        df["mode_readable"] = df["mode"].replace(mode_mapping)
+
+        # categorize testcases
+        df["tc_cat"] = [
+            "yes" if re.match(".*-yes\\..*", tc) else "no" for tc in df["testcase"]
+        ]
+
+        # save to speed up later loads
+        df.to_csv(files_combined)
+
     return df
 
 
@@ -165,7 +184,7 @@ def get_plot(df, pdf_name):
         create_plot(df[df["testcase"] == df["testcase"].iloc[0]], pdf, "to be ignored")
 
         for df_chunk in split_dataframe(df, 16):
-            # create_plot(df_chunk, pdf, pdf_name)
+            create_plot(df_chunk, pdf, pdf_name)
             for mo in mode_order:
                 create_heat(
                     df_chunk[df_chunk["mode_readable"] == mo],
@@ -176,36 +195,47 @@ def get_plot(df, pdf_name):
     print(f"Saving DRB_Accuracy_{pdf_name}.pdf")
 
 
+def get_df_tc_cat(cat):
+    files_cat = files_DRB + "_" + cat + ".csv"
+    if os.path.isfile(files_cat):
+        # if cache file exist, use it (speed up)
+        return pd.read_csv(files_cat)
+
+    global df
+    if df is None:
+        df = data_from_csv()
+
+
 def visualize_accuracy():
     df = data_from_csv()
 
-    # categorize testcases
-    df["tc_cat"] = [
-        "yes" if re.match(".*-yes\\..*", tc) else "no" for tc in df["testcase"]
+    df_cat = (
+        df[df["tc_cat"] == cat]
+        .assign(is_cat=df["found"].eq(cat))
+        .groupby(["testcase", "mode_readable", "threads"])["is_cat"]
+        .mean()
+        .mul(100)
+        .reset_index(name="df_value_count")
+    )
+    # df_cat = df_cat[df_cat["found"] == cat]
+
+    # only show the interesting cases
+    df_cat = df_cat[
+        df_cat.groupby("testcase")["df_value_count"].transform(
+            lambda x: (x < 99.0).any()
+        )
     ]
 
-    def get_df_tc_cat(df, cat):
-        df_cat = (
-            df[df["tc_cat"] == cat]
-            .groupby(["testcase", "mode_readable", "threads"])["found"]
-            .value_counts(cat)
-            .reset_index(name="df_value_count")
-        )
-        df_cat["df_value_count"] = df_cat["df_value_count"].mul(100)
+    # save to speed up later loads
+    df_cat.to_csv(files_cat)
+    return df_cat
 
-        # only show the interesting cases
-        df_cat = df_cat[
-            df_cat.groupby("testcase")["df_value_count"].transform(
-                lambda x: (x != 100).any()
-            )
-        ]
 
-        return df_cat
-
-    df_no = get_df_tc_cat(df, "no")
+def visualize_accuracy():
+    df_no = get_df_tc_cat("no")
     get_plot(df_no, "no")
 
-    df_yes = get_df_tc_cat(df, "yes")
+    df_yes = get_df_tc_cat("yes")
     get_plot(df_yes, "yes")
 
 
