@@ -175,9 +175,17 @@ inline bool should_call_intrinsic(llvm::Intrinsic::ID id) {
       id == llvm::Intrinsic::vastart || id == llvm::Intrinsic::vacopy ||
       id == llvm::Intrinsic::vaend ||
 
+      // bit manipulation
+      id == llvm::Intrinsic::bitreverse || id == llvm::Intrinsic::bswap ||
+      id == llvm::Intrinsic::ctpop || id == llvm::Intrinsic::ctlz ||
+      id == llvm::Intrinsic::cttz ||
+
       // vector instructions
       id == llvm::Intrinsic::vector_reduce_add ||
-      llvm::Intrinsic::getName(id).starts_with("llvm.x86.sse"); // NOLINT
+      id == llvm::Intrinsic::vector_reduce_mul ||
+      llvm::Intrinsic::getName(id).starts_with("llvm.x86.sse") ||
+      llvm::Intrinsic::getName(id).starts_with("llvm.vector") ||
+      llvm::Intrinsic::getName(id).starts_with("llvm.ctpop"); // NOLINT
 }
 
 #endif // PRECALCULATION_FUNCTION_ANALYSIS_H

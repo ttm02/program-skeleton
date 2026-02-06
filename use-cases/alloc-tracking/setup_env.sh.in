@@ -1,0 +1,8 @@
+#!/bin/bash
+
+#to run in debug mode with address sanitizer
+export DEBUG_CLANG_WRAPPER=true
+
+export LINK_ALLOC_TRACKING_LIB_ARG="-lalloc_tracking_runtime_lib"
+
+

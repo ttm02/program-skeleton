@@ -40,11 +40,19 @@ class PrecalculationAnalysis
     : private std::enable_shared_from_this<PrecalculationAnalysis> {
 public:
   PrecalculationAnalysis(llvm::Module &M, llvm::Function *entry_point,
-                         llvm::DenseSet<llvm::Value *> to_precompute_value,
-                         llvm::DenseSet<llvm::Instruction *> to_precompute_cfg)
+                         std::vector<llvm::Value *> to_precompute_value,
+                         std::vector<llvm::Instruction *> to_precompute_cfg,
+                         std::vector<llvm::Instruction *> &problematic_calls,
+                         bool ignore_MPI_communication,
+                         bool add_all_MPI_communication,
+                         bool remove_mpi_error_checking = false)
       : mpi_func(get_mpi_functions(M)), M(M), entry_point(entry_point),
         to_precompute_value(std::move(to_precompute_value)),
-        to_precompute_cfg(std::move(to_precompute_cfg)) {
+        to_precompute_cfg(std::move(to_precompute_cfg)),
+        problematic_calls(problematic_calls),
+        ignore_MPI_communication(ignore_MPI_communication),
+        add_all_MPI_communication(add_all_MPI_communication),
+        remove_mpi_error_checking(remove_mpi_error_checking) {
 
     analyze();
   };
@@ -112,10 +120,10 @@ public:
 
   llvm::Function *get_entry_point() const { return entry_point; }
 
-  llvm::DenseSet<llvm::Value *> get_values_to_precompute() const {
+  std::vector<llvm::Value *> get_values_to_precompute() const {
     return to_precompute_value;
   }
-  llvm::DenseSet<llvm::Instruction *> get_locations_to_precompute() const {
+  std::vector<llvm::Instruction *> get_locations_to_precompute() const {
     return to_precompute_cfg;
   }
 
@@ -134,8 +142,20 @@ private:
   llvm::Module &M;
   llvm::Function *entry_point;
 
-  llvm::DenseSet<llvm::Value *> to_precompute_value;
-  llvm::DenseSet<llvm::Instruction *> to_precompute_cfg;
+  std::vector<llvm::Value *> to_precompute_value;
+  std::vector<llvm::Instruction *> to_precompute_cfg;
+
+  std::vector<llvm::Instruction *> &problematic_calls;
+  bool ignore_MPI_communication;
+  bool add_all_MPI_communication;
+  bool remove_mpi_error_checking;
+
+  void remove_mpi_error_checks();
+  void
+  add_all_MPI_Send_and_Recv_to_slice(llvm::CallBase *call,
+                                     const std::shared_ptr<TaintedValue> &ptr);
+  void add_all_MPI_Bcasts_to_slice(llvm::CallBase *call,
+                                   const std::shared_ptr<TaintedValue> &ptr);
 
   std::set<std::shared_ptr<TaintedValue>> tainted_values;
 
@@ -235,7 +255,7 @@ private:
                              llvm::InsertValueInst *insert_value_inst);
 
   bool visit_ptr_insertelement_recursive_impl(
-      const std::shared_ptr<TaintedValue> &ptr, llvm::Value *insert_idx,
+      const std::shared_ptr<TaintedValue> &ptr, llvm::ConstantInt *insert_idx,
       llvm::Instruction *aggregate_inst);
 
   void visit_ptr_insertelement(const std::shared_ptr<TaintedValue> &ptr,

@@ -8,10 +8,11 @@ For this Project, we used clang/`llvm 21.1.0`
 
 ## Building / Usage
 
-Currently. There are two different use cases:
+Currently. There are three different use cases:
 
 * MPI Matching: Precalculation of MPI message envelopes. Camke Option: `MPI_USE_CASE`
 * Thread Sanitizer: Skeleton based on Tsan Instrumentation without computation. Camke Option: `SANITIZER_USE_CASE`
   Use The Cmake Options to build them.
+* Alloc Tracking: Skeleton that calculates the allocation size of a program
 
 Refer to the Readme in each use cases directory for more information about its usage.

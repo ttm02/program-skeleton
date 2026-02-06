@@ -199,9 +199,11 @@ struct MPICompilerAssistanceMatchingPass
 
       auto init_call = get_mpi_init_call(M, main_func);
 
+      std::vector<Instruction *> problematic;
       auto precalcuation = std::make_shared<PrecomputeInsertion>(
           M, std::make_shared<PrecalculationAnalysis>(
-                 M, main_func, to_precompute, init_calls));
+                 M, main_func, to_precompute, init_calls, problematic, false,
+                 false));
 
       replace_MPI_with_precompute(precalcuation, get_mpi_functions(M),
                                   combined_init_list);
@@ -263,13 +265,17 @@ struct MPICompilerAssistanceMatchingPass
 // class MSGOrderRelaxCheckerPass
 } // namespace
 
+PassPluginLibraryInfo getPassPluginInfo() {
+  const auto callback = [](PassBuilder &PB) {
+    PB.registerOptimizerEarlyEPCallback([&](ModulePassManager &MPM, auto,auto) {
+      MPM.addPass(MPICompilerAssistanceMatchingPass());
+      return true;
+    });
+  };
+
+  return {LLVM_PLUGIN_API_VERSION, "mpi-matching", "1.0.0", callback};
+};
+
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
-  return {LLVM_PLUGIN_API_VERSION, "mpi-matching", "1.0.0",
-          [](PassBuilder &PB) {
-            PB.registerOptimizerEarlyEPCallback([&](ModulePassManager &MPM,
-                                                    OptimizationLevel Level,
-                                                    ThinOrFullLTOPhase Phase) {
-              MPM.addPass(MPICompilerAssistanceMatchingPass());
-            });
-          }};
+  return getPassPluginInfo();
 }

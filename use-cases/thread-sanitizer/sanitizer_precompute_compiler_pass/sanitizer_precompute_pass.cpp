@@ -135,8 +135,8 @@ static std::string run_tsan(Module &M, ModuleAnalysisManager &AM) {
   return "TSAN instrumentation already available";
 }
 
-static void collectCalls(CallBase *call, DenseSet<Value *> &to_precompute,
-                         DenseSet<Instruction *> &precompute_locations) {
+static void collectCalls(CallBase *call, std::vector<Value *> &to_precompute,
+                         std::vector<Instruction *> &precompute_locations) {
   if (is_func_from_std(call->getFunction())) {
     // dont analyze internals of std, though tsan may instrument them
     return;
@@ -167,13 +167,13 @@ static void collectCalls(CallBase *call, DenseSet<Value *> &to_precompute,
   }
 
   for (auto &it_arg : call->args())
-    to_precompute.insert(it_arg);
-  precompute_locations.insert(call);
+    to_precompute.push_back(it_arg);
+  precompute_locations.push_back(call);
 }
 
-static void collectPrecompute(Instruction &inst,
-                              DenseSet<Value *> &to_precompute,
-                              DenseSet<Instruction *> &precompute_locations) {
+static void
+collectPrecompute(Instruction &inst, std::vector<Value *> &to_precompute,
+                  std::vector<Instruction *> &precompute_locations) {
   if (auto *call = dyn_cast<CallBase>(&inst)) {
     collectCalls(call, to_precompute, precompute_locations);
   } else {
@@ -187,8 +187,8 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
   auto *main_func = M.getFunction("main");
   assert(main_func);
 
-  DenseSet<Value *> to_precompute;
-  DenseSet<Instruction *> precompute_locations;
+  std::vector<Value *> to_precompute;
+  std::vector<Instruction *> precompute_locations;
 
   for (Function &func : M) {
     // do not instrument tsan itself
@@ -209,21 +209,15 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
     return "";
   }
 
+  std::vector<Instruction *> problematic;
   auto precalcuation = std::make_shared<PrecomputeInsertion>(
       M,
       std::make_shared<PrecalculationAnalysis>(M, main_func, to_precompute,
-                                               precompute_locations),
-      false);
+                                               precompute_locations,
+                                               problematic, false, false),
+      false, false);
 
   // do NOT call clean_precompute() as we want the tsan calls to stick around
-
-  // we don't need the management stuff, we directly replace our program with
-  // precomputed one
-  auto precompute_main = precalcuation->get_precompute_main();
-  auto it = precompute_main->begin()->begin();
-  ++it; // second instruction is call to precomputed main
-  auto *call = cast<CallBase>(it);
-  auto *precomputed_main = call->getCalledFunction();
 
   // remove old main
   auto orig_linkeage = main_func->getLinkage();
@@ -240,23 +234,16 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
     args.push_back(&arg);
   }
 
+  auto *precomputed_main = precalcuation->get_precompute_main();
   builder.CreateCall(precomputed_main, args);
   builder.CreateRet(Constant::getNullValue(main_func->getReturnType()));
 
-  // remove other non-precompute functions now
   std::vector<Function *> to_delete;
   for (Function &func : M) {
     if (precalcuation->is_func_part_of_precompute_phase(&func)) {
       // the tsan calls are already part of precompute, no need to instrumente
       // them again
       func.removeFnAttr(Attribute::SanitizeThread);
-    } else if ((not func.isDeclaration()) && &func != main_func &&
-               (not func.getName().starts_with("__tsan")) &&
-               (not is_func_from_std(&func))) {
-      // not used: remove
-      if (func.hasExternalLinkage())
-        func.setLinkage(GlobalValue::InternalLinkage);
-      // this will prompt GlobalDCE to remove
     }
   }
 
@@ -336,13 +323,18 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 
 } // namespace
 
+PassPluginLibraryInfo getPassPluginInfo() {
+  const auto callback = [](PassBuilder &PB) {
+    PB.registerOptimizerEarlyEPCallback(
+        [&](ModulePassManager &MPM, auto, auto) {
+          MPM.addPass(SanitizerPrecomputePass());
+          return true;
+        });
+  };
+
+  return {LLVM_PLUGIN_API_VERSION, "sanitizer-precompute", "1.0.0", callback};
+};
+
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
-  return {LLVM_PLUGIN_API_VERSION, "sanitizer_precompute", "1.0.0",
-          [](PassBuilder &PB) {
-            PB.registerOptimizerEarlyEPCallback([&](ModulePassManager &MPM,
-                                                    OptimizationLevel Level,
-                                                    ThinOrFullLTOPhase Phase) {
-              MPM.addPass(SanitizerPrecomputePass());
-            });
-          }};
+  return getPassPluginInfo();
 }

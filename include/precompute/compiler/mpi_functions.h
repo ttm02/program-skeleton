@@ -82,10 +82,18 @@ inline bool is_mpi_function(llvm::Function *f) {
 }
 
 inline bool is_mpi_call(llvm::CallBase *call) {
+  if (call->getCalledFunction() == NULL && !call->isIndirectCall()) {
+    return is_mpi_function(
+        llvm::dyn_cast<llvm::Function>(call->getCalledOperand()));
+  }
   return is_mpi_function(call->getCalledFunction());
 }
 
 bool is_mpi_initialized();
+
+inline bool is_mpi_global(llvm::GlobalVariable *global) {
+  return global->getName().starts_with("ompi_mpi_");
+}
 
 bool is_send_function(llvm::Function *f);
 
