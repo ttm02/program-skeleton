@@ -100,11 +100,7 @@ def create_boxplot(df, pdf, pdf_name):
     ax.set_xscale(FuncScale(ax, (forward, inverse)))
     ax.set_xticks(x_levels)
     ax.set_xticklabels(x_levels)
-
     ax.set_xlim(-1, 101)
-    # ax.set_xbound(0, 100)
-    # ax.autoscale(axis="x", enable=False)
-    # ax.margins(x=5, tight=False)
 
     ax.yaxis.set_label_position("right")
     ax.yaxis.tick_right()
@@ -123,9 +119,7 @@ def create_boxplot(df, pdf, pdf_name):
     ax.set_xlabel("Detection Percentage (in %)")
     ax.set_ylabel("Testcase\nNames" if fig_height < 2.63 else "Testcase Names")
 
-    ax.legend(
-        title="", bbox_to_anchor=(1.05, -0.025), loc="upper left", borderaxespad=0
-    )
+    ax.legend(title="", bbox_to_anchor=(1.05, -0.01), loc="upper left", borderaxespad=0)
 
     plt.tight_layout()
     pdf.savefig(fig)
@@ -134,28 +128,54 @@ def create_boxplot(df, pdf, pdf_name):
 
 def create_heat(df, pdf, pdf_name):
     df = df.copy()
-    fig, ax = plt.subplots(figsize=(33.3, 1.82))
+    fig, ax = plt.subplots(figsize=(6.9, 2.12))
 
+    bin_mapping = {
+        2: "2",
+        3: "3",
+        4: "4",
+        5: "5",
+        6: "6-7",
+        8: "8-11",
+        12: "12-15",
+        16: "16-23",
+        24: "24-35",
+        36: "36-59",
+        60: "60-96",
+    }
+    bin_keys = list(bin_mapping.keys()) + [np.inf]
+    bin_labels = list(bin_mapping.values())
+    df["threads_binned"] = pd.cut(
+        df["threads"],
+        bins=bin_keys,
+        labels=bin_labels,
+        include_lowest=True,
+        right=False,  # [x_i, x_{i+1})
+    )
     heatmap_data = df.pivot_table(
         index="mode_readable",
-        columns="threads",
+        columns="threads_binned",
         values="df_value_count",
-        aggfunc="first",
+        aggfunc="mean",
+        observed=True,
     )
+
+    annot = heatmap_data.copy()
+    annot = annot.map(
+        lambda x: f"{x:.1f}" if pd.notna(x) and x < 99.95 else f"{int(x)}"
+    )
+
     sns.heatmap(
-        heatmap_data, annot=True, fmt=".0f", cmap="YlOrRd", cbar=False
+        heatmap_data, annot=annot, fmt="", cmap="YlOrRd", cbar=False
     )  # cmap="viridis"
 
     tc_name = df["testcase"].iloc[0]
-    tc_case = (
-        "expecting at least one data race"
-        if pdf_name == "yes"
-        else "expecting no data races"
-    )
+    ax.set_title(f"{tc_name}:\nDetection Percentage (per thread group)")
 
-    ax.set_title(f"{tc_name}: Detection Percentage ({tc_case})")
     ax.set_xlabel("Thread Count")
     ax.set_ylabel("")
+
+    plt.xticks(rotation=90)
 
     plt.tight_layout()
     pdf.savefig(fig)
