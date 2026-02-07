@@ -66,18 +66,26 @@ def data_from_csv():
     return df
 
 
-def split_dataframe(df, chunk_size):
+def split_dataframe_internal(df, chunk_size):
     def df_chunk_filter(df, cn_list):
         return df[df["testcase"].isin(cn_list)]
 
     df_cn = []
-    for tc_name in sorted(df["testcase"].unique()):
+    for tc_name in sorted(df["testcase"].unique(), reverse=True):
         if len(df_cn) == chunk_size:
             yield df_chunk_filter(df, df_cn)
             df_cn = []
         df_cn.append(str(tc_name))
 
     yield df_chunk_filter(df, df_cn)
+
+
+def split_dataframe(df, chunk_size):
+    stack = []
+    for item in split_dataframe_internal(df, chunk_size):
+        stack.append(item)
+    while stack:
+        yield stack.pop()
 
 
 def create_boxplot(df, pdf, pdf_name):
