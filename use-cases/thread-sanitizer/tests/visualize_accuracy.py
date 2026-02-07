@@ -210,7 +210,7 @@ def get_plot(df, cat_name, pdf_name):
         create_boxplot(
             df[df["testcase"] == df["testcase"].iloc[0]], pdf, "to be ignored"
         )
-        chunk_size = 18 if pdf_name == "filtered" else 30
+        chunk_size = 13 if pdf_name == "filtered" else 30
         for df_chunk in split_dataframe(df, chunk_size):
             create_boxplot(df_chunk, pdf, cat_name)
         print(f"Saving {file_name}")
@@ -247,22 +247,25 @@ def get_df_tc_cat(cat):
 
 
 def focus_on_interesting_testcases(df):
+    df_focus = df.copy()
     # only show the interesting cases
-    df_filtered = df[
-        df.groupby("testcase")["df_value_count"].transform(lambda x: (x < 99.0).any())
+    df_filtered = df_focus[
+        df.groupby("testcase")["df_value_count"].transform(
+            lambda x: (1.0 < x).any() and (x < 99.0).any()
+        )
     ]
     return df_filtered
 
 
 def visualize_accuracy():
     df_no = get_df_tc_cat("no")
-    get_plot(df_no, "no", "all")
     df_no_filtred = focus_on_interesting_testcases(df_no)
+    get_plot(df_no, "no", "all")
     get_plot(df_no_filtred, "no", "filtered")
 
     df_yes = get_df_tc_cat("yes")
-    get_plot(df_yes, "yes", "all")
     df_yes_filtred = focus_on_interesting_testcases(df_yes)
+    get_plot(df_yes, "yes", "all")
     get_plot(df_yes_filtred, "yes", "filtered")
 
 
