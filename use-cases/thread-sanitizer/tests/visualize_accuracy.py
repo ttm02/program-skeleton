@@ -182,21 +182,22 @@ def create_heat(df, pdf, pdf_name):
     plt.close()
 
 
-def get_plot(df, pdf_name):
-    file_name = f"DRB_Accuracy_{pdf_name}_boxplot.pdf"
+def get_plot(df, cat_name, pdf_name):
+    file_name = f"DRB_Accuracy_{cat_name}_{pdf_name}_boxplot.pdf"
     with PdfPages(file_name) as pdf:
         # create dummy page as first page as it often renders not so nice
         create_boxplot(
             df[df["testcase"] == df["testcase"].iloc[0]], pdf, "to be ignored"
         )
-        for df_chunk in split_dataframe(df, 18):
-            create_boxplot(df_chunk, pdf, pdf_name)
+        chunk_size = 18 if pdf_name == "filtered" else 30
+        for df_chunk in split_dataframe(df, chunk_size):
+            create_boxplot(df_chunk, pdf, cat_name)
         print(f"Saving {file_name}")
 
-    file_name = f"DRB_Accuracy_{pdf_name}_heatmap.pdf"
+    file_name = f"DRB_Accuracy_{cat_name}_{pdf_name}_heatmap.pdf"
     with PdfPages(file_name) as pdf:
         for df_chunk in split_dataframe(df, 1):
-            create_heat(df_chunk, pdf, pdf_name)
+            create_heat(df_chunk, pdf, cat_name)
         print(f"Saving {file_name}")
 
 
@@ -218,26 +219,30 @@ def get_df_tc_cat(cat):
         .mul(100)
         .reset_index(name="df_value_count")
     )
-    # df_cat = df_cat[df_cat["found"] == cat]
-
-    # only show the interesting cases
-    df_cat = df_cat[
-        df_cat.groupby("testcase")["df_value_count"].transform(
-            lambda x: (x < 99.0).any()
-        )
-    ]
 
     # save to speed up later loads
     df_cat.to_csv(files_cat)
     return df_cat
 
 
+def focus_on_interesting_testcases(df):
+    # only show the interesting cases
+    df_filtered = df[
+        df.groupby("testcase")["df_value_count"].transform(lambda x: (x < 99.0).any())
+    ]
+    return df_filtered
+
+
 def visualize_accuracy():
     df_no = get_df_tc_cat("no")
-    get_plot(df_no, "no")
+    get_plot(df_no, "no", "all")
+    df_no_filtred = focus_on_interesting_testcases(df_no)
+    get_plot(df_no_filtred, "no", "filtered")
 
     df_yes = get_df_tc_cat("yes")
-    get_plot(df_yes, "yes")
+    get_plot(df_yes, "yes", "all")
+    df_yes_filtred = focus_on_interesting_testcases(df_yes)
+    get_plot(df_yes_filtred, "yes", "filtered")
 
 
 if __name__ == "__main__":

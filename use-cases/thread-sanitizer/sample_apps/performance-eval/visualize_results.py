@@ -91,6 +91,7 @@ def create_plot_problem_size(df, name, ax1, plt, y_offset):
     percentages = pivoted.div(pivoted["norm"], axis=0)
 
     # Annotate slowdown on plots
+    global mode_apply_list
     for s in percentages.index:
         for mode in mode_apply_list:
             time_val = df[
@@ -187,7 +188,7 @@ def get_plot_thread_number(df, name, ax2, plt, y_offset):
             )
 
 
-def get_plot(df, name, pdf_name, plotter):
+def save_plot(df, name, pdf_name, name_ext, plotter):
     fig, ax = plt.subplots(figsize=(6.5, 7))
 
     # Compute offset for label positions
@@ -195,15 +196,28 @@ def get_plot(df, name, pdf_name, plotter):
     y_offset = 0.1 * (y_max - y_min)
 
     plotter(df, name, ax, plt, y_offset)
-
     plt.tight_layout()
-    plt.savefig(f"{name}_{pdf_name}.pdf")
-    print(f"Saving {name}_{pdf_name}.pdf")
+
+    plt.savefig(f"{name}_{pdf_name}{name_ext}.pdf")
+    print(f"Saving {name}_{pdf_name}{name_ext}.pdf")
+
+
+def get_plot(df, name, pdf_name, plotter):
+    save_plot(df, name, pdf_name, "", plotter)
+
+    ### create better visibility what slicing or slicing + static analysis achieves
+    ### TSAN without mods has really very much overhead
+    global mode_apply_list
+    df = df[~df["mode"].str.contains("orig")]
+    if 0 < mode_apply_list.count("orig"):
+        mode_apply_list.remove("orig")
+
+    save_plot(df, name, pdf_name, "_without_orig_tsan", plotter)
 
 
 def create_plots(df, name):
-    get_plot(df, name, "problem_size", create_plot_problem_size)
     get_plot(df, name, "thread_count", get_plot_thread_number)
+    get_plot(df, name, "problem_size", create_plot_problem_size)
 
 
 def data_from_csv(name):
@@ -211,13 +225,6 @@ def data_from_csv(name):
     files = glob(DATAPATH + "/" + name + "/*.csv")
     df = pd.concat((pd.read_csv(f) for f in files), ignore_index=True)
     df["mode_readable"] = df["mode"].replace(mode_mapping)
-
-    ### create better visibility what slicing or slicing + static analysis achieves
-    ### TSAN without mods has really very much overhead
-    df = df[~df["mode"].str.contains("orig")]
-    if 0 < mode_apply_list.count("orig"):
-        mode_apply_list.remove("orig")
-
     return df
 
 
