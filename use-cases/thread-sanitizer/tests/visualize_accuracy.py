@@ -130,13 +130,13 @@ def create_boxplot(df, pdf, pdf_name):
     ax.legend(title="", bbox_to_anchor=(1.05, -0.01), loc="upper left", borderaxespad=0)
 
     plt.tight_layout()
-    pdf.savefig(fig)
+    pdf.savefig(fig, bbox_inches="tight", pad_inches=0.05)
     plt.close()
 
 
 def create_heat(df, pdf, pdf_name):
     df = df.copy()
-    fig, ax = plt.subplots(figsize=(6.9, 2.12))
+    fig, ax = plt.subplots(figsize=(6.9, 1.75))
 
     bin_mapping = {
         2: "2",
@@ -174,19 +174,32 @@ def create_heat(df, pdf, pdf_name):
     )
 
     sns.heatmap(
-        heatmap_data, annot=annot, fmt="", cmap="YlOrRd", cbar=False
-    )  # cmap="viridis"
+        heatmap_data,
+        fmt="",
+        annot=annot,
+        annot_kws={"va": "center", "ha": "center"},
+        cmap="YlOrRd",  # cmap="viridis"
+        cbar=False,
+    )
 
     tc_name = df["testcase"].iloc[0]
-    ax.set_title(f"{tc_name}:\nDetection Percentage (per thread group)")
 
+    ax.set_title(f"{tc_name}:")
     ax.set_xlabel("Thread Count")
     ax.set_ylabel("")
 
-    plt.xticks(rotation=90)
+    ax.xaxis.tick_top()
+    ax.xaxis.set_label_position("top")
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=30, ha="left")
+    ax.tick_params(axis="x", length=0)
+
+    ax.yaxis.tick_right()
+    ax.yaxis.set_label_position("right")
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
+    ax.tick_params(axis="y", right=False, labelright=True)
 
     plt.tight_layout()
-    pdf.savefig(fig)
+    pdf.savefig(fig, bbox_inches="tight", pad_inches=0.05)
     plt.close()
 
 
