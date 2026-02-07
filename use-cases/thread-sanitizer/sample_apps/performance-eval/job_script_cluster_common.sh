@@ -59,10 +59,10 @@ exec_test() {
         cd "$RUN_DIR" || exit 1
         cp "${EXEC_DIR}/${APPNAME_UPPER}_${MODE}.exe" ./
     else
+        cd "$TMPDIR" || exit 23
         RUN_DIR=${EXEC_DIR}
     fi
 
-    cd "$TMPDIR" || exit 23
     apptainer run \
         --mount "type=bind,source=${REAL_HOME},destination=${REAL_HOME}" \
         --mount "type=bind,source=${HPC_SCRATCH},destination=${HPC_SCRATCH}" \

@@ -45,6 +45,8 @@ pid_compile_orig=$!
 build_app "$APP_NAME" 'pass' true &
 pid_compile_pass=$!
 
+unpatch_datarace "$APP_NAME"
+
 wait $pid_compile_pass
 if [[ ! -x "./${APP_NAME}_pass.exe" ]]; then
   echo "build error"
@@ -53,13 +55,6 @@ fi
 
 wait $pid_compile_orig
 if [[ ! -x "./${APP_NAME}_orig.exe" ]]; then
-  echo "build error"
-  exit 1
-fi
-
-unpatch_datarace "$APP_NAME"
-
-if [[ ! -x "./${APP_NAME}_orig.exe" ]] || [[ ! -x "./${APP_NAME}_pass.exe" ]]; then
   echo "build error"
   exit 1
 fi
