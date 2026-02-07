@@ -1,4 +1,4 @@
-#include "tsan_precompute_cleanup.h"
+#include "tsan_slicing_cleanup.h"
 
 #include "precompute/compiler/openmp_runtime_functions.h"
 #include "precompute/compiler/precalculation_function_analysis.h"

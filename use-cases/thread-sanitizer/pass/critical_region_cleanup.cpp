@@ -3,7 +3,7 @@
 //
 
 #include "precompute/compiler/analysis_results.h"
-#include "tsan_precompute_cleanup.h"
+#include "tsan_slicing_cleanup.h"
 
 #include "llvm/ADT/StringSet.h"
 #include "llvm/IR/BasicBlock.h"

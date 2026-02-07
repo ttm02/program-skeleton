@@ -7,7 +7,7 @@ cd "${PRECOMPUTE_DIR}" || exit 11
 BUILD_NAME='build-perf-tests'
 echo "create new build directory"
 cmake -B $BUILD_NAME -S . -G 'Ninja' -DMPI_USE_CASE='OFF' >/dev/null 2>&1
-echo "building precompute pass"
+echo "building slicing pass"
 cmake --build $BUILD_NAME >/dev/null 2>&1
 
 BUILD_DIR="${PRECOMPUTE_DIR}/${BUILD_NAME}"

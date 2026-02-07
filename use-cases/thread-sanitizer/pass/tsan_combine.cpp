@@ -2,7 +2,7 @@
 // Created by Jan Braun on 29.10.25.
 //
 
-#include "tsan_precompute_cleanup.h"
+#include "tsan_slicing_cleanup.h"
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"

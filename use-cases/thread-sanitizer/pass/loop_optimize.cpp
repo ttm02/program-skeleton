@@ -2,7 +2,7 @@
 // Created by tim on 12.05.25.
 //
 
-#include "tsan_precompute_cleanup.h"
+#include "tsan_slicing_cleanup.h"
 
 #include "precompute/compiler/analysis_results.h"
 #include "precompute/compiler/openmp_runtime_functions.h"

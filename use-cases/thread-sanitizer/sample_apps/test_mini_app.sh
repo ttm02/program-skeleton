@@ -29,12 +29,12 @@ if [[ ! -x "./${APP_NAME}_orig.exe" ]]; then
 fi
 
 if "./${APP_NAME}_orig.exe" $TEST_INVOCATION_PARAMETER 2>&1 | grep -qF "$GREP_STRING"; then
-  echo "Original tsan detected race in original application"
+  echo "Original TSAN detected race in original application"
   exit 1
 fi
 
 if "./${APP_NAME}_pass.exe" $TEST_INVOCATION_PARAMETER 2>&1 | grep -qF "$GREP_STRING"; then
-  echo "Modified tsan detected race in original application"
+  echo "Modified TSAN detected race in original application"
   exit 1
 fi
 
@@ -65,12 +65,12 @@ if "./${APP_NAME}_orig.exe" $TEST_INVOCATION_PARAMETER 2>&1 | grep -qF "$GREP_ST
     echo "both versions found the injected datarace"
     exit 0
   else
-    echo "Original sanitizer found the injected data race but precomputed not"
+    echo "Original sanitizer found the injected data race but sliced not"
     exit 1
   fi
 else
   if "./${APP_NAME}_pass.exe" $TEST_INVOCATION_PARAMETER 2>&1 | grep -qF "$GREP_STRING"; then
-    echo "Original sanitizer did not find the injected data race but precomputed did"
+    echo "Original sanitizer did not find the injected data race but sliced did"
     exit 1
   else
     # unexpected, but if unmodified TSAN already could not find it

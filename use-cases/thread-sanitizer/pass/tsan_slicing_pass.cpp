@@ -1,5 +1,5 @@
 
-#include "tsan_precompute_cleanup.h"
+#include "tsan_slicing_cleanup.h"
 
 #include "precompute/compiler/Precompute_insertion.h"
 #include "precompute/compiler/analysis_results.h"
@@ -160,8 +160,8 @@ static void collectCalls(CallBase *call, DenseSet<Value *> &to_precompute,
       return;
     }
     if (is_tsan_cleanup_block(call->getParent())) {
-      // skip, the tsan cleanup part. no need to precompute, as it will only
-      // handle fatal exceptions
+      // skip, the tsan cleanup part. no need to precompute (slice),
+      // as it will only handle fatal exceptions
       return;
     }
   }
@@ -171,9 +171,9 @@ static void collectCalls(CallBase *call, DenseSet<Value *> &to_precompute,
   precompute_locations.insert(call);
 }
 
-static void collectPrecompute(Instruction &inst,
-                              DenseSet<Value *> &to_precompute,
-                              DenseSet<Instruction *> &precompute_locations) {
+static void
+collectForPrecompute(Instruction &inst, DenseSet<Value *> &to_precompute,
+                     DenseSet<Instruction *> &precompute_locations) {
   if (auto *call = dyn_cast<CallBase>(&inst)) {
     collectCalls(call, to_precompute, precompute_locations);
   } else {
@@ -181,7 +181,7 @@ static void collectPrecompute(Instruction &inst,
   }
 }
 
-static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
+static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
   PrecomputeFunctions::create_instance(M);
 
   auto *main_func = M.getFunction("main");
@@ -197,7 +197,7 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
 
     for (BasicBlock &bb : func)
       for (Instruction &inst : bb)
-        collectPrecompute(inst, to_precompute, precompute_locations);
+        collectForPrecompute(inst, to_precompute, precompute_locations);
   }
 
   errs() << "Statistics: locations: " << precompute_locations.size()
@@ -232,7 +232,6 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
 
   // create new function body
   auto *bb = BasicBlock::Create(M.getContext(), "entry", main_func);
-  // add call to precompute
   IRBuilder<> builder = IRBuilder<>(bb);
   // forward args of main
   std::vector<Value *> args;
@@ -247,8 +246,8 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
   std::vector<Function *> to_delete;
   for (Function &func : M) {
     if (precalcuation->is_func_part_of_precompute_phase(&func)) {
-      // the tsan calls are already part of precompute, no need to instrumente
-      // them again
+      // the TSAN calls are already part of precompute,
+      // no need to instrumente them again
       func.removeFnAttr(Attribute::SanitizeThread);
     } else if ((not func.isDeclaration()) && &func != main_func &&
                (not func.getName().starts_with("__tsan")) &&
@@ -269,11 +268,11 @@ static std::string run_precompute(Module &M, ModuleAnalysisManager &AM) {
 
 static cl::opt<bool>
     EnableStaticAnalysis("enable-static-analysis",
-                         cl::desc("Enable static analysis to help precompute"),
+                         cl::desc("Enable static analysis to help slicing"),
                          cl::init(false));
 
 namespace {
-struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
+struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.addRequired<TargetLibraryInfoWrapperPass>();
@@ -283,7 +282,7 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     AU.addRequired<ScalarEvolutionWrapperPass>();
   }
 
-  StringRef getPassName() const { return "sanitizer-precompute"; }
+  StringRef getPassName() const { return "tsan-slicing"; }
 
   // Pass starts here
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
@@ -304,7 +303,7 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 #ifndef NDEBUG
     auto num_undef = get_num_undefs(M);
 #endif
-    if (not run_optimization_passes(M, AM, run_precompute))
+    if (not run_optimization_passes(M, AM, perform_slicing))
       return PreservedAnalyses::all();
 #ifndef NDEBUG
     // at most: every undef value can be duplicated but this is probably
@@ -318,11 +317,11 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
     // static analysis after slicing
     if (EnableStaticAnalysis) {
       run_optimization_passes(M, AM, combine_tsan_calls, false);
-      // HPCCG does not detect data race when this runs before precompute
+      // HPCCG does not detect data race when this runs before slicing
       run_optimization_passes(M, AM, remove_all_single_thread_regions);
       // needs single threaded removal + needs analysis_results
       run_optimization_passes(M, AM, eliminate_only_in_critical);
-      // precomputation does not allow int2ptr casts
+      // precomputation (slicing) does not allow int2ptr casts
       run_optimization_passes(M, AM, optimize_loops);
     }
 
@@ -337,12 +336,10 @@ struct SanitizerPrecomputePass : public PassInfoMixin<SanitizerPrecomputePass> {
 } // namespace
 
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
-  return {LLVM_PLUGIN_API_VERSION, "sanitizer_precompute", "1.0.0",
-          [](PassBuilder &PB) {
-            PB.registerOptimizerEarlyEPCallback([&](ModulePassManager &MPM,
-                                                    OptimizationLevel Level,
-                                                    ThinOrFullLTOPhase Phase) {
-              MPM.addPass(SanitizerPrecomputePass());
-            });
-          }};
+  return {
+      LLVM_PLUGIN_API_VERSION, "tsan_slicing", "1.0.0", [](PassBuilder &PB) {
+        PB.registerOptimizerEarlyEPCallback(
+            [&](ModulePassManager &MPM, OptimizationLevel Level,
+                ThinOrFullLTOPhase Phase) { MPM.addPass(TSANSlicingPass()); });
+      }};
 }
