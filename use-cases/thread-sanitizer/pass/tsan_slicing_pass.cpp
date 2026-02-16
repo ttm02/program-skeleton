@@ -266,10 +266,24 @@ static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
   return "Successfully computed the precomputation";
 }
 
+static cl::opt<bool> DisableSlicing("disable-slicing",
+                                    cl::desc("Disable slicing"),
+                                    cl::init(false));
 static cl::opt<bool>
     EnableStaticAnalysis("enable-static-analysis",
                          cl::desc("Enable static analysis to help slicing"),
                          cl::init(false));
+enum stanMode { SINGLE, MERGE, LOOP, MAX_COUNT };
+static cl::list<stanMode> clStanModes(
+    "static-analysis-mode",
+    cl::desc("Configure combinations of static analysis passes"),
+    cl::CommaSeparated,
+    cl::values(clEnumValN(SINGLE, "single",
+                          "removal of possible single-threaded regions"),
+               clEnumValN(MERGE, "merge",
+                          "merge contigous memory regions into one TSAN call"),
+               clEnumValN(LOOP, "loop",
+                          "perform a kind of loop unrolling with TSAN calls")));
 
 namespace {
 struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
@@ -295,38 +309,65 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
     allow_function_prefixes_to_be_called_in_precompute({"__tsan_"});
     reset_analysis_results(M, AM);
 
-    // static analysis before slicing
-    if (EnableStaticAnalysis) {
-      run_optimization_passes(M, AM, combine_tsan_calls, false);
-      run_optimization_passes(M, AM, wrap_non_openmp_tsan_calls);
+    auto run_slicing = [&]() {
+#ifndef NDEBUG
+      auto num_undef = get_num_undefs(M);
+#endif
+      if (not run_optimization_passes(M, AM, perform_slicing))
+        return false;
+#ifndef NDEBUG
+      // at most: every undef value can be duplicated but this is probably
+      // insecure (e.g. if undef is used to calculate the tag) so we go with the
+      // stricter assertion that our pass should not use more undef values some
+      // undefs are actually duplicated in our test programm (some vector elems
+      // are undef)
+      double max_undef_factor = 1.0; // between 1.0 and 2.0
+      assert(get_num_undefs(M) <= num_undef * max_undef_factor);
+#endif
+      return true;
+    };
+
+    DenseSet<stanMode> stanEnabledModes;
+    if (EnableStaticAnalysis || not clStanModes.empty()) {
+      if (clStanModes.empty())
+        for (int i = 0; i < static_cast<int>(stanMode::MAX_COUNT); ++i)
+          stanEnabledModes.insert(static_cast<stanMode>(i));
+
+      for (auto clsm : clStanModes)
+        stanEnabledModes.insert(clsm);
     }
-#ifndef NDEBUG
-    auto num_undef = get_num_undefs(M);
-#endif
-    if (not run_optimization_passes(M, AM, perform_slicing))
-      return PreservedAnalyses::all();
-#ifndef NDEBUG
-    // at most: every undef value can be duplicated but this is probably
-    // insecure (e.g. if undef is used to calculate the tag) so we go with the
-    // stricter assertion that our pass should not use more undef values some
-    // undefs are actually duplicated in our test programm (some vector elems
-    // are undef)
-    double max_undef_factor = 1.0; // between 1.0 and 2.0
-    assert(get_num_undefs(M) <= num_undef * max_undef_factor);
-#endif
+
+    // static analysis before slicing
+    {
+      if (stanEnabledModes.contains(MERGE))
+        run_optimization_passes(M, AM, combine_tsan_calls, false);
+      if (stanEnabledModes.contains(SINGLE))
+        run_optimization_passes(M, AM, wrap_non_openmp_tsan_calls);
+    }
+
+    // slicing or no slicing?
+    if (not DisableSlicing)
+      if (not run_slicing())
+        return PreservedAnalyses::all();
+
     // static analysis after slicing
-    if (EnableStaticAnalysis) {
-      run_optimization_passes(M, AM, combine_tsan_calls, false);
-      // HPCCG does not detect data race when this runs before slicing
-      run_optimization_passes(M, AM, remove_all_single_thread_regions);
-      // needs single threaded removal + needs analysis_results
-      run_optimization_passes(M, AM, eliminate_only_in_critical);
+    {
+      if (stanEnabledModes.contains(MERGE))
+        run_optimization_passes(M, AM, combine_tsan_calls, false);
+      if (stanEnabledModes.contains(SINGLE)) {
+        // HPCCG does not detect data race when this runs before slicing
+        run_optimization_passes(M, AM, remove_all_single_thread_regions);
+        // needs single threaded removal + needs analysis_results
+        run_optimization_passes(M, AM, eliminate_only_in_critical);
+      }
       // precomputation (slicing) does not allow int2ptr casts
-      run_optimization_passes(M, AM, optimize_loops);
+      if (stanEnabledModes.contains(LOOP))
+        run_optimization_passes(M, AM, optimize_loops);
     }
 
     // try to eliminate even more things
-    MPM.run(M, AM);
+    if (not DisableSlicing)
+      MPM.run(M, AM);
 
     delete analysis_results;
     return PreservedAnalyses::none();

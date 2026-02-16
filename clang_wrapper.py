@@ -39,6 +39,7 @@ use_static_analysis_env = os.environ.get("USE_STATIC_ANALYSIS", "0")
 use_static_analysis = (
     use_static_analysis_env == "1" or use_static_analysis_env.lower() == "true"
 )
+pass_plugin_opts = []
 
 
 if debug_wrapper:
@@ -62,6 +63,8 @@ has_opt_lvl = False
 has_src_file = False
 has_multiple_src_file = False
 
+arg_remove_list = []
+
 for arg in args:
     if arg == "-c":
         is_to_obj = True
@@ -81,7 +84,13 @@ for arg in args:
         has_src_file = True
     elif arg == "--enable-static-analysis":
         use_static_analysis = True
-        args.remove(arg)
+        arg_remove_list.append(arg)
+    elif arg == "--disable-slicing" or arg.startswith("--static-analysis-mode="):
+        arg_remove_list.append(arg)
+        pass_plugin_opts.append(arg)
+
+for arg in arg_remove_list:
+    args.remove(arg)
 
 # check if necessary flags are given
 if use_compiler_pass and (
@@ -98,12 +107,27 @@ if use_compiler_pass and "COMPILER_PASS" not in os.environ:
     print("The COMPILER_PASS environment variable is not set")
     sys.exit(1)
 
-pass_args = ["-fpass-plugin=" + os.environ["COMPILER_PASS"], "-lprecompute"]
-if use_static_analysis:
+pass_plugin_arg = False
+
+
+def load_pass_args():
+    global pass_plugin_arg, pass_args
+    if pass_plugin_arg:
+        return
     # arguments to opt pass need old `-load` syntax for some reason
     # https://github.com/llvm/llvm-project/issues/56137
     pass_args += ["-Xclang", "-load", "-Xclang", os.environ["COMPILER_PASS"]]
-    pass_args += ["-mllvm", "-enable-static-analysis"]
+    pass_plugin_arg = True
+
+
+pass_args = ["-fpass-plugin=" + os.environ["COMPILER_PASS"], "-lprecompute"]
+if use_static_analysis:
+    load_pass_args()
+    pass_args += ["-mllvm", "--enable-static-analysis"]
+
+for opt in pass_plugin_opts:
+    load_pass_args()
+    pass_args += ["-mllvm", opt]
 
 
 def run_command(cmd):

@@ -2,11 +2,11 @@
 
 #SBATCH --ntasks 1
 #SBATCH --exclusive
-#SBATCH --array 1-10
+#SBATCH --array 0-14
 #SBATCH --mem-per-cpu=128
 #SBATCH -o /dev/null
 #SBATCH -e /dev/null
-#SBATCH --time 00:30:00
+#SBATCH --time 00:15:00
 
 usage() {
   echo "$0 <THREAD COUNT>"
@@ -57,6 +57,7 @@ else
   CONTAINER_IMAGE_PATH="${HOME}/myCont/precompute-devshell"
 
   export TMPDIR="/dev/shm"
+  TMPDIR=$(mktemp -d --suffix='.drb-testing')
   export APPTAINER_TMPDIR="$TMPDIR"
 
   export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
@@ -72,4 +73,7 @@ else
     "${SCRIPT_DIR}/cluster_run_wrapper.sh" "${SCRIPT_DIR}/compare_performance.sh"
 
   rm -fr "${TMPDIR}"
+  find /dev/shm -name "__KMP_REGISTERED_LIB_*" -user "$USER" -amin +1 -mmin +1 -delete
 fi
+
+exit 0

@@ -77,10 +77,30 @@ run_binary() {
   fi
 }
 
+run_testcase_on_cluster() {
+  if [ "$MY_STAN_PASS_MODE" = "orig" ]; then
+    "${SCRIPT_DIR}/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" false >/dev/null 2>&1
+    run_binary 'orig'
+    save_time_to_file "$TEST_CASE" 'orig'
+  else
+    OUTPUT_SUFFIX="$MY_STAN_PASS_MODE"
+    export OUTPUT_SUFFIX
+    "${SCRIPT_DIR}/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" true >/dev/null 2>&1
+    run_binary "$MY_STAN_PASS_MODE"
+    save_time_to_file "$TEST_CASE" "$MY_STAN_PASS_MODE"
+  fi
+
+}
+
 run_testcase() {
   TEST_CASE="$1"
 
   if [[ "$TEST_CASE" == *.c ]] || [[ "$TEST_CASE" == *.cpp ]] || [[ "$TEST_CASE" == *.f ]]; then
+    if [ -n "$MY_STAN_PASS_MODE" ]; then
+      run_testcase_on_cluster
+      return
+    fi
+
     "${SCRIPT_DIR}/drb_compile.sh" "$BINARY_DIR" "$TEST_CASE" false >/dev/null 2>&1 &
     pid_compile_orig=$!
 

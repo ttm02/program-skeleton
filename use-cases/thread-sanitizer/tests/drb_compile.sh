@@ -55,6 +55,10 @@ if [ "$USE_STATIC_ANALYSIS" = 'true' ]; then
     CFLAGS="$CFLAGS --enable-static-analysis"
 fi
 
+if [ -n "$MY_STAN_PASS_MODE" ]; then
+    CFLAGS="$CFLAGS $MY_STAN_PASS_MODE_ARGS"
+fi
+
 rm -f ./a.out_"${OUTPUT_SUFFIX}"
 compile "$TEST_CASE" "$OUTPUT_SUFFIX"
 

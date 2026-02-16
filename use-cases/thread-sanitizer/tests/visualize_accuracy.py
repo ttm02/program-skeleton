@@ -30,15 +30,45 @@ def main():
 
 
 colors = [
-    "#AA0000",  # "TSAN"
-    "#008800",  # "TSAN + slicing"
-    "#0000AA",  # "TSAN + slicing + static analysis"
+    "#FF0000",
+    "#00FF00",
+    "#0000FF",
+    "#FFFF00",
+    "#00FFFF",
+    "#FF00FF",
+    "#FFA500",
+    "#800080",
+    "#008080",
+    "#FF69B4",
+    "#00BFFF",
+    "#7FFF00",
+    "#FFD700",
+    "#FF7F50",
+    "#BA55D3",
+]
+
+mode_list = [
+    "loop",
+    "merge",
+    "merge+loop",
+    "single",
+    "single+merge",
+    "single+merge+loop",
+    "slicing",
+    "slicing+loop",
+    "slicing+merge",
+    "slicing+merge+loop",
+    "slicing+single",
+    "slicing+single+merge",
+    "slicing+single+merge+loop",
 ]
 mode_mapping = {
     "orig": "TSAN",
-    "pass": "TSAN + slicing",
-    "stan": "TSAN + slicing + static analysis",
+    "passthrough": "TSAN (pass, but all disabled)",
 }
+for ml in mode_list:
+    mode_mapping[ml] = "TSAN + " + ml.replace("+", " + ")
+
 mode_order = list(mode_mapping.values())
 mode_to_color = dict(zip(mode_mapping.keys(), colors))
 mode_to_color_plot = dict(zip(mode_order, colors))
@@ -90,8 +120,8 @@ def split_dataframe(df, chunk_size):
 
 def create_boxplot(df, pdf, pdf_name):
     df_tc_count = df["testcase"].nunique()
-    fig_factor = max(1 - df_tc_count * 0.04, 0)
-    fig_height = df_tc_count * (0.32 + fig_factor * 0.06) + (1.0 + fig_factor * 0.2)
+    fig_factor = max(1 - df_tc_count * 0.05, 0)
+    fig_height = df_tc_count * (1.11 + fig_factor * 0.04) + (0.03 + fig_factor * 0.05)
     fig, ax = plt.subplots(figsize=(7.6, fig_height))
 
     x_ticks = np.arange(0, 100 + 1, 10)
@@ -129,6 +159,13 @@ def create_boxplot(df, pdf, pdf_name):
 
     ax.legend(title="", bbox_to_anchor=(1.05, -0.01), loc="upper left", borderaxespad=0)
 
+    if df_tc_count == 1:
+        handles, labels = ax.get_legend_handles_labels()
+        fig = plt.figure(figsize=(4, 2))
+        fig.legend(handles, labels, loc="center")
+    else:
+        ax.legend_.remove()
+
     plt.tight_layout()
     pdf.savefig(fig, bbox_inches="tight", pad_inches=0.05)
     plt.close()
@@ -136,7 +173,7 @@ def create_boxplot(df, pdf, pdf_name):
 
 def create_heat(df, pdf, pdf_name):
     df = df.copy()
-    fig, ax = plt.subplots(figsize=(6.9, 1.75))
+    fig, ax = plt.subplots(figsize=(7.3, 4.0))
 
     bin_mapping = {
         2: "2",
@@ -178,7 +215,7 @@ def create_heat(df, pdf, pdf_name):
         fmt="",
         annot=annot,
         annot_kws={"va": "center", "ha": "center"},
-        cmap="YlOrRd",  # cmap="viridis"
+        cmap="viridis",  # cmap="RdYlGn"
         cbar=False,
     )
 
@@ -190,13 +227,23 @@ def create_heat(df, pdf, pdf_name):
 
     ax.xaxis.tick_top()
     ax.xaxis.set_label_position("top")
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=30, ha="left")
     ax.tick_params(axis="x", length=0)
+    for label in ax.get_xticklabels():
+        if len(label.get_text()) > 3:
+            label.set_rotation(25)
+            label.set_ha("left")
+            label.set_rotation_mode("anchor")
 
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")
-    ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
     ax.tick_params(axis="y", right=False, labelright=True)
+    ax.set_yticklabels(
+        ax.get_yticklabels(),
+        rotation=0,
+        rotation_mode="anchor",
+        # va="bottom",
+        ha="left",
+    )
 
     plt.tight_layout()
     pdf.savefig(fig, bbox_inches="tight", pad_inches=0.05)
