@@ -51,9 +51,14 @@ build_app() {
 
   TARGET_BIN=$(realpath "${PWD}/${APP_NAME}_${BUILD_MODE}.exe")
 
-  if [ "$BUILD_MODE" != 'norm' ]; then
+  if [ "$BUILD_MODE" != 'vanilla' ]; then
     # for testing we need this
     export SANITIZE_FLAG="-fsanitize=thread"
+  fi
+
+  # TODO enable/disable compile passes/modes
+  if [ -n "$MY_STAN_PASS_MODE" ]; then
+    SANITIZE_FLAG="$SANITIZE_FLAG $MY_STAN_PASS_MODE_ARGS"
   fi
 
   # clean up any previous build

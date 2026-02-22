@@ -23,23 +23,76 @@ def main():
     visualize_lulesh()
 
 
-colors = [
-    "#DE3210",  # "vanilla"
-    "#AA4466",  # "TSAN"
-    "#BB9933",  # "TSAN + slicing"
-    "#2277CD",  # "TSAN + slicing + static analysis"
+colors_list = [
+    "#ff0000",
+    "#800080",
+    "#0000ff",
+    "#ff00ff",
+    "#008080",
+    "#ba55d3",
+    "#ff7f50",
+    "#ff69b4",
+    "#ffa500",
+    "#d3ba55",
+    "#ffd700",
+    "#00ff00",
+    "#7fff00",
+    "#00bfff",
+    "#ffff00",
+    "#00ffff",
+]
+
+
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip("#")
+    return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+
+
+def rgb_to_hex(rgb):
+    return "#{:02x}{:02x}{:02x}".format(*rgb)
+
+
+def rgb_to_hsv(color):
+    r, g, b = [x / 255 for x in color]
+    return colorsys.rgb_to_hsv(r, g, b)
+
+
+colors_rgb = [hex_to_rgb(c) for c in colors_list]
+colors_sorted = sorted(colors_rgb, key=lambda c: c[0] + 9.81 * c[1] + 3.14 * c[2])
+colors_hex = [rgb_to_hex(c) for c in colors_sorted]
+# colors = colors_hex
+# print(colors)
+colors = colors_list
+
+
+mode_list = [
+    "loop",
+    "merge",
+    "merge+loop",
+    "single",
+    "single+merge",
+    "single+merge+loop",
+    "slicing",
+    "slicing+loop",
+    "slicing+merge",
+    "slicing+merge+loop",
+    "slicing+single",
+    "slicing+single+merge",
+    "slicing+single+merge+loop",
 ]
 mode_mapping = {
-    "norm": "vanilla",
+    "vanilla": "vanilla",
     "orig": "TSAN",
-    "pass": "TSAN + slicing",
-    "stan": "TSAN + slicing + static analysis",
+    "passthrough": "TSAN (pass, but all disabled)",
 }
+for ml in mode_list:
+    mode_mapping[ml] = "TSAN + " + ml.replace("+", " + ")
+
 mode_order = list(mode_mapping.values())
 mode_to_color = dict(zip(mode_mapping.keys(), colors))
 mode_to_color_plot = dict(zip(mode_order, colors))
 mode_apply_list = list(mode_mapping.keys())
-mode_apply_list.remove("norm")
+mode_apply_list.remove("vanilla")
 
 
 # get largest size there all modes are present
@@ -88,7 +141,7 @@ def create_plot_problem_size(df, name, ax1, plt, y_offset):
 
     mean_times = df.groupby(["size", "mode"])["time"].mean().reset_index()
     pivoted = mean_times.pivot(index="size", columns="mode", values="time")
-    percentages = pivoted.div(pivoted["norm"], axis=0)
+    percentages = pivoted.div(pivoted["vanilla"], axis=0)
 
     # Annotate slowdown on plots
     global mode_apply_list
@@ -158,7 +211,7 @@ def get_plot_thread_number(df, name, ax2, plt, y_offset):
 
     mean_times = df.groupby(["threads", "mode"])["time"].mean().reset_index()
     pivoted = mean_times.pivot(index="threads", columns="mode", values="time")
-    percentages = pivoted.div(pivoted["norm"], axis=0)
+    percentages = pivoted.div(pivoted["vanilla"], axis=0)
 
     # Annotate slowdown on plots
     for thread in percentages.index:

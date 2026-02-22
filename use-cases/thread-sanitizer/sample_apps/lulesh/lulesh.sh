@@ -49,9 +49,13 @@ build_app() {
   BUILD_DIR="${APP_DIR}/build_${BUILD_MODE}"
   TARGET_BIN=$(realpath "${PWD}/${APP_NAME}_${BUILD_MODE}.exe")
 
-  if [ "$BUILD_MODE" != 'norm' ]; then
+  if [ "$BUILD_MODE" != 'vanilla' ]; then
     # for testing we need this
     APP_CXX_FLAGS="$APP_CXX_FLAGS -fsanitize=thread"
+
+    if [ -n "$MY_STAN_PASS_MODE" ]; then
+      APP_CXX_FLAGS="$APP_CXX_FLAGS $MY_STAN_PASS_MODE_ARGS"
+    fi
   fi
 
   # clean up any previous build

@@ -35,33 +35,45 @@ init_app() {
 
   echo "building $APP_NAME"
 
-  build_app "$APP_NAME" 'norm' false &>/dev/null
-  pid_compile_norm=$!
-  build_app "$APP_NAME" 'orig' false &>/dev/null
-  pid_compile_orig=$!
-  build_app "$APP_NAME" 'pass' true &>/dev/null
-  pid_compile_pass=$!
-  export USE_STATIC_ANALYSIS=true
-  build_app "$APP_NAME" 'stan' true &>/dev/null
-  pid_compile_stan=$!
-  unset USE_STATIC_ANALYSIS
+  num_modes=14
+  build_array=()
 
-  wait $pid_compile_norm
-  wait $pid_compile_orig
-  wait $pid_compile_pass
-  wait $pid_compile_stan
+  build_app "$APP_NAME" 'vanilla' false >/dev/null 2>&1 &
+  pid_compile_vanilla=$!
 
-  if [[ ! -x "./${APP_NAME}_orig.exe" ]] || [[ ! -x "./${APP_NAME}_pass.exe" ]] || [[ ! -x "./${APP_NAME}_stan.exe" ]]; then
-    echo "build error in $APP_NAME"
-    exit 32
+  build_app "$APP_NAME" 'orig' false >/dev/null 2>&1 &
+  build_pid=$!
+  build_array+=("$build_pid")
+
+  for i in $(seq 1 $num_modes); do
+    SLURM_ARRAY_TASK_ID=$i
+    source "${SCRIPT_DIR}/../../tests/static_analysis_mode.sh"
+    build_app "$APP_NAME" "${MY_STAN_PASS_MODE}" true >/dev/null 2>&1 &
+    build_pid=$!
+    build_array+=("$build_pid")
+  done
+
+  wait $pid_compile_vanilla
+  if [[ ! -x "./${APP_NAME}_vanilla.exe" ]]; then
+    echo "build error in ${APP_NAME}_vanilla.exe"
+    exit 31
   fi
+
+  for i in $(seq 0 $num_modes); do
+    wait "${build_array["$i"]}"
+    SLURM_ARRAY_TASK_ID=$i
+    source "${SCRIPT_DIR}/../../tests/static_analysis_mode.sh"
+    if [[ ! -x "./${APP_NAME}_${MY_STAN_PASS_MODE}.exe" ]]; then
+      echo "build error in ${APP_NAME}_${MY_STAN_PASS_MODE}.exe"
+      exit 32
+    fi
+  done
 
   echo "successfully build $APP_NAME"
 }
 
 init_app 'lulesh'
 init_app 'hpccg'
-init_app 'tealeaf'
 
 echo "setup for all sample apps completed"
 echo "$WORK_DIR"

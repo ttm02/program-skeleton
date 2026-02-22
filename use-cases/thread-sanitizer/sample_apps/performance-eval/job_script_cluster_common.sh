@@ -12,21 +12,16 @@ source "${SETUP_ENV_FILE}"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OMP_PLACES=cores
 
-MODE_COUNT='4'
-MODE_NUM=$((SLURM_ARRAY_TASK_ID % MODE_COUNT))
-PARAM_LINE=$((SLURM_ARRAY_TASK_ID / MODE_COUNT + 1))
-
 # get config parameter
 PARAMETER_FILE="${SCRIPT_DIR}/parameters_${APPNAME_LOWER}.txt"
-APP_PARAMS=$(sed -n "${PARAM_LINE}p" "$PARAMETER_FILE")
+APP_PARAMS=$(sed -n "${APP_PARAM_LINE}p" "$PARAMETER_FILE")
 
-case "$MODE_NUM" in
-0) MODE='orig' ;; # TSAN
-1) MODE='pass' ;; # TSAN + slicing
-2) MODE='stan' ;; # TSAN + slicing + static analysis
-3) MODE='norm' ;; # without
-*) exit 1 ;;
-esac
+if [ "$SLURM_ARRAY_TASK_ID" = "15" ]; then
+    MODE="vanilla"
+else
+    source "${SCRIPT_DIR}/../../tests/static_analysis_mode.sh"
+    MODE="$MY_STAN_PASS_MODE"
+fi
 
 APP_LOG_NAME="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 APP_PARAMS_ESCAPED=$(echo "$APP_PARAMS" | tr ' ' '_' | tr '-' '_' | tr ',' '_')
