@@ -23,46 +23,24 @@ def main():
     visualize_lulesh()
 
 
-colors_list = [
+colors = [
     "#ff0000",
-    "#800080",
-    "#0000ff",
     "#ff00ff",
-    "#008080",
-    "#ba55d3",
     "#ff7f50",
     "#ff69b4",
     "#ffa500",
-    "#d3ba55",
     "#ffd700",
-    "#00ff00",
-    "#7fff00",
-    "#00bfff",
     "#ffff00",
+    "#00bfff",
+    "#0000ff",
+    "#00ff00",
     "#00ffff",
+    "#7fff00",
+    "#008080",
+    "#800080",
+    "#ba55d3",
+    "#d3ba55",
 ]
-
-
-def hex_to_rgb(hex_color):
-    hex_color = hex_color.lstrip("#")
-    return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
-
-
-def rgb_to_hex(rgb):
-    return "#{:02x}{:02x}{:02x}".format(*rgb)
-
-
-def rgb_to_hsv(color):
-    r, g, b = [x / 255 for x in color]
-    return colorsys.rgb_to_hsv(r, g, b)
-
-
-colors_rgb = [hex_to_rgb(c) for c in colors_list]
-colors_sorted = sorted(colors_rgb, key=lambda c: c[0] + 9.81 * c[1] + 3.14 * c[2])
-colors_hex = [rgb_to_hex(c) for c in colors_sorted]
-# colors = colors_hex
-# print(colors)
-colors = colors_list
 
 
 mode_list = [
@@ -89,8 +67,10 @@ for ml in mode_list:
     mode_mapping[ml] = "TSAN + " + ml.replace("+", " + ")
 
 mode_order = list(mode_mapping.values())
+mode_order_all = mode_order.copy()
 mode_to_color = dict(zip(mode_mapping.keys(), colors))
 mode_to_color_plot = dict(zip(mode_order, colors))
+mode_to_color_plot_all = mode_to_color_plot.copy()
 mode_apply_list_all = list(mode_mapping.keys())
 
 
@@ -267,11 +247,12 @@ def get_plot(df, name, pdf_name, plotter):
     ### create better visibility what slicing or static analysis achieves
     ### TSAN without slicing has really very much overhead
 
-    global mode_to_color_plot, mode_order
-    mode_to_color_plot_all = mode_to_color_plot.copy()
-    mode_order_all = mode_order.copy()
+    def reset_lists():
+        global mode_to_color_plot, mode_order
+        mode_to_color_plot = mode_to_color_plot_all.copy()
+        mode_order = mode_order_all.copy()
 
-    def reset_mode_lists(mal_list):
+    def set_mode_lists(mal_list):
         global mode_to_color_plot, mode_order
         mode_to_color_plot = {}
         mode_order = []
@@ -280,10 +261,11 @@ def get_plot(df, name, pdf_name, plotter):
             mode_to_color_plot[vra] = mode_to_color_plot_all[vra]
             mode_order.append(vra)
 
+    # show only slow methods
     mal_with_slicing = mode_apply_list_all.copy()
     mal_with_slicing[:] = [s for s in mal_with_slicing if s.startswith("slicing")]
     mal_with_slicing.insert(0, "vanilla")
-    reset_mode_lists(mal_with_slicing)
+    set_mode_lists(mal_with_slicing)
     df_1 = df[df["mode"].str.contains("slicing")]
     df_2 = df[df["mode"] == "vanilla"]
     df_with_slicing = pd.concat((df_1, df_2), ignore_index=True)
@@ -291,17 +273,49 @@ def get_plot(df, name, pdf_name, plotter):
         df_with_slicing, name, pdf_name, "_without_orig_tsan", plotter, mal_with_slicing
     )
 
+    # show only fast methods
     mal_no_slicing = mode_apply_list_all.copy()
     mal_no_slicing.remove("vanilla")
     mal_no_slicing[:] = [s for s in mal_no_slicing if not s.startswith("slicing")]
-    reset_mode_lists(mal_no_slicing)
+    set_mode_lists(mal_no_slicing)
     df_no_slicing = df[~df["mode"].str.contains("slicing")]
     save_plot(
         df_no_slicing, name, pdf_name, "_without_slicing", plotter, mal_no_slicing
     )
 
-    mode_to_color_plot = mode_to_color_plot_all
-    mode_order = mode_order_all
+    reset_lists()
+
+    # compare static analysis with TSAN and slicing
+    global mode_mapping, mode_to_color_plot
+    tsan_stan = "single+merge+loop"
+    tsan_stan_text = "TSAN + static analysis"
+    tsan_stan_old_text = mode_mapping[tsan_stan]
+    slicing_stan = "slicing+" + tsan_stan
+    slicing_stan_text = "TSAN + slicing + static analysis"
+    slicing_stan_old_text = mode_mapping[slicing_stan]
+    mal_plus_analysis = [
+        "vanilla",
+        "orig",
+        tsan_stan,
+        "slicing",
+        slicing_stan,
+    ]
+    mode_mapping[tsan_stan] = tsan_stan_text
+    mode_to_color_plot[tsan_stan_text] = mode_to_color_plot[tsan_stan_old_text]
+    mode_to_color_plot_all[tsan_stan_text] = mode_to_color_plot[tsan_stan_text]
+    mode_mapping[slicing_stan] = slicing_stan_text
+    mode_to_color_plot[slicing_stan_text] = mode_to_color_plot[slicing_stan_old_text]
+    mode_to_color_plot_all[slicing_stan_text] = mode_to_color_plot[slicing_stan_text]
+    set_mode_lists(mal_plus_analysis)
+    df_no_slicing = df[df["mode"].isin(mal_plus_analysis)]
+    df_no_slicing.loc[
+        df_no_slicing["mode_readable"] == slicing_stan_old_text, "mode_readable"
+    ] = slicing_stan_text
+    save_plot(
+        df_no_slicing, name, pdf_name, "_plus_analysis", plotter, mal_plus_analysis
+    )
+
+    reset_lists()
 
 
 def create_plots(df, name):
