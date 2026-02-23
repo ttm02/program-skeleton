@@ -91,8 +91,7 @@ for ml in mode_list:
 mode_order = list(mode_mapping.values())
 mode_to_color = dict(zip(mode_mapping.keys(), colors))
 mode_to_color_plot = dict(zip(mode_order, colors))
-mode_apply_list = list(mode_mapping.keys())
-mode_apply_list.remove("vanilla")
+mode_apply_list_all = list(mode_mapping.keys())
 
 
 # get largest size there all modes are present
@@ -122,7 +121,7 @@ def get_largest_value_for_group(df, col_name):
     return df[col_name].max()
 
 
-def create_plot_problem_size(df, name, ax1, plt, y_offset):
+def create_plot_problem_size(df, name, ax1, plt, y_offset, mode_apply_list):
     max_threads = get_largest_value_for_group(df, "threads")
     sns.lineplot(
         data=df[df["threads"] == max_threads],
@@ -144,9 +143,11 @@ def create_plot_problem_size(df, name, ax1, plt, y_offset):
     percentages = pivoted.div(pivoted["vanilla"], axis=0)
 
     # Annotate slowdown on plots
-    global mode_apply_list
     for s in percentages.index:
         for mode in mode_apply_list:
+            if mode == "vanilla":
+                continue
+
             time_val = df[
                 (df["threads"] == max_threads)
                 & (df["size"] == s)
@@ -174,7 +175,7 @@ def create_plot_problem_size(df, name, ax1, plt, y_offset):
             )
 
 
-def get_plot_thread_number(df, name, ax2, plt, y_offset):
+def get_plot_thread_number(df, name, ax2, plt, y_offset, mode_apply_list):
     t_show = [0]
     t_show += [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96]
     t_show += [100]
@@ -216,6 +217,9 @@ def get_plot_thread_number(df, name, ax2, plt, y_offset):
     # Annotate slowdown on plots
     for thread in percentages.index:
         for mode in mode_apply_list:
+            if mode == "vanilla":
+                continue
+
             time_val = df[
                 (df["size"] == max_size)
                 & (df["threads"] == thread)
@@ -241,14 +245,14 @@ def get_plot_thread_number(df, name, ax2, plt, y_offset):
             )
 
 
-def save_plot(df, name, pdf_name, name_ext, plotter):
+def save_plot(df, name, pdf_name, name_ext, plotter, mode_apply_list):
     fig, ax = plt.subplots(figsize=(6.5, 7))
 
     # Compute offset for label positions
     y_min, y_max = ax.get_ylim()
     y_offset = 0.1 * (y_max - y_min)
 
-    plotter(df, name, ax, plt, y_offset)
+    plotter(df, name, ax, plt, y_offset, mode_apply_list)
     plt.tight_layout()
 
     plt.savefig(f"{name}_{pdf_name}{name_ext}.pdf")
@@ -256,16 +260,46 @@ def save_plot(df, name, pdf_name, name_ext, plotter):
 
 
 def get_plot(df, name, pdf_name, plotter):
-    save_plot(df, name, pdf_name, "", plotter)
+    save_plot(df, name, pdf_name, "", plotter, mode_apply_list_all)
 
-    ### create better visibility what slicing or slicing + static analysis achieves
-    ### TSAN without mods has really very much overhead
-    global mode_apply_list
-    df = df[~df["mode"].str.contains("orig")]
-    if 0 < mode_apply_list.count("orig"):
-        mode_apply_list.remove("orig")
+    ### create better visibility what slicing or static analysis achieves
+    ### TSAN without slicing has really very much overhead
 
-    save_plot(df, name, pdf_name, "_without_orig_tsan", plotter)
+    global mode_to_color_plot, mode_order
+    mode_to_color_plot_all = mode_to_color_plot.copy()
+    mode_order_all = mode_order.copy()
+
+    def reset_mode_lists(mal_list):
+        global mode_to_color_plot, mode_order
+        mode_to_color_plot = {}
+        mode_order = []
+        for v in mal_list:
+            vra = mode_mapping[v]
+            mode_to_color_plot[vra] = mode_to_color_plot_all[vra]
+            mode_order.append(vra)
+
+    mal_with_slicing = mode_apply_list_all.copy()
+    mal_with_slicing[:] = [s for s in mal_with_slicing if s.startswith("slicing")]
+    mal_with_slicing.insert(0, "vanilla")
+    reset_mode_lists(mal_with_slicing)
+    df_1 = df[df["mode"].str.contains("slicing")]
+    df_2 = df[df["mode"] == "vanilla"]
+    df_with_slicing = pd.concat((df_1, df_2), ignore_index=True)
+    save_plot(
+        df_with_slicing, name, pdf_name, "_without_orig_tsan", plotter, mal_with_slicing
+    )
+
+    mal_no_slicing = mode_apply_list_all.copy()
+    mal_no_slicing.remove("vanilla")
+    mal_no_slicing[:] = [s for s in mal_no_slicing if not s.startswith("slicing")]
+    reset_mode_lists(mal_no_slicing)
+    df_no_slicing = df[~df["mode"].str.contains("slicing")]
+    save_plot(
+        df_no_slicing, name, pdf_name, "_without_slicing", plotter, mal_no_slicing
+    )
+
+    mode_to_color_plot = mode_to_color_plot_all
+    mode_order = mode_order_all
 
 
 def create_plots(df, name):
