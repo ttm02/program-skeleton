@@ -121,7 +121,46 @@ def get_largest_value_for_group(df, col_name):
     return df[col_name].max()
 
 
-def create_plot_problem_size(df, name, ax1, plt, y_offset, mode_apply_list):
+def annotate_overhead_factor(
+    df,
+    ax,
+    col,
+    other_col,
+    max_other_col,
+    mode_apply_list,
+    get_format_slowdown,
+    get_va,
+    get_offset,
+):
+    mean_times = df.groupby([col, "mode"])["time"].mean().reset_index()
+    pivoted = mean_times.pivot(index=col, columns="mode", values="time")
+    percentages = pivoted.div(pivoted["vanilla"], axis=0)
+
+    # Annotate slowdown on plots
+    for i in percentages.index:
+        for mode in mode_apply_list:
+            if mode == "vanilla":
+                continue
+
+            time_val = df[
+                (df[other_col] == max_other_col) & (df[col] == i) & (df["mode"] == mode)
+            ]["time"].median()
+
+            slowdown = percentages.loc[i, mode]
+            color = mode_to_color[mode]
+
+            ax.text(
+                i,
+                time_val + get_offset(mode),
+                get_format_slowdown(slowdown),
+                ha="center",
+                va=get_va(mode),
+                fontsize=8,
+                color=color,
+            )
+
+
+def create_plot_problem_size(df, name, ax1, plt, y_offset, mal):
     max_threads = get_largest_value_for_group(df, "threads")
     sns.lineplot(
         data=df[df["threads"] == max_threads],
@@ -138,44 +177,27 @@ def create_plot_problem_size(df, name, ax1, plt, y_offset, mode_apply_list):
     ax1.set_ylabel("Time (s)")
     ax1.legend(title="Application Runtime")
 
-    mean_times = df.groupby(["size", "mode"])["time"].mean().reset_index()
-    pivoted = mean_times.pivot(index="size", columns="mode", values="time")
-    percentages = pivoted.div(pivoted["vanilla"], axis=0)
+    def gfs(slowdown):
+        return f"{slowdown:.1f}×"
 
-    # Annotate slowdown on plots
-    for s in percentages.index:
-        for mode in mode_apply_list:
-            if mode == "vanilla":
-                continue
+    def gva(mode):
+        if "slicing" in mode:
+            return "bottom"
+        else:
+            return "top"
 
-            time_val = df[
-                (df["threads"] == max_threads)
-                & (df["size"] == s)
-                & (df["mode"] == mode)
-            ]["time"].median()
-            slowdown = percentages.loc[s, mode]
-            color = mode_to_color[mode]
-            # draw slowdown multiplicator
-            # below for static analysis
-            if mode == "stan":
-                offset = y_offset
-                va = "bottom"
-            else:
-                offset = -y_offset
-                va = "top"
+    def goff(mode):
+        if "slicing" in mode:
+            return y_offset
+        else:
+            return -y_offset
 
-            ax1.text(
-                s,
-                time_val + offset,
-                f"{slowdown:.1f}×",
-                ha="center",
-                va=va,
-                fontsize=8,
-                color=color,
-            )
+    annotate_overhead_factor(
+        df, ax1, "size", "threads", max_threads, mal, gfs, gva, goff
+    )
 
 
-def get_plot_thread_number(df, name, ax2, plt, y_offset, mode_apply_list):
+def get_plot_thread_number(df, name, ax2, plt, y_offset, mal):
     t_show = [0]
     t_show += [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96]
     t_show += [100]
@@ -210,39 +232,19 @@ def get_plot_thread_number(df, name, ax2, plt, y_offset, mode_apply_list):
     ax2.set_ylabel("Time (s)")
     ax2.legend(title="Application Runtime")
 
-    mean_times = df.groupby(["threads", "mode"])["time"].mean().reset_index()
-    pivoted = mean_times.pivot(index="threads", columns="mode", values="time")
-    percentages = pivoted.div(pivoted["vanilla"], axis=0)
+    def gfs(slowdown):
+        if slowdown < 10:
+            return f"{slowdown:.1f}×"
+        else:
+            return f"{slowdown:.0f}×"
 
-    # Annotate slowdown on plots
-    for thread in percentages.index:
-        for mode in mode_apply_list:
-            if mode == "vanilla":
-                continue
+    def gva(mode):
+        return "center"
 
-            time_val = df[
-                (df["size"] == max_size)
-                & (df["threads"] == thread)
-                & (df["mode"] == mode)
-            ]["time"].median()
-            slowdown = percentages.loc[thread, mode]
-            color = mode_to_color[mode]
+    def goff(mode):
+        return y_offset
 
-            # draw slowdown multiplicator
-            # below for static analysis
-            offset = y_offset
-            va = "top"
-            slow_factor = f"{slowdown:.0f}×" if 10 < slowdown else f"{slowdown:.1f}×"
-
-            ax2.text(
-                thread,
-                time_val + offset,
-                slow_factor,
-                ha="center",
-                va="center",
-                fontsize=8,
-                color=color,
-            )
+    annotate_overhead_factor(df, ax2, "threads", "size", max_size, mal, gfs, gva, goff)
 
 
 def save_plot(df, name, pdf_name, name_ext, plotter, mode_apply_list):
