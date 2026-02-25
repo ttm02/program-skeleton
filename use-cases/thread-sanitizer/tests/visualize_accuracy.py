@@ -171,9 +171,10 @@ def create_boxplot(df, pdf, pdf_name):
     plt.close()
 
 
-def create_heat(df, pdf, pdf_name):
+def create_heat(df, pdf, pdf_name, y_labels=True):
     df = df.copy()
-    fig, ax = plt.subplots(figsize=(7.3, 4.0))
+    fig_width = 7.6 if y_labels else 4.7
+    fig, ax = plt.subplots(figsize=(fig_width, 4.0))
 
     bin_mapping = {
         2: "2",
@@ -212,6 +213,8 @@ def create_heat(df, pdf, pdf_name):
 
     sns.heatmap(
         heatmap_data,
+        vmin=0.0,
+        vmax=100.0,
         fmt="",
         annot=annot,
         annot_kws={"va": "center", "ha": "center"},
@@ -237,13 +240,17 @@ def create_heat(df, pdf, pdf_name):
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")
     ax.tick_params(axis="y", right=False, labelright=True)
-    ax.set_yticklabels(
-        ax.get_yticklabels(),
-        rotation=0,
-        rotation_mode="anchor",
-        # va="bottom",
-        ha="left",
-    )
+
+    if y_labels:
+        ax.set_yticklabels(
+            ax.get_yticklabels(),
+            rotation=0,
+            rotation_mode="anchor",
+            # va="bottom",
+            ha="left",
+        )
+    else:
+        ax.set_yticklabels([])
 
     plt.tight_layout()
     pdf.savefig(fig, bbox_inches="tight", pad_inches=0.05)
@@ -262,11 +269,15 @@ def get_plot(df, cat_name, pdf_name):
             create_boxplot(df_chunk, pdf, cat_name)
         print(f"Saving {file_name}")
 
-    file_name = f"DRB_Accuracy_{cat_name}_{pdf_name}_heatmap.pdf"
-    with PdfPages(file_name) as pdf:
+    file_name = f"DRB_Accuracy_{cat_name}_{pdf_name}_heatmap"
+    with PdfPages(file_name + ".pdf") as pdf:
         for df_chunk in split_dataframe(df, 1):
             create_heat(df_chunk, pdf, cat_name)
-        print(f"Saving {file_name}")
+        print(f"Saving {file_name}.pdf")
+    with PdfPages(file_name + "_no_desc" + ".pdf") as pdf:
+        for df_chunk in split_dataframe(df, 1):
+            create_heat(df_chunk, pdf, cat_name, False)
+        print(f"Saving {file_name}_no_desc.pdf")
 
 
 def get_df_tc_cat(cat):
