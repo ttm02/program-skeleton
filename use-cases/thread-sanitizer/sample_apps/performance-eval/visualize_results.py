@@ -149,7 +149,8 @@ def create_plot_problem_size(df, name, ax1, plt, y_offset, mal):
         hue="mode_readable",
         hue_order=mode_order,
         palette=mode_to_color_plot,
-        marker="o",
+        style="mode_readable",
+        marker=True,
         ax=ax1,
     )
     ax1.set_title(f"{name}: Overhead vs Problem size ({max_threads} threads)")
@@ -168,9 +169,9 @@ def create_plot_problem_size(df, name, ax1, plt, y_offset, mal):
 
     def goff(mode):
         if "slicing" in mode:
-            return y_offset
-        else:
             return -y_offset
+        else:
+            return y_offset
 
     annotate_overhead_factor(
         df, ax1, "size", "threads", max_threads, mal, gfs, gva, goff
@@ -204,7 +205,8 @@ def get_plot_thread_number(df, name, ax2, plt, y_offset, mal):
         hue="mode_readable",
         hue_order=mode_order,
         palette=mode_to_color_plot,
-        marker="o",
+        style="mode_readable",
+        marker=True,
         ax=ax2,
     )
     ax2.set_title(f"{name}: Overhead vs Number of Threads (size = {max_size})")

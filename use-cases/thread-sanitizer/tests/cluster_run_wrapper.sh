@@ -23,12 +23,26 @@ set +e
 source "${SCRIPT_DIR}/static_analysis_mode.sh"
 
 MY_EXEC_SCRIPT=$(echo $EXEC_SCRIPT | sed -e 's|'"${PRECOMPUTE_DIR}/"'|'"${TARGET_DIR}/"'|')
-"$MY_EXEC_SCRIPT" 'build-cluster'
+/usr/bin/env time -f "%e" -o "${TARGET_DIR}/drb_time.log" \
+    "$MY_EXEC_SCRIPT" 'build-cluster'
 
 APP_LOG_NAME="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 LOG_DIR="${HPC_SCRATCH}/precompute/results/DRB"
 mkdir -p "$LOG_DIR"
 cp "${TARGET_DIR}/timing.csv" "${LOG_DIR}/${APP_LOG_NAME}.csv"
+
+mkdir -p "${LOG_DIR}_time"
+echo "id,threads,mode,time" | tee "${LOG_DIR}_time/${APP_LOG_NAME}.csv"
+(
+    echo -n "${SLURM_ARRAY_JOB_ID:-0}"
+    echo -n ","
+    echo -n "${OMP_NUM_THREADS:-0}"
+    echo -n ","
+    echo -n "${MY_STAN_PASS_MODE}"
+    echo -n ","
+    cat "${TARGET_DIR}/drb_time.log" | tr -d "\n"
+    echo ""
+) | tee -a "${LOG_DIR}_time/${APP_LOG_NAME}.csv"
 
 rm -fr "${TARGET_DIR}"
 exit 0

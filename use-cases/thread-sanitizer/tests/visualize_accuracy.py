@@ -171,7 +171,7 @@ def create_boxplot(df, pdf, pdf_name):
     plt.close()
 
 
-def create_heat(df, pdf, pdf_name, y_labels=True):
+def create_heat(df, pdf, y_labels=True):
     df = df.copy()
     fig_width = 7.6 if y_labels else 4.7
     fig, ax = plt.subplots(figsize=(fig_width, 4.0))
@@ -257,7 +257,7 @@ def create_heat(df, pdf, pdf_name, y_labels=True):
     plt.close()
 
 
-def get_plot(df, cat_name, pdf_name):
+def get_boxplot(df, cat_name, pdf_name):
     file_name = f"DRB_Accuracy_{cat_name}_{pdf_name}_boxplot.pdf"
     with PdfPages(file_name) as pdf:
         # create dummy page as first page as it often renders not so nice
@@ -269,14 +269,18 @@ def get_plot(df, cat_name, pdf_name):
             create_boxplot(df_chunk, pdf, cat_name)
         print(f"Saving {file_name}")
 
-    file_name = f"DRB_Accuracy_{cat_name}_{pdf_name}_heatmap"
+
+def get_heatmap(df):
+    file_name = "DRB_Accuracy_all_all_heatmap"
+
     with PdfPages(file_name + ".pdf") as pdf:
         for df_chunk in split_dataframe(df, 1):
-            create_heat(df_chunk, pdf, cat_name)
+            create_heat(df_chunk, pdf)
         print(f"Saving {file_name}.pdf")
+
     with PdfPages(file_name + "_no_desc" + ".pdf") as pdf:
         for df_chunk in split_dataframe(df, 1):
-            create_heat(df_chunk, pdf, cat_name, False)
+            create_heat(df_chunk, pdf, False)
         print(f"Saving {file_name}_no_desc.pdf")
 
 
@@ -317,14 +321,18 @@ def focus_on_interesting_testcases(df):
 
 def visualize_accuracy():
     df_no = get_df_tc_cat("no")
-    df_no_filtred = focus_on_interesting_testcases(df_no)
-    get_plot(df_no, "no", "all")
-    get_plot(df_no_filtred, "no", "filtered")
+    df_no_filtered = focus_on_interesting_testcases(df_no)
+    get_boxplot(df_no, "no", "all")
+    get_boxplot(df_no_filtered, "no", "filtered")
 
     df_yes = get_df_tc_cat("yes")
-    df_yes_filtred = focus_on_interesting_testcases(df_yes)
-    get_plot(df_yes, "yes", "all")
-    get_plot(df_yes_filtred, "yes", "filtered")
+    df_yes_filtered = focus_on_interesting_testcases(df_yes)
+    get_boxplot(df_yes, "yes", "all")
+    get_boxplot(df_yes_filtered, "yes", "filtered")
+
+    df_all = pd.concat([df_yes, df_no], ignore_index=True)
+    df_all = df_all.sort_values(by="testcase")
+    get_heatmap(df_all)
 
 
 if __name__ == "__main__":
