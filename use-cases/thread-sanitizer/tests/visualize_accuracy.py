@@ -171,10 +171,13 @@ def create_boxplot(df, pdf, pdf_name):
     plt.close()
 
 
-def create_heat(df, pdf, y_labels=True):
+def create_heat(df, pdf, all_labels=True, y_labels=True):
     df = df.copy()
-    fig_width = 7.6 if y_labels else 4.7
-    fig, ax = plt.subplots(figsize=(fig_width, 4.0))
+    fig_height = 4.0 if all_labels else 2.1
+    fig_width = 7.25 if y_labels else 4.7
+    if not all_labels:
+        fig_width *= 0.88
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
 
     bin_mapping = {
         2: "2",
@@ -264,24 +267,51 @@ def get_boxplot(df, cat_name, pdf_name):
         create_boxplot(
             df[df["testcase"] == df["testcase"].iloc[0]], pdf, "to be ignored"
         )
-        chunk_size = 13 if pdf_name == "filtered" else 30
+        chunk_size = 8 if pdf_name == "all" else 5
         for df_chunk in split_dataframe(df, chunk_size):
             create_boxplot(df_chunk, pdf, cat_name)
         print(f"Saving {file_name}")
 
 
-def get_heatmap(df):
-    file_name = "DRB_Accuracy_all_all_heatmap"
-
+def get_heatmap_files(df, file_name, all_labels=True):
     with PdfPages(file_name + ".pdf") as pdf:
         for df_chunk in split_dataframe(df, 1):
-            create_heat(df_chunk, pdf)
+            create_heat(df_chunk, pdf, all_labels, True)
         print(f"Saving {file_name}.pdf")
 
     with PdfPages(file_name + "_no_desc" + ".pdf") as pdf:
         for df_chunk in split_dataframe(df, 1):
-            create_heat(df_chunk, pdf, False)
+            create_heat(df_chunk, pdf, all_labels, False)
         print(f"Saving {file_name}_no_desc.pdf")
+
+
+def get_heatmap(df):
+    file_name = "DRB_Accuracy_all_all_heatmap"
+    get_heatmap_files(df, file_name)
+
+    stan_mapping_text = {}
+    for mm in mode_mapping:
+        text = mode_mapping[mm]
+        if mm.startswith("slicing+"):
+            stan_mapping_text[text] = "TSAN + slicing + static analysis"
+        elif "+" in mm or mm == "loop" or mm == "merge" or mm == "single":
+            stan_mapping_text[text] = "TSAN + static analysis"
+        else:
+            stan_mapping_text[text] = text
+
+    so = sorted(set(stan_mapping_text.values()))
+    so_1 = [x for x in so if not " + " in x]
+    so_2 = [x for x in so if x.startswith("TSAN + static")]
+    so_3 = [x for x in so if x.startswith("TSAN + slicing")]
+    stan_order = so_1 + so_2 + so_3
+
+    df["mode_readable"] = pd.Categorical(
+        df["mode_readable"].replace(stan_mapping_text),
+        categories=stan_order,
+        ordered=True,
+    )
+
+    get_heatmap_files(df, file_name + "_only_stan", False)
 
 
 def get_df_tc_cat(cat):
@@ -329,6 +359,11 @@ def visualize_accuracy():
     df_yes_filtered = focus_on_interesting_testcases(df_yes)
     get_boxplot(df_yes, "yes", "all")
     get_boxplot(df_yes_filtered, "yes", "filtered")
+
+    df_yes_specific = df_yes[
+        df_yes["testcase"].str.startswith(("DRB114", "DRB185", "DRB187"))
+    ]
+    get_boxplot(df_yes_specific, "yes", "specific")
 
     df_all = pd.concat([df_yes, df_no], ignore_index=True)
     df_all = df_all.sort_values(by="testcase")
