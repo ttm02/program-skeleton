@@ -41,10 +41,14 @@ if [ -z "$SLURM_ARRAY_JOB_ID" ]; then
       date
       echo "Trying to queue slurm job for $APPNAME_UPPER with $TC threads."
       echo ""
+      sbatch_wait_time=1
       while ! enqueue_sbatch "$i"; do
         # avoid "AssocMaxSubmitJobLimit"
         # "Batch job submission failed: Job violates accounting/QOS policy"
-        sleep 42s
+        sleep ${sbatch_wait_time}s
+        [ 3600 -lt "$sbatch_wait_time" ] && sbatch_wait_time=1
+        milli_wait_time=$(date +%N | tail -c 2)
+        sbatch_wait_time=$((sbatch_wait_time + sbatch_wait_time + milli_wait_time))
       done
       echo ""
       date

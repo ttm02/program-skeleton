@@ -36,15 +36,20 @@ enqueue_sbatch() {
 }
 
 enqueue_app() {
+    TC="$1"
     APPNAME_PARAM_LINES_COUNT=$(wc -l "${SCRIPT_DIR}/parameters_${APPNAME_LOWER}.txt" | cut -d' ' -f1) # --total=only
     if [ -z "$APPNAME_PARAM_LINES_COUNT" ]; then
         exit 2
     fi
     for i in $(seq 1 "$APPNAME_PARAM_LINES_COUNT"); do
-        while ! enqueue_sbatch "$1" "$i"; do
+        sbatch_wait_time=1
+        while ! enqueue_sbatch "$TC" "$i"; do
             # avoid "AssocMaxSubmitJobLimit"
             # "Batch job submission failed: Job violates accounting/QOS policy"
-            sleep 42s
+            sleep ${sbatch_wait_time}s
+            [ 3600 -lt "$sbatch_wait_time" ] && sbatch_wait_time=1
+            milli_wait_time=$(date +%N | tail -c 2)
+            sbatch_wait_time=$((sbatch_wait_time + sbatch_wait_time + milli_wait_time))
         done
     done
 }
