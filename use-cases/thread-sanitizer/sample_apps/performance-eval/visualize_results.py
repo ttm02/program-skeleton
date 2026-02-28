@@ -309,12 +309,15 @@ def get_plot(df, name, pdf_name, plotter):
     mode_to_color_plot[slicing_stan_text] = mode_to_color_plot[slicing_stan_old_text]
     mode_to_color_plot_all[slicing_stan_text] = mode_to_color_plot[slicing_stan_text]
     set_mode_lists(mal_plus_analysis)
-    df_no_slicing = df[df["mode"].isin(mal_plus_analysis)]
-    df_no_slicing.loc[
-        df_no_slicing["mode_readable"] == slicing_stan_old_text, "mode_readable"
-    ] = slicing_stan_text
+    df_plus_analysis = df[df["mode"].isin(mal_plus_analysis)]
+    df_plus_analysis.loc[df_plus_analysis["mode"] == tsan_stan, "mode_readable"] = (
+        tsan_stan_text
+    )
+    df_plus_analysis.loc[df_plus_analysis["mode"] == slicing_stan, "mode_readable"] = (
+        slicing_stan_text
+    )
     save_plot(
-        df_no_slicing, name, pdf_name, "_plus_analysis", plotter, mal_plus_analysis
+        df_plus_analysis, name, pdf_name, "_plus_analysis", plotter, mal_plus_analysis
     )
 
     reset_lists()
