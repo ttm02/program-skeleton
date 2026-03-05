@@ -58,9 +58,11 @@ init_app() {
     wait "${build_array["$i"]}"
   done
 
+  build_successful="true"
+
   if [[ ! -x "./${APP_NAME}_vanilla.exe" ]]; then
     echo "build error in ${APP_NAME}_vanilla.exe"
-    exit 31
+    build_successful="false"
   fi
 
   for i in $(seq 0 $num_modes); do
@@ -68,11 +70,15 @@ init_app() {
     source "${SCRIPT_DIR}/../../tests/static_analysis_mode.sh"
     if [[ ! -x "./${APP_NAME}_${MY_STAN_PASS_MODE}.exe" ]]; then
       echo "build error in ${APP_NAME}_${MY_STAN_PASS_MODE}.exe"
-      exit 32
+      build_successful="false"
     fi
   done
 
-  echo "successfully build $APP_NAME"
+  if [ "$build_successful" = "true" ]; then
+    echo "SUCCESSFULLY build $APP_NAME"
+  else
+    echo "FAILURE during building $APP_NAME"
+  fi
 }
 
 if [ -n "$1" ]; then

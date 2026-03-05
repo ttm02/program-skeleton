@@ -32,9 +32,10 @@ IMB-ASYNC/output/
 *LastTest.log
 Testing/Temporary
 
-# backupo data from older measurements
+# backup data from older measurements
 visualization/mearurement_*.tar.gz
 # more in visualization
+scratch/
 output/
 timing.csv
 cache.csv

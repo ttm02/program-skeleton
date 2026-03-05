@@ -99,9 +99,11 @@ use-cases/thread-sanitizer/sample_apps/performance-eval/sbatch_wrapper.sh 'LULES
 ```
 or run all of this locally with for example LULESH:
 ```bash
-use-cases/thread-sanitizer/sample_apps/performance-eval/run_local.sh LULESH use-cases/thread-sanitizer/sample_apps/performance-eval/parameters_lulesh.txt 5
+use-cases/thread-sanitizer/sample_apps/performance-eval/run_local.sh 'LULESH'
+use-cases/thread-sanitizer/sample_apps/performance-eval/run_local.sh --help
 ```
-The last parameter (number) selects the parameter line inside the given parameters file (second parameter).
+Just look into the `--help` output and find out what to do.
+The numbers for what which line is and what which mode is, can be found in adjacent files.
 Your system might start swapping a lot when running the program compiled with the pass if you selected a line of the end the file.
 
 #### Lichtenberg Cluster

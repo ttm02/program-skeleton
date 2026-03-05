@@ -45,6 +45,23 @@ setup_resources() {
     fi
 }
 
+run_test_native() {
+    /usr/bin/env time -f '%e' \
+        -o "$LOG_FILE" \
+        "${RUN_DIR}/${APPNAME_UPPER}_${MODE}.exe" $APP_PARAMS
+}
+
+run_test_container() {
+    apptainer run \
+        --mount "type=bind,source=${REAL_HOME},destination=${REAL_HOME}" \
+        --mount "type=bind,source=${HPC_SCRATCH},destination=${HPC_SCRATCH}" \
+        --env-file "${CONTAINER_IMAGE_PATH}.env" \
+        "${CONTAINER_IMAGE_PATH}.sif" \
+        /usr/bin/env time -f '%e' \
+        -o "$LOG_FILE" \
+        "${RUN_DIR}/${APPNAME_UPPER}_${MODE}.exe" $APP_PARAMS
+}
+
 exec_test() {
     mkdir -p "${OUTPUT_DIR}"
     LOG_FILE="${OUTPUT_DIR}/${APP_LOG_NAME}_${MODE}.log"
@@ -58,14 +75,11 @@ exec_test() {
         RUN_DIR=${EXEC_DIR}
     fi
 
-    apptainer run \
-        --mount "type=bind,source=${REAL_HOME},destination=${REAL_HOME}" \
-        --mount "type=bind,source=${HPC_SCRATCH},destination=${HPC_SCRATCH}" \
-        --env-file "${CONTAINER_IMAGE_PATH}.env" \
-        "${CONTAINER_IMAGE_PATH}.sif" \
-        /usr/bin/env time -f '%e' \
-        -o "$LOG_FILE" \
-        "${RUN_DIR}/${APPNAME_UPPER}_${MODE}.exe" $APP_PARAMS
+    if [ -n "$PRECOMPUTE_RUN_JOB_LOCALLY" ]; then
+        run_test_native
+    else
+        run_test_container
+    fi
 }
 
 write_result() {
