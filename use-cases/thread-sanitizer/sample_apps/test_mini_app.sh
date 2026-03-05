@@ -42,13 +42,13 @@ test_compile
 
 wait $pid_compile_pass
 if [[ ! -x "./${APP_NAME}_pass.exe" ]]; then
-  echo "build error"
+  echo "build error: pass"
   exit 1
 fi
 
 wait $pid_compile_orig
 if [[ ! -x "./${APP_NAME}_orig.exe" ]]; then
-  echo "build error"
+  echo "build error: orig"
   exit 1
 fi
 
@@ -63,20 +63,18 @@ if "./${APP_NAME}_pass.exe" $TEST_INVOCATION_PARAMETER 2>&1 | grep -qF "$GREP_ST
 fi
 
 patch_datarace "$APP_NAME"
-
 test_compile
-
+wait $pid_compile_pass
+wait $pid_compile_orig
 unpatch_datarace "$APP_NAME"
 
-wait $pid_compile_pass
 if [[ ! -x "./${APP_NAME}_pass.exe" ]]; then
-  echo "build error"
+  echo "build error: pass - datarace"
   exit 1
 fi
 
-wait $pid_compile_orig
 if [[ ! -x "./${APP_NAME}_orig.exe" ]]; then
-  echo "build error"
+  echo "build error: orig - datarace"
   exit 1
 fi
 
