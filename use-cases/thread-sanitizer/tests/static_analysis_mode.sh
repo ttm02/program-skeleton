@@ -1,7 +1,7 @@
 case "$SLURM_ARRAY_TASK_ID" in
 0)
     MY_STAN_PASS_MODE="orig"
-    MY_STAN_PASS_MODE_ARGS=""
+    MY_STAN_PASS_MODE_ARGS="--disable-precompute-pass"
     ;;
 1)
     MY_STAN_PASS_MODE="slicing"

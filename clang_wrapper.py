@@ -88,6 +88,9 @@ for arg in args:
     elif arg == "--disable-slicing" or arg.startswith("--static-analysis-mode="):
         arg_remove_list.append(arg)
         pass_plugin_opts.append(arg)
+    elif arg == "--disable-precompute-pass":
+        use_compiler_pass = False
+        arg_remove_list.append(arg)
 
 for arg in arg_remove_list:
     args.remove(arg)

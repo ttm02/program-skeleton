@@ -28,7 +28,7 @@ export MY_STAN_PASS_MODE_ARGS=""
 
 test_compile() {
   MY_STAN_PASS_MODE="orig"
-  MY_STAN_PASS_MODE_ARGS=""
+  MY_STAN_PASS_MODE_ARGS="--disable-precompute-pass"
   build_app "$APP_NAME" 'orig' false &
   pid_compile_orig=$!
 

@@ -2,7 +2,7 @@
 
 # location of this script
 # this is the location where tha path file to introduce a datarace is
-TEALEAF_PATCH_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
+APP_PATCH_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 
 # parameters that can be used for a sample invocation of the mini app
 # used to test if the injected datarace is still found
@@ -20,7 +20,7 @@ download() {
   # probably not necessary
   (cd "$1" && git checkout e70261c0be40537da75b258108ed2898f84f3c58)
   # patch input file to have smaller problem size for testing
-  patch "$1/tea.in" "$TEALEAF_PATCH_DIR/problem_size.patch"
+  patch "$1/tea.in" "${APP_PATCH_DIR}/problem_size.patch"
 }
 
 # patches in a datarace
@@ -28,44 +28,26 @@ download() {
 patch_datarace() {
   echo "patch to inject datarace"
   # re-introduce the datarace present in original code
-  patch "$1/src/omp/cg.cpp" "$TEALEAF_PATCH_DIR/introduce_datarace.patch"
+  patch "$1/src/omp/cg.cpp" "${APP_PATCH_DIR}/introduce_datarace.patch"
 }
 
 # reverse the patch
 # $1 : directory with src (same argument as given to download dir)
 unpatch_datarace() {
   echo "reverse data race injection"
-  patch -R "$1/src/omp/cg.cpp" "$TEALEAF_PATCH_DIR/introduce_datarace.patch"
+  patch -R "$1/src/omp/cg.cpp" "${APP_PATCH_DIR}/introduce_datarace.patch"
 }
 
 # build
 # $1 : directory with src (same argument as given to download dir)
 # $2 : build mode: original or modified by pass
 build_app() {
-  APP_DIR="$1"
-  BUILD_MODE="$2"
-  USE_COMPILER_PASS=$3
-  export USE_COMPILER_PASS
+  source "${APP_PATCH_DIR}/../generic_app.sh"
+  setup_build_generic_app "$1" "$2" "$3"
 
-  echo "build ${APP_DIR} with ${BUILD_MODE}"
-
-  BUILD_DIR="${APP_DIR}/build_${BUILD_MODE}"
-  TARGET_BIN=$(realpath "${PWD}/${APP_NAME}_${BUILD_MODE}.exe")
-
-  if [ "$BUILD_MODE" != 'norm' ]; then
-    # for testing we need this
-    APP_CXX_FLAGS="$APP_CXX_FLAGS -fsanitize=thread"
-
-    if [ -n "$MY_STAN_PASS_MODE" ]; then
-      APP_CXX_FLAGS="$APP_CXX_FLAGS $MY_STAN_PASS_MODE_ARGS"
-    fi
-  fi
-
-  # clean up any previous build
-  rm -f "$TARGET_BIN"
   rm -fr "$BUILD_DIR"
-
   mkdir "$BUILD_DIR"
+
   (
     cd "$BUILD_DIR" &&
       USE_COMPILER_PASS=false cmake $APP_CMAKE_PARAMETER -DCMAKE_CXX_FLAGS="$APP_CXX_FLAGS" .. &&

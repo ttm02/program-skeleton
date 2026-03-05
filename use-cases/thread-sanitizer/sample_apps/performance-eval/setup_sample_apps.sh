@@ -35,7 +35,7 @@ init_app() {
 
   echo "building $APP_NAME"
 
-  num_modes=14
+  num_modes=16
   build_array=()
 
   build_app "$APP_NAME" 'vanilla' false >/dev/null 2>&1 &

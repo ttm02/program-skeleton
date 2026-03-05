@@ -2,7 +2,7 @@
 
 # location of this script
 # this is the location where tha path file to introduce a datarace is
-MINIAMR_PATCH_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
+APP_PATCH_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 
 # parameters that can be used for a sample invocation of the mini app
 # used to test if the injected datarace is still found
@@ -18,7 +18,7 @@ download() {
     (cd "$1" &&
         git switch -c 'precompute-testing' &&
         git reset --hard 'v1.7.1')
-    patch "$1/openmp/Makefile" "${MINIAMR_PATCH_DIR}/Makefile.patch"
+    patch "$1/openmp/Makefile" "${APP_PATCH_DIR}/Makefile.patch"
 }
 
 # patches in a datarace
@@ -27,7 +27,7 @@ patch_datarace() {
     echo "patch to inject datarace"
     # re-introduce the datarace present in original code
     # TODO
-    #patch -R "$1/main.cpp" "${MINIAMR_PATCH_DIR}/remove_datarace.patch"
+    #patch -R "$1/main.cpp" "${APP_PATCH_DIR}/remove_datarace.patch"
 }
 
 # reverse the patch
@@ -35,35 +35,18 @@ patch_datarace() {
 unpatch_datarace() {
     echo "reverse data race injection"
     # TODO
-    #patch "$1/main.cpp" "${MINIAMR_PATCH_DIR}/remove_datarace.patch"
+    #patch "$1/main.cpp" "${APP_PATCH_DIR}/remove_datarace.patch"
 }
 
 # build
 # $1 : directory with src (same argument as given to download dir)
 # $2 : build mode: original or modified by pass
 build_app() {
-    APP_DIR="$1"
-    BUILD_MODE="$2"
-    USE_COMPILER_PASS=$3
-    export USE_COMPILER_PASS
+    source "${APP_PATCH_DIR}/../generic_app.sh"
+    setup_build_generic_app "$1" "$2" "$3"
 
-    echo "build ${APP_DIR} with ${BUILD_MODE}"
-
-    TARGET_BIN=$(realpath "${PWD}/${APP_NAME}_${BUILD_MODE}.exe")
-
-    if [ "$BUILD_MODE" != 'vanilla' ]; then
-        export MY_CUSTOM_CPP_FLAGS="-fsanitize=thread"
-        export MY_CUSTOM_LD_FLAGS="-fsanitize=thread"
-    fi
-
-    # TODO enable/disable compile passes/modes
-    if [ -n "$MY_STAN_PASS_MODE" ]; then
-        MY_CUSTOM_CPP_FLAGS="$MY_CUSTOM_CPP_FLAGS $MY_STAN_PASS_MODE_ARGS"
-        MY_CUSTOM_LD_FLAGS="$MY_CUSTOM_LD_FLAGS $MY_STAN_PASS_MODE_ARGS"
-    fi
-
-    # clean up any previous build
-    rm -f "$TARGET_BIN"
+    export MY_CUSTOM_CPP_FLAGS="$APP_CXX_FLAGS"
+    export MY_CUSTOM_LD_FLAGS="$APP_CXX_FLAGS"
 
     (
         # clean up any previous build
