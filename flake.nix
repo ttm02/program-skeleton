@@ -91,6 +91,7 @@
         LLVM_PKGS.bintools
         LLVM_PKGS.libllvm
         LLVM_PKGS.lld
+        mpi
         # project libraries
         boost
         LLVM_PKGS.openmp

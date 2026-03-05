@@ -54,7 +54,7 @@ static inline void collect_base_ptr_to_tsan_call(b2c_map &base_ptr_to_call,
   // value is uncertain -> do not map these DFG values to TSAN call
   if (isa<PHINode>(val) || isa<CallBase>(val) || isa<LoadInst>(val) ||
       isa<SelectInst>(val) || isa<AllocaInst>(val) || isa<FreezeInst>(val) ||
-      isa<ExtractElementInst>(val) || isa<Argument>(val))
+      isa<ExtractElementInst>(val) || isa<Argument>(val) || isa<CmpInst>(val))
     return;
 
   if (not(isa<GetElementPtrInst>(val) || isa<IntToPtrInst>(val) ||
@@ -529,8 +529,11 @@ range_replace_array(Module &M, b2c_map &base_ptr_to_call,
     }
 
     const auto const_diff = ptr_diff_const->getAPInt();
+    const auto lastSizeVal = lastTsanSize->getValue();
+    assert(&const_diff);
     assert(not const_diff.isNegative());
-    if (lastTsanSize->getValue() != const_diff) {
+    if (lastSizeVal.getBitWidth() != const_diff.getBitWidth() ||
+        lastSizeVal != const_diff) {
       raor();
       continue;
     }

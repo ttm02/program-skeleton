@@ -153,7 +153,7 @@ if is_to_obj:
         sys.exit(1)
 
     cmd = [compiler]
-    for arg in args:
+    for i, arg in enumerate(args):
         if arg == "-c":
             cmd += ["-c", "-emit-llvm"]
         elif arg.endswith(".o"):
@@ -161,8 +161,9 @@ if is_to_obj:
             new_file = arg[:-2] + ".bc"
             cmd.append(new_file)
             # mimic "touch"
-            open(arg, "a").close()
-            os.utime(arg, None)
+            if args[i - 1] == "-o":
+                with open(arg, "a"):
+                    os.utime(arg, None)
         else:
             cmd.append(arg)
 

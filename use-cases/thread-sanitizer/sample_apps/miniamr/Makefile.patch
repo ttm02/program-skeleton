@@ -1,0 +1,26 @@
+diff --git a/openmp/Makefile b/openmp/Makefile
+index da3b4ee..d8a363a 100644
+--- a/openmp/Makefile
++++ b/openmp/Makefile
+@@ -1,8 +1,8 @@
+-CC   = mpicc
+-LD   = mpicc
++CC   = OMPI_CC=$(CLANG_WRAP_CC) mpicc
++LD   = OMPI_CC=$(CLANG_WRAP_CC) mpicc
+ CPPFLAGS = -I.
+-CFLAGS = -O3 -fopenmp
+-LDFLAGS =
++CFLAGS = -O3 -fopenmp -flto -fwhole-program-vtables $(MY_CUSTOM_CPP_FLAGS)
++LDFLAGS = -flto -fwhole-program-vtables -fuse-ld=lld -O1 $(MY_CUSTOM_LD_FLAGS)
+ LDLIBS = -lm -lgomp
+ 
+ EXEC = miniAMR.x
+@@ -15,7 +15,7 @@ $(EXEC): $(OBJS)
+ 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
+ 
+ .c.o:
+-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $<
++	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ -c $<
+ 
+ clean:
+ 	rm *.o miniAMR.x
