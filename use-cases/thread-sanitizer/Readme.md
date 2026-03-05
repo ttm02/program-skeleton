@@ -95,9 +95,7 @@ use-cases/thread-sanitizer/sample_apps/performance-eval/setup_sample_apps.sh
 This downloads and compiles all sample apps into `build-perf-tests/use-cases/thread-sanitizer/sample_apps`.
 Then all apps are ready you could submit sbatch jobs on the cluster with
 ```bash
-sbatch use-cases/thread-sanitizer/sample_apps/performance-eval/job_script_lulesh.sh
-sbatch use-cases/thread-sanitizer/sample_apps/performance-eval/job_script_hpccg.sh
-sbatch use-cases/thread-sanitizer/sample_apps/performance-eval/job_script_tealeaf.sh
+use-cases/thread-sanitizer/sample_apps/performance-eval/sbatch_wrapper.sh 'LULESH'
 ```
 or run all of this locally with for example LULESH:
 ```bash

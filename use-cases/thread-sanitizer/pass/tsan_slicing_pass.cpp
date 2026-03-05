@@ -46,7 +46,10 @@ static void remove_noinline_from_module(Module &M) {
 }
 
 static void reset_analysis_results(Module &M, ModuleAnalysisManager &AM) {
-  analysis_results = new RequiredAnalysisResults(AM, M);
+  static bool alreadySetup = false;
+  if (not alreadySetup)
+    analysis_results = new RequiredAnalysisResults(AM, M);
+  alreadySetup = true;
 }
 
 static bool run_optimization_passes(
@@ -305,11 +308,10 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
     errs() << "\n";
 
     run_optimization_passes(M, AM, run_tsan, false);
-
     allow_function_prefixes_to_be_called_in_precompute({"__tsan_"});
-    reset_analysis_results(M, AM);
 
     auto run_slicing = [&]() {
+      reset_analysis_results(M, AM);
 #ifndef NDEBUG
       auto num_undef = get_num_undefs(M);
 #endif
@@ -329,6 +331,7 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
 
     DenseSet<stanMode> stanEnabledModes;
     if (EnableStaticAnalysis || not clStanModes.empty()) {
+      reset_analysis_results(M, AM);
       if (clStanModes.empty())
         for (int i = 0; i < static_cast<int>(stanMode::MAX_COUNT); ++i)
           stanEnabledModes.insert(static_cast<stanMode>(i));

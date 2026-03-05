@@ -54,13 +54,16 @@ init_app() {
   done
 
   wait $pid_compile_vanilla
+  for i in $(seq 0 $num_modes); do
+    wait "${build_array["$i"]}"
+  done
+
   if [[ ! -x "./${APP_NAME}_vanilla.exe" ]]; then
     echo "build error in ${APP_NAME}_vanilla.exe"
     exit 31
   fi
 
   for i in $(seq 0 $num_modes); do
-    wait "${build_array["$i"]}"
     SLURM_ARRAY_TASK_ID=$i
     source "${SCRIPT_DIR}/../../tests/static_analysis_mode.sh"
     if [[ ! -x "./${APP_NAME}_${MY_STAN_PASS_MODE}.exe" ]]; then
@@ -72,8 +75,12 @@ init_app() {
   echo "successfully build $APP_NAME"
 }
 
-init_app 'lulesh'
-init_app 'hpccg'
+if [ -n "$1" ]; then
+  init_app "$1"
+else
+  init_app 'lulesh'
+  init_app 'hpccg'
+fi
 
 echo "setup for all sample apps completed"
 echo "$WORK_DIR"

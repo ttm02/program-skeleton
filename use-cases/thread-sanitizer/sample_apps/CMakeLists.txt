@@ -1,18 +1,14 @@
-
-
 # LULESH
 add_test(NAME LULESH
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_mini_app.sh ${CMAKE_CURRENT_SOURCE_DIR}/lulesh/lulesh.sh
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_mini_app.sh "lulesh"
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
-# mini app test take longer
 set_tests_properties(LULESH PROPERTIES TIMEOUT 500)
 
 
 # HPCCG
 add_test(NAME HPCCG
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_mini_app.sh ${CMAKE_CURRENT_SOURCE_DIR}/hpccg/hpccg.sh
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_mini_app.sh "hpccg"
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
-# mini app test take longer
 set_tests_properties(HPCCG PROPERTIES TIMEOUT 500)

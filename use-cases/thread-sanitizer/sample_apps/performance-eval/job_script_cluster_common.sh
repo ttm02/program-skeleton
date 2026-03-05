@@ -73,7 +73,8 @@ write_result() {
 
     CSV_FILE="${HPC_SCRATCH}/precompute/results/${APPNAME_LOWER}/${APP_LOG_NAME}.csv"
     mkdir -p "$(dirname "$CSV_FILE")"
-    echo 'id,name,threads,config,mode,time' >"$CSV_FILE"
+
+    echo 'id,name,threads,config,mode,time,exit_code' >"$CSV_FILE"
     (
         echo -n "${SLURM_ARRAY_JOB_ID}"
         echo -n ","
@@ -85,7 +86,9 @@ write_result() {
         echo -n ","
         echo -n "${MODE}"
         echo -n ","
-        cat "$LOG_FILE" | tr -d "\n"
+        cat "$LOG_FILE" | tail -n 1 | tr -d "\n"
+        echo -n ","
+        awk '/Command exited with non-zero status/ {print $NF}' "$LOG_FILE"
         echo ""
     ) | tee -a "$CSV_FILE"
 }
