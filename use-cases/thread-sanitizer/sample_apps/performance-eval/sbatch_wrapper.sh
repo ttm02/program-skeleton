@@ -27,7 +27,7 @@ enqueue_sbatch() {
         --exclusive \
         -o /dev/null \
         -e /dev/null \
-        --array '0-15' \
+        --array '0-17' \
         --time '00:30:00' \
         --cpus-per-task "$TC" \
         --job-name="${APPNAME_UPPER}_${TC}_${LINE}" \

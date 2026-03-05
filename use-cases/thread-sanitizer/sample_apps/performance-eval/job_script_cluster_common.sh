@@ -16,7 +16,7 @@ export OMP_PLACES=cores
 PARAMETER_FILE="${SCRIPT_DIR}/parameters_${APPNAME_LOWER}.txt"
 APP_PARAMS=$(sed -n "${APP_PARAM_LINE}p" "$PARAMETER_FILE")
 
-if [ "$SLURM_ARRAY_TASK_ID" = "15" ]; then
+if [ "$SLURM_ARRAY_TASK_ID" = "17" ]; then
     MODE="vanilla"
 else
     source "${SCRIPT_DIR}/../../tests/static_analysis_mode.sh"
