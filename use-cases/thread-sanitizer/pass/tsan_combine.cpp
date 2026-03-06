@@ -213,10 +213,13 @@ static void getIdxVec(const DataLayout DL, const StructType *STy,
   unsigned structIdx = SL->getElementContainingOffset(memberOffset);
   assert(0 <= structIdx && structIdx <= STy->elements().size());
   offsetVector.push_back(structIdx);
-  if (auto elemSTy = dyn_cast<StructType>(STy->getElementType(structIdx))) {
+  Type *elemTy = STy->getElementType(structIdx);
+  if (auto elemSTy = dyn_cast<StructType>(elemTy)) {
     auto elemSL = DL.getStructLayout(elemSTy);
     auto elemOffset = memberOffset - SL->getElementOffset(structIdx);
     getIdxVec(DL, elemSTy, elemSL, elemOffset, offsetVector);
+  } else if (isa<PointerType>(elemTy)) {
+    offsetVector.clear();
   }
 }
 
@@ -233,6 +236,7 @@ static uint64_t getOffsetAfterIdx(const DataLayout DL, const StructType *STy,
   } else {
     auto mo = memberOffset;
     auto structMaxBytes = SL->getSizeInBytes();
+    assert(memberOffset < structMaxBytes);
     while (SL->getElementContainingOffset(mo) == structIdx) {
       mo++;
       if (mo == structMaxBytes)
@@ -389,6 +393,11 @@ range_replace_struct(Module &M, b2c_map &base_ptr_to_call,
     SmallVector<unsigned> idxMember;
     getIdxVec(DL, STy, SL, memberOffset, idxMember);
 
+    if (idxMember.empty()) {
+      startPtr = nullptr;
+      continue;
+    }
+
     // first iteration
     if (not startPtr) {
       lastIdx = startIdx = idxMember;
@@ -412,8 +421,8 @@ range_replace_struct(Module &M, b2c_map &base_ptr_to_call,
         assert(startPtr);
         auto offsetOoR = getOffsetAfterIdx(DL, STy, SL, memberOffset);
         range_replace_struct_part(startPtr, offsetOoR - startOffset, calls);
-        calls.clear();
       }
+      calls.clear();
       startIdx = idxMember;
       startPtr = offPtr;
       startOffset = memberOffset;
@@ -428,7 +437,7 @@ range_replace_array(Module &M, b2c_map &base_ptr_to_call,
                     unsigned *added_tsan_calls, bool isWrite,
                     const DenseMap<Value *, DenseSet<CallBase *>> &ptr_values,
                     const Value *base_ptr) {
-  // replace;
+  // replace:
   //   %base = ...
   //   %base0 = sext i32 %base to i64
   //   %base_ptr = getelementptr inbounds double, ptr %var, i64 %base0
@@ -784,7 +793,6 @@ static void wrap_BB_replace(replace_func_t replace_func, Module &M,
           hasChanged |= wrap_happens_before_replace(
               replace_func, &it, M, BB, removed_tsan_calls, added_tsan_calls);
         }
-
       } while (hasChanged);
     }
   }
@@ -798,6 +806,9 @@ static inline void opt_cleanup(Module &M, ModuleAnalysisManager &AM) {
   dce.run(M, AM);
 }
 
+#define wBBr(wrapper_func)                                                     \
+  wrap_BB_replace(wrapper_func, M, &removed_tsan_calls, &added_tsan_calls)
+
 std::string combine_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Combine multiple TSAN calls with range call\n";
   unsigned removed_tsan_calls = 0;
@@ -808,9 +819,10 @@ std::string combine_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
   do {
     old_removed = removed_tsan_calls;
     old_added = added_tsan_calls;
-    wrap_BB_replace(same_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
-    wrap_BB_replace(struct_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
-    wrap_BB_replace(array_wrapper, M, &removed_tsan_calls, &added_tsan_calls);
+
+    wBBr(same_wrapper);
+    wBBr(struct_wrapper);
+    wBBr(array_wrapper);
     opt_cleanup(M, AM);
   } while (old_removed != removed_tsan_calls || old_added != added_tsan_calls);
 
