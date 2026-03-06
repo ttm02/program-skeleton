@@ -32,6 +32,8 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/Casting.h"
 
+#include "alloc_tracking_utils.h"
+
 // for more scrutiny under testing:
 // the order of visiting the values should make no difference
 // #define SHUFFLE_VALUES_FOR_TESTING
@@ -180,7 +182,45 @@ bool PrecalculationAnalysis::is_invoke_necessary_for_control_flow(
   return is_invoke_exception_case_needed(invoke);
 }
 
+void PrecalculationAnalysis::remove_mpi_error_checks() {
+  std::vector<CallBase *> mpi_calls;
+
+  // collect MPI calls
+  for (auto &F : M) {
+    for (auto &I : llvm::instructions(F)) {
+      if (auto *call = dyn_cast<CallBase>(&I)) {
+        if (is_mpi_call(call)) {
+          if (mpi_func->mpi_wtime != NULL &&
+              mpi_func->mpi_wtime == call->getCalledFunction()) {
+            continue;
+            // wtime don't return error code but the time instead
+          }
+          mpi_calls.push_back(call);
+        }
+      }
+    }
+  }
+
+  // replace with MPI_SUCCESS
+  for (auto *call : mpi_calls) {
+    if (isa<InvokeInst>(call)) {
+      assert(false && "Not implemented"); // should not happen
+      // add unconditional branch to invoke success target
+    }
+    auto *value = ConstantInt::get(call->getType(), 0); // MPI_SUCCESS
+    call->replaceAllUsesWith(value);
+  }
+  // TODO should now run some other transform passes to simplify CFG?
+}
+
 void PrecalculationAnalysis::analyze() {
+  // Before Analysis: replace all return of MPI functions with MPI_SUCCES
+  // as MPI implementation can consider any error as fatal anyway
+  // this reduces analysis complexity
+  if (remove_mpi_error_checking) {
+    remove_mpi_error_checks();
+  }
+
   analyze_functions();
 
   for (const auto &val : this->to_precompute_value) {
@@ -365,26 +405,22 @@ void PrecalculationAnalysis::visit_phi(
 
 void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
 
-      // TODO clang tidy repeated branch body (the v->visited = true part)
+  // TODO clang tidy repeated branch body (the v->visited = true part)
 
-      if (isa<Constant>(v->v)) {
+  if (isa<Constant>(v->v)) {
     // nothing to do for constant
     v->set_visited();
-  }
-  else if (auto load = dyn_cast<LoadInst>(v->v)) {
+  } else if (auto load = dyn_cast<LoadInst>(v->v)) {
     auto loaded_from = insert_tainted_value(load->getPointerOperand(), v);
     visit_load(v, loaded_from);
-  }
-  else if (auto *alloc = dyn_cast<AllocaInst>(v->v)) {
+  } else if (auto *alloc = dyn_cast<AllocaInst>(v->v)) {
     // visit_ptr_usages is called on all ptrs anyway
     // need to calculate allocation size
     insert_tainted_value(alloc->getArraySize(), v);
     v->set_visited();
-  }
-  else if (auto store = dyn_cast<StoreInst>(v->v)) {
+  } else if (auto store = dyn_cast<StoreInst>(v->v)) {
     visit_store(v, store->getPointerOperand(), store->getValueOperand());
-  }
-  else if (auto *op = dyn_cast<BinaryOperator>(v->v)) {
+  } else if (auto *op = dyn_cast<BinaryOperator>(v->v)) {
     // arithmetic
     // TODO do we need to exclude some opcodes?
     assert(op->getNumOperands() == 2);
@@ -392,23 +428,20 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
     insert_tainted_value(op->getOperand(0), v);
     insert_tainted_value(op->getOperand(1), v);
     v->set_visited();
-  }
-  else if (auto *uop = dyn_cast<UnaryOperator>(v->v)) {
+  } else if (auto *uop = dyn_cast<UnaryOperator>(v->v)) {
     // arithmetic
     // TODO do we need to exclude some opcodes?
     assert(uop->getNumOperands() == 1);
     assert(not uop->getType()->isPointerTy());
     insert_tainted_value(uop->getOperand(0), v);
     v->set_visited();
-  }
-  else if (auto *cmp = dyn_cast<CmpInst>(v->v)) {
+  } else if (auto *cmp = dyn_cast<CmpInst>(v->v)) {
     // cmp
     assert(cmp->getNumOperands() == 2);
     insert_tainted_value(cmp->getOperand(0), v);
     insert_tainted_value(cmp->getOperand(1), v);
     v->set_visited();
-  }
-  else if (auto *select = dyn_cast<SelectInst>(v->v)) {
+  } else if (auto *select = dyn_cast<SelectInst>(v->v)) {
     insert_tainted_value(select->getCondition(), v);
     auto true_val = insert_tainted_value(select->getTrueValue(), v);
     auto false_val = insert_tainted_value(select->getFalseValue(), v);
@@ -420,17 +453,13 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
       v->ptr_info->add_ptr_info_user(false_val);
     }
     v->set_visited();
-  }
-  else if (isa<Argument>(v->v)) {
+  } else if (isa<Argument>(v->v)) {
     visit_arg(v);
-  }
-  else if (isa<CallBase>(v->v)) {
+  } else if (isa<CallBase>(v->v)) {
     visit_call(v);
-  }
-  else if (isa<PHINode>(v->v)) {
+  } else if (isa<PHINode>(v->v)) {
     visit_phi(v);
-  }
-  else if (auto *cast = dyn_cast<CastInst>(v->v)) {
+  } else if (auto *cast = dyn_cast<CastInst>(v->v)) {
     // cast TO ptr is not allowed
     assert(not cast->getType()->isPointerTy() &&
            "Casting an integer to a ptr is not supported");
@@ -439,13 +468,11 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
 
     insert_tainted_value(cast->getOperand(0), v);
     v->set_visited();
-  }
-  else if (auto *gep = dyn_cast<GetElementPtrInst>(v->v)) {
+  } else if (auto *gep = dyn_cast<GetElementPtrInst>(v->v)) {
     visit_gep(v);
     assert(is_tainted(gep->getPointerOperand()));
     v->set_visited();
-  }
-  else if (auto *br = dyn_cast<BranchInst>(v->v)) {
+  } else if (auto *br = dyn_cast<BranchInst>(v->v)) {
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     v->set_visited();
     if (br->isConditional()) {
@@ -453,70 +480,58 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
     } else {
       // nothing to do
     }
-  }
-  else if (auto *sw = dyn_cast<SwitchInst>(v->v)) {
+  } else if (auto *sw = dyn_cast<SwitchInst>(v->v)) {
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     v->set_visited();
     insert_tainted_value(sw->getCondition(), v);
-  }
-  else if (auto *resume = dyn_cast<ResumeInst>(v->v)) {
+  } else if (auto *resume = dyn_cast<ResumeInst>(v->v)) {
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     // resume exception: nothing to do just keep it
     insert_tainted_value(resume->getOperand(0), v);
     v->set_visited();
-  }
-  else if (auto *ret = dyn_cast<ReturnInst>(v->v)) {
+  } else if (auto *ret = dyn_cast<ReturnInst>(v->v)) {
     insert_tainted_value(ret->getOperand(0), v);
     v->set_visited();
-  }
-  else if (isa<LandingPadInst>(v->v)) {
+  } else if (isa<LandingPadInst>(v->v)) {
     // nothing to do, just keep around
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     v->set_visited();
-  }
-  else if (auto *ext = dyn_cast<ExtractValueInst>(v->v)) {
+  } else if (auto *ext = dyn_cast<ExtractValueInst>(v->v)) {
     insert_tainted_value(ext->getAggregateOperand(), v);
     v->set_visited();
-  }
-  else if (auto *ptoi = dyn_cast<PtrToIntInst>(v->v)) {
+  } else if (auto *ptoi = dyn_cast<PtrToIntInst>(v->v)) {
     // conversion of ptr TO int e.g. for comparison or alignment check is
     // allowed
     insert_tainted_value(ptoi->getPointerOperand(), v);
     v->set_visited();
-  }
-  else if (isa<ShuffleVectorInst>(v->v) || isa<ExtractElementInst>(v->v) ||
-           isa<InsertElementInst>(v->v)) {
+  } else if (isa<ShuffleVectorInst>(v->v) || isa<ExtractElementInst>(v->v) ||
+             isa<InsertElementInst>(v->v)) {
     for (auto *operand : llvm::cast<Instruction>(v->v)->operand_values()) {
       insert_tainted_value(operand, v);
     }
     v->set_visited();
-  }
-  else if (auto *atomic = dyn_cast<AtomicRMWInst>(v->v)) {
+  } else if (auto *atomic = dyn_cast<AtomicRMWInst>(v->v)) {
     // a load and store to ptr
     visit_store(v, atomic->getPointerOperand(), atomic->getValOperand());
     visit_load(v, get_taint_info(atomic->getPointerOperand()));
-  }
-  else if (auto *insertvalue = dyn_cast<InsertValueInst>(v->v)) {
+  } else if (auto *insertvalue = dyn_cast<InsertValueInst>(v->v)) {
     // a load and store to ptr
     insert_tainted_value(insertvalue->getAggregateOperand(), v);
     insert_tainted_value(insertvalue->getInsertedValueOperand(), v);
     // indices are constants
     // I mean an integral part of the instruction, not even llvm::ConstantInt
     v->set_visited();
-  }
-  else if (auto *insertelem = dyn_cast<InsertElementInst>(v->v)) {
+  } else if (auto *insertelem = dyn_cast<InsertElementInst>(v->v)) {
     // a load and store to ptr
     insert_tainted_value(insertelem->getOperand(0), v); // vector
     insert_tainted_value(insertelem->getOperand(1), v); // insterted elem
     insert_tainted_value(insertelem->getOperand(2), v); // index
     v->set_visited();
-  }
-  else if (auto *freeze = dyn_cast<FreezeInst>(v->v)) {
+  } else if (auto *freeze = dyn_cast<FreezeInst>(v->v)) {
     // essentially a no-op on valid values
     insert_tainted_value(freeze->getOperand(0), v);
     v->set_visited();
-  }
-  else {
+  } else {
 
     errs() << "Support for analyzing this Value is not implemented yet\n";
     v->v->dump();
@@ -640,7 +655,7 @@ void PrecalculationAnalysis::visit_ptr_insertvalue(
 }
 
 bool PrecalculationAnalysis::visit_ptr_insertelement_recursive_impl(
-    const std::shared_ptr<TaintedValue> &ptr, llvm::Value *insert_idx,
+    const std::shared_ptr<TaintedValue> &ptr, llvm::ConstantInt *insert_idx,
     llvm::Instruction *aggregate_inst) {
 
   bool is_needed = false;
@@ -686,6 +701,27 @@ bool PrecalculationAnalysis::visit_ptr_insertelement_recursive_impl(
       }
     } else if (isa<ResumeInst>(u) || isa<CmpInst>(u) || isa<PtrToIntInst>(u)) {
       // nothing to do: (cast for) comparison is allowed
+    } else if (auto *shuffle = dyn_cast<ShuffleVectorInst>(u)) {
+
+      if (aggregate_inst == shuffle->getOperand(1)) {
+        shuffle->commute();
+      }
+      assert(aggregate_inst == shuffle->getOperand(0));
+
+      for (auto idx : shuffle->getShuffleMask()) {
+        if (insert_idx->equalsInt(idx)) {
+          // new derived compound
+          bool is_needed_down_lvl = visit_ptr_insertelement_recursive_impl(
+              ptr, ConstantInt::get(insert_idx->getIntegerType(), idx),
+              shuffle);
+          if (is_needed_down_lvl) {
+            // the value needed for aggregate_inst is handled by upper recursion
+            // lvl
+            insert_tainted_value(shuffle, insert_tainted_value(aggregate_inst));
+          }
+          is_needed = is_needed || is_needed_down_lvl;
+        }
+      }
     } else {
       u->dump();
       assert(0 && "this aggregate usage is not supported yet");
@@ -705,8 +741,8 @@ void PrecalculationAnalysis::visit_ptr_insertelement(
 
   for (auto *u : insertelem_inst->users()) {
     if (auto *inst = dyn_cast<Instruction>(u)) {
-      bool needed =
-          visit_ptr_insertelement_recursive_impl(ptr, inserted_index, inst);
+      bool needed = visit_ptr_insertelement_recursive_impl(
+          ptr, cast<ConstantInt>(inserted_index), inst);
       if (needed)
         insert_tainted_value(inst, ptr);
     } else {
@@ -1237,7 +1273,6 @@ void PrecalculationAnalysis::visit_call(
     include_value_in_precompute(func_ptr_info);
   }
 
-
   // analyze if call to str read/writes ptr
   if (is_call_to_std(call) && !is_thread_fork_call(call)) {
     for (auto &arg : call->args()) {
@@ -1426,14 +1461,15 @@ void PrecalculationAnalysis::visit_call_for_retval(
   } else {
     for (auto *func : get_possible_call_targets(call)) {
       if (func->isDeclaration() && func != mpi_func->mpi_wtime) {
-        errs() << "WARNING: cannot analyze if calling external function for "
-                  "return value has side effects\n";
-        errs() << "In: " << call->getFunction()->getName() << " intrinsic?"
-               << func->isIntrinsic() << "\n";
+        errs() << "\n";
         call->dump();
         func->dump();
-        errs() << "\n";
-        continue;
+        errs() << "In: " << call->getFunction()->getName() << " intrinsic? "
+               << func->isIntrinsic() << " MPI? " << is_mpi_call(call)
+               << " users:\n";
+        for (auto *u : call->users()) {
+          u->dump();
+        }
       }
       for (auto &bb : *func) {
         if (auto *ret = dyn_cast<ReturnInst>(bb.getTerminator())) {
@@ -1479,20 +1515,65 @@ void PrecalculationAnalysis::visit_call_from_ptr(
   // call->dump();
 
   if (not call->isIndirectCall()) {
-    if (func == mpi_func->mpi_send || func == mpi_func->mpi_Isend ||
-        func == mpi_func->mpi_recv || func == mpi_func->mpi_Irecv) {
-      assert(ptr_given_as_arg.size() == 1);
-      if (*ptr_given_as_arg.begin() == 0 &&
-          is_store_important(call, ptr->ptr_info)) {
-        // if communication result is not used, it is not important
-        ptr->v->dump();
-        call->dump();
-        assert(false &&
-               "Tracking Communication to get the envelope is currently "
-               "not supported");
-      } else {
-        // we know that the other arguments are not important e.g. not written
-        // to like if the communicator is used
+    if (!ignore_MPI_communication && !add_all_MPI_communication) {
+      // default case: trigger assertion as originally
+
+      // TODO add other MPI funcs such as bcast basically everything that has a
+      // buffer
+      if (func == mpi_func->mpi_send || func == mpi_func->mpi_Isend ||
+          func == mpi_func->mpi_recv || func == mpi_func->mpi_Irecv) {
+        assert(ptr_given_as_arg.size() == 1);
+        if (*ptr_given_as_arg.begin() == 0 &&
+            is_store_important(call, ptr->ptr_info)) {
+          // if communication result is not used, it is not important
+          ptr->v->dump();
+          call->dump();
+          assert(false &&
+                 "Tracking Communication to get the envelope is currently "
+                 "not supported");
+        } else {
+          // we know that the other arguments are not important e.g. not written
+          // to like if the communicator is used
+          return;
+        }
+      }
+    } else if (ignore_MPI_communication) {
+      // This is the first option to deal with MPI Communication.
+      // We want to ignore the MPI communication operation and flag the
+      // problematic call as invalid.
+      if (func &&
+          (func->getName() == "MPI_Recv" || func->getName() == "MPI_Irecv" ||
+           func->getName() == "MPI_Bcast")) {
+        assert(ptr_given_as_arg.size() == 1);
+        if (*ptr_given_as_arg.begin() == 0) {
+          if (ptr->ptr_info->isReadFrom() &&
+              is_store_important(call, ptr->ptr_info)) {
+            llvm::errs() << "\t[AllocTrackerLTOPass::Precompute] ==== TRACKING "
+                            "COMMUNICATION ASSERTION WOULD TRIGGER ====\n";
+
+            ptr->v->dump();
+            call->dump();
+
+            at_utils_collect_problematic_calls(call, ptr, problematic_calls);
+            return;
+          }
+        } else {
+          // we know that the other arguments are not important e.g. not written
+          // to like if the communicator is used
+          return;
+        }
+      }
+    } else if (add_all_MPI_communication) {
+      // This is the second option to deal with MPI Communication.
+      // We want to add all the desired MPI communication operations to the
+      // slice.
+      if (func &&
+          (func->getName() == "MPI_Send" || func->getName() == "MPI_Recv")) {
+        add_all_MPI_Send_and_Recv_to_slice(call, ptr);
+        return;
+      }
+      if (func && func->getName() == "MPI_Bcast") {
+        add_all_MPI_Bcasts_to_slice(call, ptr);
         return;
       }
     }
@@ -1536,11 +1617,16 @@ void PrecalculationAnalysis::visit_call_from_ptr(
       // something important
       return;
     }
+    if (func->getName() == "MPI_Errhandler_set" ||
+        func->getName() == "MPI_Errhandler_create") {
+      // we treat all mpi errors as fatal, no need to set errhandler
+      return;
+    }
 
     if (is_mpi_function(func)) {
       // TODO is there anything else in MPI we need to handle special??
-      // call->dump();
-      // errs() << "In: " << call->getFunction()->getName() << "\n";
+      call->dump();
+      errs() << "In: " << call->getFunction()->getName() << "\n";
       assert(not is_included_in_precompute(call));
       return;
     }
@@ -1550,7 +1636,12 @@ void PrecalculationAnalysis::visit_call_from_ptr(
       // but needs to be tainted so it will be replaced later
       auto call_info = insert_tainted_value(call, ptr, false);
 
-      assert(false && "a ptr given into an allocation call???");
+      if (func->getName() == "realloc") {
+        assert(func->arg_size() == 2 && "realloc should have two arguments!");
+        ptr->ptr_info->merge_with(call_info->ptr_info);
+      } else {
+        assert(false && "a ptr given into an allocation call?");
+      }
       return;
     }
 
@@ -1977,18 +2068,45 @@ PrecalculationAnalysis::get_possible_call_targets(llvm::CallBase *call) const {
     return possible_targets;
   }
 
+  // functionType operator == does not work with varargs for our context, so we
+  // have this additional check
+  auto do_types_match = [](FunctionType *FT1, FunctionType *FT2) {
+    if (FT1->getReturnType() != FT2->getReturnType())
+      return false;
+    if (FT1->getNumParams() != FT2->getNumParams())
+      return false;
+
+    for (unsigned int i = 0; i < FT1->getNumParams(); ++i) {
+      if (FT1->getParamType(i) != FT2->getParamType(i))
+        return false;
+    }
+
+    return true;
+  };
+
   if (possible_targets.empty()) {
     // can call any function with same type that we get a ptr of somewhere
     for (const auto &pair : function_analysis) {
       auto func = pair.second;
       if (func->is_func_ptr_captured) {
-        if (func->func->getFunctionType() == call->getFunctionType())
+        if (func->func->getFunctionType() == call->getFunctionType() ||
+            do_types_match(func->func->getFunctionType(),
+                           call->getFunctionType()))
           possible_targets.push_back(func->func);
       }
     }
     // TODO can we check that we will not be able to get a ptr to a function
     // outside of the module?
   }
+
+  /*
+   If a function pointer is never initialized, e.g. a struct member but never
+   set to point to a concrete function, no potential call targets will be found
+   here and the following assert will be triggered. This is a limitation of the
+   approach. In theory, one could search for such cases beforehand and set the
+   function pointer to NULL then the analysis should be able to handle these
+   cases.
+*/
 
   if (possible_targets.empty()) {
     call->dump();
@@ -2138,4 +2256,73 @@ bool PrecalculationAnalysis::store_happens_after_all_loads(
     }
   }
   return true;
+}
+
+void PrecalculationAnalysis::add_all_MPI_Send_and_Recv_to_slice(
+    llvm::CallBase *call, const std::shared_ptr<TaintedValue> &ptr) {
+  ptr->ptr_info->setIsWrittenTo(call, this);
+  ptr->ptr_info->setIsReadFrom(call, this);
+
+  if (is_store_important(call, ptr->ptr_info)) {
+    // llvm::errs() << "[AllocTrackerLTOPass::visit_call_from_ptr] Handling all
+    // MPI_Send or MPI_Recv\n";
+
+    auto call_info = insert_tainted_value(call, ptr, false);
+    include_value_in_precompute(call_info);
+
+    // For all arguments: mark as tainted and add to precompute
+    for (unsigned int i = 0; i < call->arg_size(); ++i) {
+      auto info = insert_tainted_value(call->getArgOperand(i), call_info);
+      include_value_in_precompute(info);
+    }
+
+    // Merge all buffers of all MPI_Bcasts in the application
+    for (auto *to_precompute_I : to_precompute_cfg) {
+      if (auto *call_B = llvm::dyn_cast<llvm::CallBase>(to_precompute_I)) {
+        auto *called_F = call_B->getCalledFunction();
+        if (called_F && (called_F->getName() == "MPI_Send" ||
+                         called_F->getName() == "MPI_Recv")) {
+          auto *buffer_V = call_B->getArgOperand(0);
+
+          // Merge communication buffers
+          auto buffer_tv = insert_tainted_value(buffer_V, ptr);
+          ptr->ptr_info->merge_with(buffer_tv->ptr_info);
+        }
+      }
+    }
+  }
+}
+
+void PrecalculationAnalysis::add_all_MPI_Bcasts_to_slice(
+    llvm::CallBase *call, const std::shared_ptr<TaintedValue> &ptr) {
+  ptr->ptr_info->setIsWrittenTo(call, this);
+  ptr->ptr_info->setIsReadFrom(call, this);
+
+  if (is_store_important(call, ptr->ptr_info)) {
+    // llvm::errs() << "[AllocTrackerLTOPass::visit_call_from_ptr] Handling all
+    // MPI_Bcast\n";
+
+    auto call_info = insert_tainted_value(call, ptr, false);
+    include_value_in_precompute(call_info);
+
+    // For all arguments: mark as tainted and add to precompute
+    for (unsigned int i = 0; i < call->arg_size(); ++i) {
+      auto info = insert_tainted_value(call->getArgOperand(i), call_info);
+      include_value_in_precompute(info);
+    }
+
+    // Merge all buffers of all MPI_Bcasts in the application
+    for (auto *to_precompute_I : to_precompute_cfg) {
+      if (auto *call_B = llvm::dyn_cast<llvm::CallBase>(to_precompute_I)) {
+        auto *called_F = call_B->getCalledFunction();
+        if (called_F && called_F->getName() == "MPI_Bcast") {
+          auto *buffer_V = call_B->getArgOperand(0); // before: call
+
+          // Merge communication buffers
+          auto buffer_tv = insert_tainted_value(buffer_V, ptr);
+          ptr->ptr_info->merge_with(buffer_tv->ptr_info);
+        }
+      }
+    }
+  }
 }

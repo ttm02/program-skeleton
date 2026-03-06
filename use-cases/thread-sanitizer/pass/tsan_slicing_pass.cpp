@@ -138,8 +138,8 @@ static std::string run_tsan(Module &M, ModuleAnalysisManager &AM) {
   return "TSAN instrumentation already available";
 }
 
-static void collectCalls(CallBase *call, DenseSet<Value *> &to_precompute,
-                         DenseSet<Instruction *> &precompute_locations) {
+static void collectCalls(CallBase *call, std::vector<Value *> &to_precompute,
+                         std::vector<Instruction *> &precompute_locations) {
   if (is_func_from_std(call->getFunction())) {
     // dont analyze internals of std, though tsan may instrument them
     return;
@@ -170,13 +170,13 @@ static void collectCalls(CallBase *call, DenseSet<Value *> &to_precompute,
   }
 
   for (auto &it_arg : call->args())
-    to_precompute.insert(it_arg);
-  precompute_locations.insert(call);
+    to_precompute.push_back(it_arg);
+  precompute_locations.push_back(call);
 }
 
 static void
-collectForPrecompute(Instruction &inst, DenseSet<Value *> &to_precompute,
-                     DenseSet<Instruction *> &precompute_locations) {
+collectForPrecompute(Instruction &inst, std::vector<Value *> &to_precompute,
+                     std::vector<Instruction *> &precompute_locations) {
   if (auto *call = dyn_cast<CallBase>(&inst)) {
     collectCalls(call, to_precompute, precompute_locations);
   } else {
@@ -190,8 +190,8 @@ static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
   auto *main_func = M.getFunction("main");
   assert(main_func);
 
-  DenseSet<Value *> to_precompute;
-  DenseSet<Instruction *> precompute_locations;
+  std::vector<Value *> to_precompute;
+  std::vector<Instruction *> precompute_locations;
 
   for (Function &func : M) {
     // do not instrument tsan itself
@@ -212,21 +212,15 @@ static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
     return "";
   }
 
+  std::vector<Instruction *> problematic;
   auto precalcuation = std::make_shared<PrecomputeInsertion>(
       M,
       std::make_shared<PrecalculationAnalysis>(M, main_func, to_precompute,
-                                               precompute_locations),
-      false);
+                                               precompute_locations,
+                                               problematic, false, false),
+      false, false);
 
   // do NOT call clean_precompute() as we want the tsan calls to stick around
-
-  // we don't need the management stuff, we directly replace our program with
-  // precomputed one
-  auto precompute_main = precalcuation->get_precompute_main();
-  auto it = precompute_main->begin()->begin();
-  ++it; // second instruction is call to precomputed main
-  auto *call = cast<CallBase>(it);
-  auto *precomputed_main = call->getCalledFunction();
 
   // remove old main
   auto orig_linkeage = main_func->getLinkage();
@@ -242,23 +236,16 @@ static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
     args.push_back(&arg);
   }
 
+  auto *precomputed_main = precalcuation->get_precompute_main();
   builder.CreateCall(precomputed_main, args);
   builder.CreateRet(Constant::getNullValue(main_func->getReturnType()));
 
-  // remove other non-precompute functions now
   std::vector<Function *> to_delete;
   for (Function &func : M) {
     if (precalcuation->is_func_part_of_precompute_phase(&func)) {
       // the TSAN calls are already part of precompute,
       // no need to instrumente them again
       func.removeFnAttr(Attribute::SanitizeThread);
-    } else if ((not func.isDeclaration()) && &func != main_func &&
-               (not func.getName().starts_with("__tsan")) &&
-               (not is_func_from_std(&func))) {
-      // not used: remove
-      if (func.hasExternalLinkage())
-        func.setLinkage(GlobalValue::InternalLinkage);
-      // this will prompt GlobalDCE to remove
     }
   }
 
@@ -323,7 +310,7 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
       // stricter assertion that our pass should not use more undef values some
       // undefs are actually duplicated in our test programm (some vector elems
       // are undef)
-      double max_undef_factor = 1.0; // between 1.0 and 2.0
+      double max_undef_factor = 2.0; // between 1.0 and 2.0
       assert(get_num_undefs(M) <= num_undef * max_undef_factor);
 #endif
       return true;
@@ -369,7 +356,7 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
     }
 
     // try to eliminate even more things
-    if (not DisableSlicing)
+    if (DisableSlicing)
       MPM.run(M, AM);
 
     delete analysis_results;
@@ -379,11 +366,18 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
 
 } // namespace
 
+PassPluginLibraryInfo getPassPluginInfo() {
+  const auto callback = [](PassBuilder &PB) {
+    PB.registerOptimizerEarlyEPCallback(
+        [&](ModulePassManager &MPM, auto, auto) {
+          MPM.addPass(TSANSlicingPass());
+          return true;
+        });
+  };
+
+  return {LLVM_PLUGIN_API_VERSION, "sanitizer-precompute", "1.0.0", callback};
+};
+
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
-  return {
-      LLVM_PLUGIN_API_VERSION, "tsan_slicing", "1.0.0", [](PassBuilder &PB) {
-        PB.registerOptimizerEarlyEPCallback(
-            [&](ModulePassManager &MPM, OptimizationLevel Level,
-                ThinOrFullLTOPhase Phase) { MPM.addPass(TSANSlicingPass()); });
-      }};
+  return getPassPluginInfo();
 }

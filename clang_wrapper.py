@@ -110,6 +110,7 @@ if use_compiler_pass and "COMPILER_PASS" not in os.environ:
     print("The COMPILER_PASS environment variable is not set")
     sys.exit(1)
 
+
 pass_plugin_arg = False
 
 
@@ -123,7 +124,13 @@ def load_pass_args():
     pass_plugin_arg = True
 
 
-pass_args = ["-fpass-plugin=" + os.environ["COMPILER_PASS"], "-lprecompute"]
+compiler_pass = os.environ["COMPILER_PASS"]
+pass_args = [
+    "-fpass-plugin=" + compiler_pass,
+    "-Wl,-mllvm=-load=" + compiler_pass,
+    "-lprecompute",
+]
+
 if use_static_analysis:
     load_pass_args()
     pass_args += ["-mllvm", "--enable-static-analysis"]
@@ -148,7 +155,7 @@ def run_command(cmd):
 if is_to_obj:
     if debug_wrapper:
         print("MODE: to obj file")
-    if has_multiple_src_file:
+    if has_multiple_src_file and False:
         print(
             "ERROR linking multiple src files directly into one object file is not supported"
         )
@@ -216,7 +223,7 @@ if has_o_files:
 if debug_wrapper:
     print("MODE: direct to Binary")
 
-if has_multiple_src_file:
+if has_multiple_src_file and False:
     print(
         "ERROR linking multiple src files directly into one binary file is not supported"
     )

@@ -51,6 +51,13 @@ inline bool is_allocation(llvm::Function *func) {
   if (func->getName() == "calloc") {
     return true;
   }
+  if (func->getName() == "realloc") {
+    return true;
+  }
+  // NOTE: AllocTracking CHANGE =========
+  if (func->getName() == "aligned_alloc") {
+    return true;
+  }
   return false;
 }
 
@@ -58,7 +65,13 @@ inline bool is_allocation(llvm::CallBase *call) {
   if (call->isIndirectCall()) {
     return false;
   }
-  return is_allocation(call->getCalledFunction());
+  if (call->getCalledFunction()) {
+    return is_allocation(call->getCalledFunction());
+  }
+  // happens when a function is casted
+  auto *func = llvm::dyn_cast<llvm::Function>(call->getCalledOperand());
+  // some function cast
+  return is_allocation(func);
 }
 
 bool is_func_from_std(llvm::Function *func);

@@ -125,8 +125,17 @@ static std::set<std::string> func_list_exact = {
     "isalpha",
     "isalnum",
     "isdigit"
+    "nan",
     // from gnu
     "__getdelim",
+    // complex number exponential std func in C
+    "cexp",
+    // compiler-rt (compiler runtime) helper functions
+    // for complex number operations
+    "__divdc3",
+    "__adddc3",
+    "__subdc3",
+    "__muldc3",
 };
 static std::set<std::string> func_list_starts_with = {
     // from ctype.h
@@ -136,6 +145,11 @@ static std::set<std::string> func_list_starts_with = {
     "__isoc23_",
     // flang
     "_FortranAio",
+};
+static std::set<std::string> func_list_ends_with = {
+    // rounding functions from math.h
+    "lround", "lroundf", "lroundl", "llround", "llroundf", "llroundl",
+    "scanf",  "fscanf",  "sscanf",  "fseeko",  "ftello",   "lseek",
 };
 
 bool is_func_from_std(llvm::Function *func) {
@@ -163,9 +177,6 @@ bool is_func_from_std(llvm::Function *func) {
   auto demangled_fname =
       get_function_name(llvm::demangle(func->getName().str()));
 
-  // errs() << "Test if in std:\n" << func->getName() <<demangled_fname <<
-  // "\n";
-
   for (const auto &prefix : allowed_function_prefixes) {
     if (demangled_fname.rfind(prefix, 0) == 0) {
       return true;
@@ -178,6 +189,10 @@ bool is_func_from_std(llvm::Function *func) {
   }
   for (auto funcName : func_list_starts_with) {
     if (func->getName().starts_with(funcName))
+      return true;
+  }
+  for (auto funcName : func_list_ends_with) {
+    if (func->getName().ends_with(funcName))
       return true;
   }
 
