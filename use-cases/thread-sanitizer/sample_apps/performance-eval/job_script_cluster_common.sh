@@ -102,7 +102,7 @@ write_result() {
         echo -n ","
         cat "$LOG_FILE" | tail -n 1 | tr -d "\n"
         echo -n ","
-        awk '/Command exited with non-zero status/ {print $NF}' "$LOG_FILE"
+        awk '/Command exited with non-zero status/ {print $NF}' "$LOG_FILE" | tr -d "\n"
         echo ""
     ) | tee -a "$CSV_FILE"
 }
