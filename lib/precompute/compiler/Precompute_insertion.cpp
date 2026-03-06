@@ -263,6 +263,11 @@ void PrecomputeInsertion::replace_calls_in_copy(
           to_replace.push_back(call);
         } else {
           auto *callee = call->getCalledFunction();
+          if (!callee) {
+            // C sometimes has function casts
+            callee = dyn_cast<Function>(call->getCalledOperand());
+          }
+          assert(callee);
 
           if (callee == get_mpi_functions(M)->mpi_comm_rank ||
               callee == get_mpi_functions(M)->mpi_comm_size) {
@@ -276,7 +281,7 @@ void PrecomputeInsertion::replace_calls_in_copy(
           }
 
           if (precompute_analyis_result->is_func_included_in_precompute(
-                  call->getCalledFunction())) {
+                  callee)) {
             to_replace.push_back(call);
             continue;
           } else {
