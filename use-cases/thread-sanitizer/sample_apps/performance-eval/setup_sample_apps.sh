@@ -86,8 +86,8 @@ if [ -n "$1" ]; then
 else
   init_app 'lulesh'
   init_app 'hpccg'
-  init_app 'tealeaf'
   init_app 'miniamr'
+  init_app 'tealeaf'
 fi
 
 echo "setup for all sample apps completed"

@@ -1,0 +1,21 @@
+diff --git a/openmp/main.c b/openmp/main.c
+index 721aef2..ba7f4e1 100644
+--- a/openmp/main.c
++++ b/openmp/main.c
+@@ -427,6 +427,8 @@ void allocate(void)
+ {
+    int i, j, k, m, n;
+ 
++#pragma omp parallel
++   {
+    num_blocks = (num_sz *) ma_malloc((num_refine+1)*sizeof(num_sz),
+                                   __FILE__, __LINE__);
+    num_blocks[0] = num_pes*init_block_x*init_block_y*init_block_z;
+@@ -436,6 +438,7 @@ void allocate(void)
+ 
+    blocks = (block *) ma_malloc(max_num_blocks*sizeof(block),
+                                 __FILE__, __LINE__);
++   }
+ 
+    for (n = 0; n < max_num_blocks; n++) {
+       blocks[n].number = -1;
