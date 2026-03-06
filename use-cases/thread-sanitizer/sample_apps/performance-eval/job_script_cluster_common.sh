@@ -13,7 +13,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OMP_PLACES=cores
 
 # get config parameter
-PARAMETER_FILE="${SCRIPT_DIR}/parameters_${APPNAME_LOWER}.txt"
+PARAMETER_FILE="${SCRIPT_DIR}/../${APPNAME_LOWER}/parameters.txt"
 APP_PARAMS=$(sed -n "${APP_PARAM_LINE}p" "$PARAMETER_FILE")
 
 if [ "$SLURM_ARRAY_TASK_ID" = "17" ]; then

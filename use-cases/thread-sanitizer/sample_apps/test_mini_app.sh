@@ -11,7 +11,7 @@ else
   exit 31
 fi
 
-MINIAPP_SCRIPT="${SCRIPT_DIR}/${1}/${1}.sh"
+MINIAPP_SCRIPT="${SCRIPT_DIR}/${1}/setup.sh"
 [ -f "$MINIAPP_SCRIPT" ] || exit 32
 
 source "$SETUP_SCRIPT"

@@ -25,7 +25,7 @@ fi
 
 init_app() {
   unset APP_NAME
-  source "${SCRIPT_DIR}/../$1/$1.sh"
+  source "${SCRIPT_DIR}/../${1}/setup.sh"
   [ -z "$APP_NAME" ] && exit 31
 
   if [ ! -d "$APP_NAME" ]; then
