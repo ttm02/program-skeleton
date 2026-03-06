@@ -207,6 +207,41 @@ const SCEV *removeCastInSCEV(const SCEV *scev, ScalarEvolution &SE) {
   llvm_unreachable("unknown SCEV operation");
 }
 
+static void getIdxVec(const DataLayout DL, const StructType *STy,
+                      const StructLayout *SL, const uint64_t memberOffset,
+                      SmallVector<unsigned> &offsetVector) {
+  unsigned structIdx = SL->getElementContainingOffset(memberOffset);
+  assert(0 <= structIdx && structIdx <= STy->elements().size());
+  offsetVector.push_back(structIdx);
+  if (auto elemSTy = dyn_cast<StructType>(STy->getElementType(structIdx))) {
+    auto elemSL = DL.getStructLayout(elemSTy);
+    auto elemOffset = memberOffset - SL->getElementOffset(structIdx);
+    getIdxVec(DL, elemSTy, elemSL, elemOffset, offsetVector);
+  }
+}
+
+static uint64_t getOffsetAfterIdx(const DataLayout DL, const StructType *STy,
+                                  const StructLayout *SL,
+                                  const uint64_t memberOffset) {
+  unsigned structIdx = SL->getElementContainingOffset(memberOffset);
+  assert(0 <= structIdx && structIdx <= STy->elements().size());
+  if (auto elemSTy = dyn_cast<StructType>(STy->getElementType(structIdx))) {
+    auto elemSL = DL.getStructLayout(elemSTy);
+    auto elemOffset = memberOffset - SL->getElementOffset(structIdx);
+    auto maxOffset = getOffsetAfterIdx(DL, elemSTy, elemSL, elemOffset);
+    return memberOffset + maxOffset;
+  } else {
+    auto mo = memberOffset;
+    auto structMaxBytes = SL->getSizeInBytes();
+    while (SL->getElementContainingOffset(mo) == structIdx) {
+      mo++;
+      if (mo == structMaxBytes)
+        break;
+    };
+    return mo;
+  }
+}
+
 static void
 range_replace_struct(Module &M, b2c_map &base_ptr_to_call,
                      c2b_map &call_to_base_ptr, unsigned *removed_tsan_calls,
@@ -226,11 +261,7 @@ range_replace_struct(Module &M, b2c_map &base_ptr_to_call,
   const auto STy = getGEPstructTy(base_ptr);
   if (!STy)
     return;
-
   assert(not STy->elements().empty());
-  auto elemTy = STy->elements().consume_front();
-  if (not isa<IntegerType>(elemTy))
-    return;
 
   for (auto p2c : ptr_values) {
     auto *ptr = p2c.getFirst();
@@ -301,8 +332,52 @@ range_replace_struct(Module &M, b2c_map &base_ptr_to_call,
   const auto DL = M.getDataLayout();
   const auto *SL = DL.getStructLayout(STy);
 
+  auto isAdjacentOffVec = [&](const SmallVector<unsigned> LHS,
+                              const SmallVector<unsigned> RHS) {
+    auto *LHS_STy = STy;
+    unsigned i = 0;
+    for (; i < LHS.size() && i < RHS.size(); i++) {
+      assert(LHS[i] <= RHS[i]);
+      if (1 < RHS[i] - LHS[i])
+        return false;
+
+      auto *LHS_elem = LHS_STy->getElementType(LHS[i]);
+      assert(LHS_elem);
+      if (auto *next_LHS_STy = dyn_cast<StructType>(LHS_elem))
+        LHS_STy = next_LHS_STy;
+      else
+        break;
+
+      if (RHS[i] != LHS[i])
+        break;
+    }
+
+    // LHS always last idx
+    unsigned j = ++i;
+    for (; j < LHS.size(); ++j) {
+      if (LHS[j] != STy->elements().size())
+        return false;
+
+      auto *LHS_elem = LHS_STy->getElementType(LHS[j]);
+      if (auto *next_LHS_STy = dyn_cast<StructType>(LHS_elem))
+        LHS_STy = next_LHS_STy;
+      else {
+        j++;
+        break;
+      }
+    }
+    assert(j == LHS.size());
+
+    // RHX always first idx
+    for (unsigned k = i; k < RHS.size(); ++k)
+      if (RHS[k] != 0)
+        return false;
+
+    return true;
+  };
+
   DenseSet<CallBase *> calls;
-  unsigned startIdx, lastIdx;
+  SmallVector<unsigned> startIdx, lastIdx;
   uint64_t startOffset;
   GetElementPtrInst *startPtr, *lastPtr;
   startPtr = nullptr;
@@ -311,8 +386,8 @@ range_replace_struct(Module &M, b2c_map &base_ptr_to_call,
   // check for contingous part ranges
   for (auto *offPtr : offset_ptrs) {
     auto memberOffset = getMemberOffset(base_ptr, offPtr);
-    auto idxMember = SL->getElementContainingOffset(memberOffset);
-    assert(0 <= idxMember && idxMember <= STy->elements().size());
+    SmallVector<unsigned> idxMember;
+    getIdxVec(DL, STy, SL, memberOffset, idxMember);
 
     // first iteration
     if (not startPtr) {
@@ -321,29 +396,22 @@ range_replace_struct(Module &M, b2c_map &base_ptr_to_call,
       startOffset = memberOffset;
     }
     if (lastPtr == offPtr) {
-      // If there is a gap before the last element, it will remain alone
-      // forever
-      if (1 < (idxMember - lastIdx))
+      // if there is a gap before the last element, it remains alone
+      if (not isAdjacentOffVec(lastIdx, idxMember))
         continue;
-      // if last element, then there is no gap after it
+      // if last element, then it can be combined with previous elements
       lastIdx = idxMember;
     }
     auto vc = ptr_values.lookup(offPtr);
     assert(vc.size() == 1);
     calls.insert(*vc.begin());
-    if (1 < (idxMember - lastIdx) || lastPtr == offPtr) {
-      auto length = lastIdx - startIdx + 1;
-      assert(1 <= length);
+
+    if (not isAdjacentOffVec(lastIdx, idxMember) || lastPtr == offPtr) {
       // if more than one call
-      if (1 < length) {
-        auto structMaxBytes = SL->getSizeInBytes();
-        while (SL->getElementContainingOffset(memberOffset) == lastIdx) {
-          memberOffset++;
-          if (memberOffset == structMaxBytes)
-            break;
-        };
+      if (startPtr != offPtr) {
         assert(startPtr);
-        range_replace_struct_part(startPtr, memberOffset - startOffset, calls);
+        auto offsetOoR = getOffsetAfterIdx(DL, STy, SL, memberOffset);
+        range_replace_struct_part(startPtr, offsetOoR - startOffset, calls);
         calls.clear();
       }
       startIdx = idxMember;
