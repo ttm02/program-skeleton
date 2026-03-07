@@ -31,20 +31,23 @@ def main():
 
 colors = [
     "#FF0000",
-    "#00FF00",
-    "#0000FF",
-    "#FFFF00",
-    "#00FFFF",
     "#FF00FF",
-    "#FFA500",
-    "#800080",
-    "#008080",
-    "#FF69B4",
-    "#00BFFF",
-    "#7FFF00",
-    "#FFD700",
+    "#8B4513",
     "#FF7F50",
+    "#FF69B4",
+    "#FFA500",
+    "#708090",
+    "#FFD700",
+    "#FFFF00",
+    "#00BFFF",
+    "#0000FF",
+    "#00FF00",
+    "#00FFFF",
+    "#7FFF00",
+    "#008080",
+    "#800080",
     "#BA55D3",
+    "#D3BA55",
 ]
 
 mode_list = [
@@ -52,6 +55,7 @@ mode_list = [
     "merge",
     "merge+loop",
     "single",
+    "single+loop",
     "single+merge",
     "single+merge+loop",
     "slicing",
@@ -59,6 +63,7 @@ mode_list = [
     "slicing+merge",
     "slicing+merge+loop",
     "slicing+single",
+    "slicing+single+loop",
     "slicing+single+merge",
     "slicing+single+merge+loop",
 ]
@@ -121,7 +126,7 @@ def split_dataframe(df, chunk_size):
 def create_boxplot(df, pdf, pdf_name):
     df_tc_count = df["testcase"].nunique()
     fig_factor = max(1 - df_tc_count * 0.05, 0)
-    fig_height = df_tc_count * (1.11 + fig_factor * 0.04) + (0.03 + fig_factor * 0.05)
+    fig_height = df_tc_count * (1.125 + fig_factor * 0.04) + (0.03 + fig_factor * 0.05)
     fig, ax = plt.subplots(figsize=(7.6, fig_height))
 
     x_ticks = np.arange(0, 100 + 1, 10)
@@ -173,7 +178,7 @@ def create_boxplot(df, pdf, pdf_name):
 
 def create_heat(df, pdf, all_labels=True, y_labels=True):
     df = df.copy()
-    fig_height = 4.0 if all_labels else 2.1
+    fig_height = 4.2 if all_labels else 2.2
     fig_width = 7.25 if y_labels else 4.7
     if not all_labels:
         fig_width *= 0.88

@@ -19,35 +19,39 @@ def main():
     if len(sys.argv) != 2:
         usage()
 
-    visualize_hpccg()
     visualize_lulesh()
+    visualize_hpccg()
+    visualize_miniamr()
+    visualize_tealeaf()
 
 
 colors = [
-    "#ff0000",
-    "#ff00ff",
-    "#ff7f50",
-    "#ff69b4",
-    "#ffa500",
-    "#ffd700",
-    "#ffff00",
-    "#00bfff",
-    "#0000ff",
-    "#00ff00",
-    "#00ffff",
-    "#7fff00",
+    "#FF0000",
+    "#FF00FF",
+    "#8B4513",
+    "#FF7F50",
+    "#FF69B4",
+    "#FFA500",
+    "#708090",
+    "#FFD700",
+    "#FFFF00",
+    "#00BFFF",
+    "#0000FF",
+    "#00FF00",
+    "#00FFFF",
+    "#7FFF00",
     "#008080",
     "#800080",
-    "#ba55d3",
-    "#d3ba55",
+    "#BA55D3",
+    "#D3BA55",
 ]
-
 
 mode_list = [
     "loop",
     "merge",
     "merge+loop",
     "single",
+    "single+loop",
     "single+merge",
     "single+merge+loop",
     "slicing",
@@ -55,6 +59,7 @@ mode_list = [
     "slicing+merge",
     "slicing+merge+loop",
     "slicing+single",
+    "slicing+single+loop",
     "slicing+single+merge",
     "slicing+single+merge+loop",
 ]
@@ -67,11 +72,14 @@ for ml in mode_list:
     mode_mapping[ml] = "TSAN + " + ml.replace("+", " + ")
 
 mode_order = list(mode_mapping.values())
-mode_order_all = mode_order.copy()
 mode_to_color = dict(zip(mode_mapping.keys(), colors))
 mode_to_color_plot = dict(zip(mode_order, colors))
+
+# backup to reset after filtering
 mode_to_color_plot_all = mode_to_color_plot.copy()
 mode_apply_list_all = list(mode_mapping.keys())
+mode_order_all = mode_order.copy()
+mode_mapping_all = mode_mapping.copy()
 
 
 # get largest size there all modes are present
@@ -120,6 +128,8 @@ def annotate_overhead_factor(
     for i in percentages.index:
         for mode in mode_apply_list:
             if mode == "vanilla":
+                continue
+            if not (mode in df["mode"].unique()):
                 continue
 
             time_val = df[
@@ -241,6 +251,7 @@ def save_plot(df, name, pdf_name, name_ext, plotter, mode_apply_list):
 
     plt.savefig(f"{name}_{pdf_name}{name_ext}.pdf")
     print(f"Saving {name}_{pdf_name}{name_ext}.pdf")
+    plt.close()
 
 
 def get_plot(df, name, pdf_name, plotter):
@@ -250,12 +261,13 @@ def get_plot(df, name, pdf_name, plotter):
     ### TSAN without slicing has really very much overhead
 
     def reset_lists():
-        global mode_to_color_plot, mode_order
+        global mode_mapping, mode_to_color_plot, mode_order, mode_to_color_plot_all
         mode_to_color_plot = mode_to_color_plot_all.copy()
+        mode_mapping = mode_mapping_all.copy()
         mode_order = mode_order_all.copy()
 
     def set_mode_lists(mal_list):
-        global mode_to_color_plot, mode_order
+        global mode_mapping, mode_to_color_plot, mode_order, mode_to_color_plot_all
         mode_to_color_plot = {}
         mode_order = []
         for v in mal_list:
@@ -288,7 +300,8 @@ def get_plot(df, name, pdf_name, plotter):
     reset_lists()
 
     # compare static analysis with TSAN and slicing
-    global mode_mapping, mode_to_color_plot
+    global mode_mapping, mode_to_color_plot, mode_to_color_plot_all
+    mode_to_color_plot_backup = mode_to_color_plot_all.copy()
     tsan_stan = "single+merge+loop"
     tsan_stan_text = "TSAN + static analysis"
     tsan_stan_old_text = mode_mapping[tsan_stan]
@@ -320,6 +333,7 @@ def get_plot(df, name, pdf_name, plotter):
         df_plus_analysis, name, pdf_name, "_plus_analysis", plotter, mal_plus_analysis
     )
 
+    mode_to_color_plot_all = mode_to_color_plot_backup.copy()
     reset_lists()
 
 
@@ -331,15 +345,15 @@ def create_plots(df, name):
 def data_from_csv(name):
     DATAPATH = sys.argv[1]
     files = glob(DATAPATH + "/" + name + "/*.csv")
-    df = pd.concat((pd.read_csv(f) for f in files), ignore_index=True)
+    df = pd.concat(
+        (
+            d[d["exit_code"].isna() | (d["exit_code"].astype(str) == "0")]
+            for d in (pd.read_csv(f) for f in files)
+        ),
+        ignore_index=True,
+    )
     df["mode_readable"] = df["mode"].replace(mode_mapping)
     return df
-
-
-def visualize_hpccg():
-    df_hpccg = data_from_csv("hpccg")
-    df_hpccg["size"] = df_hpccg["config"].str.extract(r"(\d+)").astype(int)
-    create_plots(df_hpccg, "HPCCG")
 
 
 def visualize_lulesh():
@@ -360,6 +374,40 @@ def visualize_lulesh():
     max_iter = get_largest_value_for_group(df_lulesh, "cfg_iter")
     df_lulesh = df_lulesh[df_lulesh["cfg_iter"] == max_iter]
     get_plot(df_lulesh, name, "problem_size", create_plot_problem_size)
+
+
+def visualize_hpccg():
+    df_hpccg = data_from_csv("hpccg")
+    df_hpccg["size"] = df_hpccg["config"].str.extract(r"(\d+)").astype(int)
+    create_plots(df_hpccg, "HPCCG")
+
+
+def visualize_miniamr():
+    df_miniamr = data_from_csv("miniamr")
+    df_miniamr["size"] = df_miniamr["config"].str.extract(r"__nx_(\d+)_").astype(int)
+    create_plots(df_miniamr, "miniAMR")
+
+
+def visualize_tealeaf():
+    df_tealeaf = data_from_csv("tealeaf")
+    df_tealeaf["cfg_resolution"] = (
+        df_tealeaf["config"].str.extract(r"(\d+)_").astype(int)
+    )
+    df_tealeaf["cfg_steps"] = df_tealeaf["config"].str.extract(r"_(\d+)").astype(int)
+    name = "TeaLeaf"
+
+    df_tealeaf["size"] = (
+        df_tealeaf["cfg_resolution"].astype(str)
+        + "r+"
+        + df_tealeaf["cfg_steps"].astype(str)
+        + "s"
+    )
+    get_plot(df_tealeaf, name, "thread_count", get_plot_thread_number)
+
+    df_tealeaf["size"] = df_tealeaf["cfg_resolution"]
+    max_iter = get_largest_value_for_group(df_tealeaf, "cfg_steps")
+    df_tealeaf = df_tealeaf[df_tealeaf["cfg_steps"] == max_iter]
+    get_plot(df_tealeaf, name, "problem_size", create_plot_problem_size)
 
 
 if __name__ == "__main__":
