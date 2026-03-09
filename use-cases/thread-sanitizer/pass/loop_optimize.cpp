@@ -246,16 +246,20 @@ static bool create_tsan_replacement(Module &M, const loopTSANdata data,
             getCallInFunc(func, "__kmpc_dispatch_init", true);
         if (omp_for_dynamic) {
           for (auto *u : omp_for_dynamic->getArgOperand(0)->users()) {
-            if (auto *call = dyn_cast<CallBase>(u)) {
-              auto call_name = getCallName(call);
-              if (not call_name.has_value())
-                continue;
-              if (not call_name.value().starts_with("__kmpc_dispatch_next"))
-                continue;
+            auto *call = dyn_cast<CallBase>(u);
+            if (not call)
+              continue;
+            if (call->getFunction() != func)
+              continue;
 
-              IRBuilder<> dispatchBuilder(call);
-              dispatchBuilder.CreateStore(constTrue, flag);
-            }
+            auto call_name = getCallName(call);
+            if (not call_name.has_value())
+              continue;
+            if (not call_name.value().starts_with("__kmpc_dispatch_next"))
+              continue;
+
+            IRBuilder<> dispatchBuilder(call);
+            dispatchBuilder.CreateStore(constTrue, flag);
           }
         }
 
