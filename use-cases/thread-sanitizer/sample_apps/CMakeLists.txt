@@ -28,3 +28,12 @@ add_test(NAME TEALEAF
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 set_tests_properties(TEALEAF PROPERTIES TIMEOUT 300)
+
+
+# Kripke
+add_test(NAME KRIPKE
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_mini_app.sh "kripke"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+set_tests_properties(KRIPKE PROPERTIES TIMEOUT 1200)
+

@@ -6,7 +6,7 @@ setup_build_generic_app() {
 
     echo "build ${APP_DIR} with ${BUILD_MODE}"
 
-    BUILD_DIR="${APP_DIR}/build_${BUILD_MODE}"
+    BUILD_DIR=$(realpath "${APP_DIR}/build_${BUILD_MODE}")
     TARGET_BIN=$(realpath "${PWD}/${APP_NAME}_${BUILD_MODE}.exe")
 
     if [ "$BUILD_MODE" != 'vanilla' ]; then
