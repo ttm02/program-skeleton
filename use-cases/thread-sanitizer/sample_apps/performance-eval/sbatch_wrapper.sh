@@ -58,7 +58,7 @@ enqueue_app() {
 if [[ "$THREAD_COUNT" =~ ^[0-9]+$ ]]; then
     enqueue_app "$THREAD_COUNT"
 else
-    for i in 1 2 3 4 6 8 10 12 14 16 20 24 28 32 40 48 56 64 80 96; do
+    for i in 1 2 3 4 5 6 8 10 12 16 24 32 48 64 80 96; do
         echo ""
         date
         echo "Trying to queue slurm job for $APPNAME_UPPER with $TC threads."

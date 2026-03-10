@@ -190,7 +190,7 @@ def create_plot_problem_size(df, name, ax1, plt, y_offset, mal):
 
 def get_plot_thread_number(df, name, ax2, plt, y_offset, mal):
     t_show = [0]
-    t_show += [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96]
+    t_show += [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32, 48, 64, 80, 96]
     t_show += [100]
     x_levels = np.array(t_show)
 

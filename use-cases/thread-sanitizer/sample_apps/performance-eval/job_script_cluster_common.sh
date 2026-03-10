@@ -9,8 +9,10 @@ if ! grep -q "$BUILD_DIR" "$SETUP_ENV_FILE"; then
 fi
 
 source "${SETUP_ENV_FILE}"
+
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-export OMP_PLACES=cores
+export OMP_PROC_BIND="close"
+export OMP_PLACES="cores"
 
 # get config parameter
 PARAMETER_FILE="${SCRIPT_DIR}/../${APPNAME_LOWER}/parameters.txt"
