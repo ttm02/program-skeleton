@@ -23,6 +23,7 @@ def main():
     visualize_hpccg()
     visualize_miniamr()
     visualize_tealeaf()
+    visualize_kripke()
 
 
 colors = [
@@ -109,17 +110,44 @@ def get_largest_value_for_group(df, col_name):
     return df[col_name].max()
 
 
+def get_level_scale(ax, x_levels):
+
+    # Forward: value -> position
+    def forward(x):
+        return np.interp(x, x_levels, np.arange(len(x_levels)))
+
+    # Inverse: position -> value
+    def inverse(x):
+        return np.interp(x, np.arange(len(x_levels)), x_levels)
+
+    return FuncScale(ax, (forward, inverse))
+
+
 def annotate_overhead_factor(
-    df,
-    ax,
-    col,
-    other_col,
-    max_other_col,
-    mode_apply_list,
-    get_format_slowdown,
-    get_va,
-    get_offset,
+    df, ax, col, other_col, max_other_col, mode_apply_list, y_offset
 ):
+
+    def get_format_slowdown(slowdown):
+        if slowdown < 10:
+            return f"{slowdown:.1f}×"
+        else:
+            return f"{slowdown:.0f}×"
+
+    def get_va(mode):
+        if "static" in mode_mapping[mode]:
+            return "top"
+        else:
+            return "bottom"
+
+    def get_offset(mode):
+        if "static" in mode_mapping[mode]:
+            return -y_offset
+        else:
+            return y_offset
+
+    df = df.copy()
+    df = df[df[other_col] == max_other_col]
+
     mean_times = df.groupby([col, "mode"])["time"].mean().reset_index()
     pivoted = mean_times.pivot(index=col, columns="mode", values="time")
     percentages = pivoted.div(pivoted["vanilla"], axis=0)
@@ -132,9 +160,7 @@ def annotate_overhead_factor(
             if not (mode in df["mode"].unique()):
                 continue
 
-            time_val = df[
-                (df[other_col] == max_other_col) & (df[col] == i) & (df["mode"] == mode)
-            ]["time"].median()
+            time_val = df[(df[col] == i) & (df["mode"] == mode)]["time"].median()
 
             slowdown = percentages.loc[i, mode]
             color = mode_to_color[mode]
@@ -168,24 +194,43 @@ def create_plot_problem_size(df, name, ax1, plt, y_offset, mal):
     ax1.set_ylabel("Time (s)")
     ax1.legend(title="Application Runtime")
 
+    # try to make gap left and right very small, but zero looks ugly
+    sizes = list(df["size"].unique())
+    steps = int((1 / len(sizes)) * 20)
+    p_show = [sizes[0] - 1]
+    last = sizes[0]
+    p_show += [last]
+    for i in sizes[1:]:
+        dist = i - last
+        for _ in range(steps - 1):
+            last += dist / steps
+            p_show += [last]
+        p_show += [i]
+        last = i
+    p_show += [sizes[-1] + 1]
+    x_levels = np.array(p_show)
+
+    # set labels only for size values on x axis
+    ax1.set_xscale(get_level_scale(ax1, x_levels))
+    ax1.set_xticks(sizes)
+    ax1.set_xticklabels(sizes)
+
     def gfs(slowdown):
         return f"{slowdown:.1f}×"
 
     def gva(mode):
-        if "slicing" in mode:
-            return "bottom"
-        else:
+        if "static" in mode_mapping[mode]:
             return "top"
+        else:
+            return "bottom"
 
     def goff(mode):
-        if "slicing" in mode:
+        if "static" in mode_mapping[mode]:
             return -y_offset
         else:
             return y_offset
 
-    annotate_overhead_factor(
-        df, ax1, "size", "threads", max_threads, mal, gfs, gva, goff
-    )
+    annotate_overhead_factor(df, ax1, "size", "threads", max_threads, mal, y_offset)
 
 
 def get_plot_thread_number(df, name, ax2, plt, y_offset, mal):
@@ -194,16 +239,8 @@ def get_plot_thread_number(df, name, ax2, plt, y_offset, mal):
     t_show += [100]
     x_levels = np.array(t_show)
 
-    # Forward: value -> position
-    def forward(x):
-        return np.interp(x, x_levels, np.arange(len(x_levels)))
-
-    # Inverse: position -> value
-    def inverse(x):
-        return np.interp(x, np.arange(len(x_levels)), x_levels)
-
     # Register custom scale
-    ax2.set_xscale(FuncScale(ax2, (forward, inverse)))
+    ax2.set_xscale(get_level_scale(ax2, x_levels))
     ax2.set_xticks(x_levels)
     ax2.set_xticklabels(x_levels)
 
@@ -224,19 +261,7 @@ def get_plot_thread_number(df, name, ax2, plt, y_offset, mal):
     ax2.set_ylabel("Time (s)")
     ax2.legend(title="Application Runtime")
 
-    def gfs(slowdown):
-        if slowdown < 10:
-            return f"{slowdown:.1f}×"
-        else:
-            return f"{slowdown:.0f}×"
-
-    def gva(mode):
-        return "center"
-
-    def goff(mode):
-        return y_offset
-
-    annotate_overhead_factor(df, ax2, "threads", "size", max_size, mal, gfs, gva, goff)
+    annotate_overhead_factor(df, ax2, "threads", "size", max_size, mal, y_offset)
 
 
 def save_plot(df, name, pdf_name, name_ext, plotter, mode_apply_list):
@@ -244,7 +269,7 @@ def save_plot(df, name, pdf_name, name_ext, plotter, mode_apply_list):
 
     # Compute offset for label positions
     y_min, y_max = ax.get_ylim()
-    y_offset = 0.1 * (y_max - y_min)
+    y_offset = 0.2 * (y_max - y_min)
 
     plotter(df, name, ax, plt, y_offset, mode_apply_list)
     plt.tight_layout()
@@ -408,6 +433,12 @@ def visualize_tealeaf():
     max_iter = get_largest_value_for_group(df_tealeaf, "cfg_steps")
     df_tealeaf = df_tealeaf[df_tealeaf["cfg_steps"] == max_iter]
     get_plot(df_tealeaf, name, "problem_size", create_plot_problem_size)
+
+
+def visualize_kripke():
+    df_kripke = data_from_csv("kripke")
+    df_kripke["size"] = df_kripke["config"].str.extract(r"__zones_(\d+)_").astype(int)
+    create_plots(df_kripke, "Kripke")
 
 
 if __name__ == "__main__":
