@@ -66,13 +66,13 @@ static bool run_optimization_passes(
   errs() << opt_msg_success << "\n";
 
   if (cleanup) {
-    errs() << "Run inliner Pass\n";
-    auto inliner = llvm::ModuleInlinerPass();
-    inliner.run(M, AM);
-
     errs() << "Run Global DCE Pass\n";
     auto dce = llvm::GlobalDCEPass();
     dce.run(M, AM);
+
+    errs() << "Run inliner Pass\n";
+    auto inliner = llvm::ModuleInlinerPass();
+    inliner.run(M, AM);
 #ifndef NDEBUG
     has_error = verifyModule(M, &errs(), nullptr);
     assert(not has_error);
@@ -132,6 +132,7 @@ static std::string run_tsan(Module &M, ModuleAnalysisManager &AM) {
         // -fsanitize=thread flag
       }
       tsan_pass.run(*f, *FAM);
+      f->removeFnAttr(Attribute::SanitizeThread);
     }
     return "Successfully instrumented code with TSAN";
   }

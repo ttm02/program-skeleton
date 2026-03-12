@@ -102,7 +102,7 @@ static void collect_and_cleanup(Module &M, unsigned *removed_tsan_calls) {
   // assert(not parallel_functions.empty());
   for (Function &Func : M) {
     // ignore tsan itself
-    if (Func.getName().starts_with("tsan"))
+    if (Func.getName().starts_with("tsan."))
       continue;
 
     // remove TSAN calls only in single-threaded functions
