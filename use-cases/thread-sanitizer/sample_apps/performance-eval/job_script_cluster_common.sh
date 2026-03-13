@@ -58,6 +58,7 @@ run_test_container() {
         --mount "type=bind,source=${REAL_HOME},destination=${REAL_HOME}" \
         --mount "type=bind,source=${HPC_SCRATCH},destination=${HPC_SCRATCH}" \
         --env-file "${CONTAINER_IMAGE_PATH}.env" \
+        --env TSAN_OPTIONS="ignore_noninstrumented_modules=1:report_bugs=0" \
         "${CONTAINER_IMAGE_PATH}.sif" \
         /usr/bin/env time -f '%e' \
         -o "$LOG_FILE" \
