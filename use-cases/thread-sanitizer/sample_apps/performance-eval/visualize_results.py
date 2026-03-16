@@ -372,7 +372,11 @@ def data_from_csv(name):
     files = glob(DATAPATH + "/" + name + "/*.csv")
     df = pd.concat(
         (
-            d[d["exit_code"].isna() | (d["exit_code"].astype(str) == "0")]
+            d[
+                d["exit_code"].isna()
+                | (d["exit_code"].astype(str) == "0")
+                | ((d["name"] == "tealeaf") & (d["exit_code"].astype(str) == "1"))
+            ]
             for d in (pd.read_csv(f) for f in files)
         ),
         ignore_index=True,
