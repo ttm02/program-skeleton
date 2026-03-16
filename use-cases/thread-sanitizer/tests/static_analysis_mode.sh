@@ -67,6 +67,10 @@ case "$SLURM_ARRAY_TASK_ID" in
     MY_STAN_PASS_MODE="loop"
     MY_STAN_PASS_MODE_ARGS="--disable-slicing --static-analysis-mode=loop"
     ;;
+16)
+    MY_STAN_PASS_MODE="vanilla"
+    MY_STAN_PASS_MODE_ARGS=""
+    ;;
 *) exit 1 ;;
 esac
 
