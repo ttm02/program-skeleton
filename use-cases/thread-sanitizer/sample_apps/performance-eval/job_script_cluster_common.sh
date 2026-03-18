@@ -18,12 +18,8 @@ export OMP_PLACES="cores"
 PARAMETER_FILE="${SCRIPT_DIR}/../${APPNAME_LOWER}/parameters.txt"
 APP_PARAMS=$(sed -n "${APP_PARAM_LINE}p" "$PARAMETER_FILE")
 
-if [ "$SLURM_ARRAY_TASK_ID" = "17" ]; then
-    MODE="vanilla"
-else
-    source "${SCRIPT_DIR}/../../tests/static_analysis_mode.sh"
-    MODE="$MY_STAN_PASS_MODE"
-fi
+source "${SCRIPT_DIR}/../../tests/static_analysis_mode.sh"
+MODE="$MY_STAN_PASS_MODE"
 
 APP_LOG_NAME="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 APP_PARAMS_ESCAPED=$(echo "$APP_PARAMS" | tr ' ' '_' | tr '-' '_' | tr ',' '_')
