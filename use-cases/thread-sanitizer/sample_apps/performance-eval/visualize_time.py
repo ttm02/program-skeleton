@@ -68,7 +68,7 @@ def create_lineplot(df, pdf, show_legend=False):
 
     ax.set_title("Sample Apps: Compile Time")
     ax.set_xlabel("Compilation Time (in seconds)")
-    ax.set_ylabel("App")
+    ax.set_ylabel("")  # App
 
     ax.legend(title="Compile Options", borderaxespad=0)
     if show_legend:
@@ -92,14 +92,15 @@ def visualize_runtime():
 
         df_lulesh = df[df["app"] == "lulesh"]
         df_hpccg = df[df["app"] == "hpccg"]
-        df_1 = pd.concat((df_lulesh, df_hpccg))
+        df_miniamr = df[df["app"] == "miniamr"]
+        df_1 = pd.concat((df_lulesh, df_hpccg, df_miniamr))
         create_lineplot(df_1, pdf)
 
-        df_tealeaf = df[df["app"] == "miniamr"]
-        df_miniamr = df[df["app"] == "tealeaf"]
+        df_tealeaf = df[df["app"] == "tealeaf"]
+        create_lineplot(df_tealeaf, pdf)
+
         df_kripke = df[df["app"] == "kripke"]
-        df_2 = pd.concat((df_tealeaf, df_miniamr, df_kripke))
-        create_lineplot(df_2, pdf)
+        create_lineplot(df_kripke, pdf)
 
         print(f"Saving {file_name}")
 
