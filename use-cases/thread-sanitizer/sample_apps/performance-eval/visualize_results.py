@@ -5,9 +5,12 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-from matplotlib.scale import FuncScale
 from io import StringIO
 from glob import glob
+
+from visualize_common import visualize_common as VISC
+
+visc = VISC()
 
 
 def usage():
@@ -26,63 +29,6 @@ def main():
     visualize_kripke()
 
 
-colors = [
-    "#FF0000",
-    "#FF00FF",
-    "#8B4513",
-    "#FF7F50",
-    "#FF69B4",
-    "#FFA500",
-    "#708090",
-    "#FFD700",
-    "#FFFF00",
-    "#00BFFF",
-    "#0000FF",
-    "#00FF00",
-    "#00FFFF",
-    "#7FFF00",
-    "#008080",
-    "#800080",
-    "#BA55D3",
-    "#D3BA55",
-]
-
-mode_list = [
-    "loop",
-    "merge",
-    "merge+loop",
-    "single",
-    "single+loop",
-    "single+merge",
-    "single+merge+loop",
-    "slicing",
-    "slicing+loop",
-    "slicing+merge",
-    "slicing+merge+loop",
-    "slicing+single",
-    "slicing+single+loop",
-    "slicing+single+merge",
-    "slicing+single+merge+loop",
-]
-mode_mapping = {
-    "vanilla": "vanilla",
-    "orig": "TSAN",
-    "passthrough": "TSAN (pass, but all disabled)",
-}
-for ml in mode_list:
-    mode_mapping[ml] = "TSAN + " + ml.replace("+", " + ")
-
-mode_order = list(mode_mapping.values())
-mode_to_color = dict(zip(mode_mapping.keys(), colors))
-mode_to_color_plot = dict(zip(mode_order, colors))
-
-# backup to reset after filtering
-mode_to_color_plot_all = mode_to_color_plot.copy()
-mode_apply_list_all = list(mode_mapping.keys())
-mode_order_all = mode_order.copy()
-mode_mapping_all = mode_mapping.copy()
-
-
 # get largest size there all modes are present
 def get_largest_value_for_group(df, col_name):
     def inner_loop(col_value):
@@ -92,7 +38,7 @@ def get_largest_value_for_group(df, col_name):
             .size()
             .reset_index(name="count")
         )
-        if len(size_list) < len(mode_order):
+        if len(size_list) < len(visc.mode_order):
             return False
 
         size_list_max_count = size_list["count"].max()
@@ -110,19 +56,6 @@ def get_largest_value_for_group(df, col_name):
     return df[col_name].max()
 
 
-def get_level_scale(ax, x_levels):
-
-    # Forward: value -> position
-    def forward(x):
-        return np.interp(x, x_levels, np.arange(len(x_levels)))
-
-    # Inverse: position -> value
-    def inverse(x):
-        return np.interp(x, np.arange(len(x_levels)), x_levels)
-
-    return FuncScale(ax, (forward, inverse))
-
-
 def annotate_overhead_factor(
     df, ax, col, other_col, max_other_col, mode_apply_list, y_offset
 ):
@@ -134,13 +67,13 @@ def annotate_overhead_factor(
             return f"{slowdown:.0f}×"
 
     def get_va(mode):
-        if "static" in mode_mapping[mode]:
+        if "static" in visc.mode_mapping[mode]:
             return "top"
         else:
             return "bottom"
 
     def get_offset(mode):
-        if "static" in mode_mapping[mode]:
+        if "static" in visc.mode_mapping[mode]:
             return -y_offset
         else:
             return y_offset
@@ -163,7 +96,7 @@ def annotate_overhead_factor(
             time_val = df[(df[col] == i) & (df["mode"] == mode)]["time"].median()
 
             slowdown = percentages.loc[i, mode]
-            color = mode_to_color[mode]
+            color = visc.mode_to_color[mode]
 
             ax.text(
                 i,
@@ -183,8 +116,8 @@ def create_plot_problem_size(df, name, ax1, plt, y_offset, mal):
         x="size",
         y="time",
         hue="mode_readable",
-        hue_order=mode_order,
-        palette=mode_to_color_plot,
+        hue_order=visc.mode_order,
+        palette=visc.mode_to_color_plot,
         style="mode_readable",
         marker=True,
         ax=ax1,
@@ -211,7 +144,7 @@ def create_plot_problem_size(df, name, ax1, plt, y_offset, mal):
     x_levels = np.array(p_show)
 
     # set labels only for size values on x axis
-    ax1.set_xscale(get_level_scale(ax1, x_levels))
+    ax1.set_xscale(VISC.get_level_scale(ax1, x_levels))
     ax1.set_xticks(sizes)
     ax1.set_xticklabels(sizes)
 
@@ -240,7 +173,7 @@ def get_plot_thread_number(df, name, ax2, plt, y_offset, mal):
     x_levels = np.array(t_show)
 
     # Register custom scale
-    ax2.set_xscale(get_level_scale(ax2, x_levels))
+    ax2.set_xscale(VISC.get_level_scale(ax2, x_levels))
     ax2.set_xticks(x_levels)
     ax2.set_xticklabels(x_levels)
 
@@ -250,8 +183,8 @@ def get_plot_thread_number(df, name, ax2, plt, y_offset, mal):
         x="threads",
         y="time",
         hue="mode_readable",
-        hue_order=mode_order,
-        palette=mode_to_color_plot,
+        hue_order=visc.mode_order,
+        palette=visc.mode_to_color_plot,
         style="mode_readable",
         marker=True,
         ax=ax2,
@@ -280,31 +213,18 @@ def save_plot(df, name, pdf_name, name_ext, plotter, mode_apply_list):
 
 
 def get_plot(df, name, pdf_name, plotter):
-    save_plot(df, name, pdf_name, "", plotter, mode_apply_list_all)
+    global visc
+    visc = VISC()
+    save_plot(df, name, pdf_name, "", plotter, visc.mode_apply_list_all)
 
     ### create better visibility what slicing or static analysis achieves
     ### TSAN without slicing has really very much overhead
 
-    def reset_lists():
-        global mode_mapping, mode_to_color_plot, mode_order, mode_to_color_plot_all
-        mode_to_color_plot = mode_to_color_plot_all.copy()
-        mode_mapping = mode_mapping_all.copy()
-        mode_order = mode_order_all.copy()
-
-    def set_mode_lists(mal_list):
-        global mode_mapping, mode_to_color_plot, mode_order, mode_to_color_plot_all
-        mode_to_color_plot = {}
-        mode_order = []
-        for v in mal_list:
-            vra = mode_mapping[v]
-            mode_to_color_plot[vra] = mode_to_color_plot_all[vra]
-            mode_order.append(vra)
-
     # show only slow methods
-    mal_with_slicing = mode_apply_list_all.copy()
+    mal_with_slicing = visc.mode_apply_list_all.copy()
     mal_with_slicing[:] = [s for s in mal_with_slicing if s.startswith("slicing")]
     mal_with_slicing.insert(0, "vanilla")
-    set_mode_lists(mal_with_slicing)
+    visc.set_mode_lists(mal_with_slicing)
     df_1 = df[df["mode"].str.contains("slicing")]
     df_2 = df[df["mode"] == "vanilla"]
     df_with_slicing = pd.concat((df_1, df_2), ignore_index=True)
@@ -312,27 +232,27 @@ def get_plot(df, name, pdf_name, plotter):
         df_with_slicing, name, pdf_name, "_without_orig_tsan", plotter, mal_with_slicing
     )
 
+    visc = VISC()
+
     # show only fast methods
-    mal_no_slicing = mode_apply_list_all.copy()
+    mal_no_slicing = visc.mode_apply_list_all.copy()
     mal_no_slicing.remove("vanilla")
     mal_no_slicing[:] = [s for s in mal_no_slicing if not s.startswith("slicing")]
-    set_mode_lists(mal_no_slicing)
+    visc.set_mode_lists(mal_no_slicing)
     df_no_slicing = df[~df["mode"].str.contains("slicing")]
     save_plot(
         df_no_slicing, name, pdf_name, "_without_slicing", plotter, mal_no_slicing
     )
 
-    reset_lists()
+    visc = VISC()
 
     # compare static analysis with TSAN and slicing
-    global mode_mapping, mode_to_color_plot, mode_to_color_plot_all
-    mode_to_color_plot_backup = mode_to_color_plot_all.copy()
     tsan_stan = "single+merge+loop"
     tsan_stan_text = "TSAN + static analysis"
-    tsan_stan_old_text = mode_mapping[tsan_stan]
+    tsan_stan_old_text = visc.mode_mapping[tsan_stan]
     slicing_stan = "slicing+" + tsan_stan
     slicing_stan_text = "TSAN + slicing + static analysis"
-    slicing_stan_old_text = mode_mapping[slicing_stan]
+    slicing_stan_old_text = visc.mode_mapping[slicing_stan]
     mal_plus_analysis = [
         "vanilla",
         "orig",
@@ -340,13 +260,15 @@ def get_plot(df, name, pdf_name, plotter):
         "slicing",
         slicing_stan,
     ]
-    mode_mapping[tsan_stan] = tsan_stan_text
-    mode_to_color_plot[tsan_stan_text] = mode_to_color_plot[tsan_stan_old_text]
-    mode_to_color_plot_all[tsan_stan_text] = mode_to_color_plot[tsan_stan_text]
-    mode_mapping[slicing_stan] = slicing_stan_text
-    mode_to_color_plot[slicing_stan_text] = mode_to_color_plot[slicing_stan_old_text]
-    mode_to_color_plot_all[slicing_stan_text] = mode_to_color_plot[slicing_stan_text]
-    set_mode_lists(mal_plus_analysis)
+    visc.mode_mapping[tsan_stan] = tsan_stan_text
+    visc.mode_to_color_plot[tsan_stan_text] = visc.mode_to_color_plot[
+        tsan_stan_old_text
+    ]
+    visc.mode_mapping[slicing_stan] = slicing_stan_text
+    visc.mode_to_color_plot[slicing_stan_text] = visc.mode_to_color_plot[
+        slicing_stan_old_text
+    ]
+    visc.set_mode_lists(mal_plus_analysis)
     df_plus_analysis = df[df["mode"].isin(mal_plus_analysis)]
     df_plus_analysis.loc[df_plus_analysis["mode"] == tsan_stan, "mode_readable"] = (
         tsan_stan_text
@@ -357,9 +279,6 @@ def get_plot(df, name, pdf_name, plotter):
     save_plot(
         df_plus_analysis, name, pdf_name, "_plus_analysis", plotter, mal_plus_analysis
     )
-
-    mode_to_color_plot_all = mode_to_color_plot_backup.copy()
-    reset_lists()
 
 
 def create_plots(df, name):
@@ -381,7 +300,7 @@ def data_from_csv(name):
         ),
         ignore_index=True,
     )
-    df["mode_readable"] = df["mode"].replace(mode_mapping)
+    df["mode_readable"] = df["mode"].replace(VISC.mode_mapping)
     return df
 
 

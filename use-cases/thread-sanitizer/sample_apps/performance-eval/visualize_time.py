@@ -6,12 +6,12 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-from matplotlib.scale import FuncScale
 from matplotlib.backends.backend_pdf import PdfPages
 from glob import glob
 
+from visualize_common import visualize_common as VISC
 
-DATAPATH = sys.argv[1]
+visc = VISC()
 
 
 def usage():
@@ -35,57 +35,8 @@ app_mapping = {
 }
 
 
-colors = [
-    "#FF0000",
-    "#FF00FF",
-    "#8B4513",
-    "#FF7F50",
-    "#FF69B4",
-    "#FFA500",
-    "#708090",
-    "#FFD700",
-    "#FFFF00",
-    "#00BFFF",
-    "#0000FF",
-    "#00FF00",
-    "#00FFFF",
-    "#7FFF00",
-    "#008080",
-    "#800080",
-    "#BA55D3",
-    "#D3BA55",
-]
-
-mode_list = [
-    "loop",
-    "merge",
-    "merge+loop",
-    "single",
-    "single+loop",
-    "single+merge",
-    "single+merge+loop",
-    "slicing",
-    "slicing+loop",
-    "slicing+merge",
-    "slicing+merge+loop",
-    "slicing+single",
-    "slicing+single+loop",
-    "slicing+single+merge",
-    "slicing+single+merge+loop",
-]
-mode_mapping = {
-    "orig": "TSAN",
-    "passthrough": "TSAN (pass, but all disabled)",
-}
-for ml in mode_list:
-    mode_mapping[ml] = "TSAN + " + ml.replace("+", " + ")
-
-mode_order = list(mode_mapping.values())
-mode_to_color = dict(zip(mode_mapping.keys(), colors))
-mode_to_color_plot = dict(zip(mode_order, colors))
-
-
 def data_from_csv():
+    DATAPATH = sys.argv[1]
     files_csv = glob(DATAPATH + "/compile_time" + "/*.csv")
     df = pd.concat(
         (
@@ -94,13 +45,13 @@ def data_from_csv():
         ),
         ignore_index=True,
     )
-    df["mode_readable"] = df["mode"].replace(mode_mapping)
+    df["mode_readable"] = df["mode"].replace(visc.mode_mapping)
     df["app_readable"] = df["app"].replace(app_mapping)
     df["time"] = df["time"].astype(float)
     return df
 
 
-def create_lineplot(df, pdf):
+def create_lineplot(df, pdf, show_legend=False):
     height = 0.88 + 1.23 * len(df["app"].unique())
     fig, ax = plt.subplots(figsize=(6.5, height))
 
@@ -111,8 +62,8 @@ def create_lineplot(df, pdf):
         x="time",
         y="app_readable",
         hue="mode_readable",
-        hue_order=mode_order,
-        palette=mode_to_color_plot,
+        hue_order=visc.mode_order,
+        palette=visc.mode_to_color_plot,
     )
 
     ax.set_title("Sample Apps: Compile Time")
@@ -120,7 +71,12 @@ def create_lineplot(df, pdf):
     ax.set_ylabel("App")
 
     ax.legend(title="Compile Options", borderaxespad=0)
-    ax.legend_.remove()
+    if show_legend:
+        handles, labels = ax.get_legend_handles_labels()
+        fig = plt.figure(figsize=(4, 2))
+        fig.legend(handles, labels, loc="center")
+    else:
+        ax.legend_.remove()
 
     plt.tight_layout()
     pdf.savefig(fig, bbox_inches="tight", pad_inches=0.05)
@@ -131,6 +87,7 @@ def visualize_runtime():
     df = data_from_csv()
     file_name = f"CompileTime_boxplot.pdf"
     with PdfPages(file_name) as pdf:
+        create_lineplot(df, pdf, True)
         create_lineplot(df, pdf)
 
         df_lulesh = df[df["app"] == "lulesh"]

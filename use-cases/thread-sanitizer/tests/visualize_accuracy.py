@@ -7,13 +7,13 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-from matplotlib.scale import FuncScale
 from matplotlib.backends.backend_pdf import PdfPages
 from io import StringIO
 from glob import glob
 
-DATAPATH = sys.argv[1]
-files_DRB = DATAPATH + "/DRB"
+from visualize_common import visualize_common as VISC
+
+visc = VISC()
 df = None
 
 
@@ -26,57 +26,10 @@ def main():
     if len(sys.argv) != 2:
         usage()
 
+    global files_DRB
+    DATAPATH = sys.argv[1]
+    files_DRB = DATAPATH + "/DRB"
     visualize_accuracy()
-
-
-colors = [
-    "#FF0000",
-    "#FF00FF",
-    "#8B4513",
-    "#FF7F50",
-    "#FF69B4",
-    "#FFA500",
-    "#708090",
-    "#FFD700",
-    "#FFFF00",
-    "#00BFFF",
-    "#0000FF",
-    "#00FF00",
-    "#00FFFF",
-    "#7FFF00",
-    "#008080",
-    "#800080",
-    "#BA55D3",
-    "#D3BA55",
-]
-
-mode_list = [
-    "loop",
-    "merge",
-    "merge+loop",
-    "single",
-    "single+loop",
-    "single+merge",
-    "single+merge+loop",
-    "slicing",
-    "slicing+loop",
-    "slicing+merge",
-    "slicing+merge+loop",
-    "slicing+single",
-    "slicing+single+loop",
-    "slicing+single+merge",
-    "slicing+single+merge+loop",
-]
-mode_mapping = {
-    "orig": "TSAN",
-    "passthrough": "TSAN (pass, but all disabled)",
-}
-for ml in mode_list:
-    mode_mapping[ml] = "TSAN + " + ml.replace("+", " + ")
-
-mode_order = list(mode_mapping.values())
-mode_to_color = dict(zip(mode_mapping.keys(), colors))
-mode_to_color_plot = dict(zip(mode_order, colors))
 
 
 def data_from_csv():
@@ -88,7 +41,7 @@ def data_from_csv():
     else:
         files_csv = glob(files_DRB + "/*.csv")
         df = pd.concat((pd.read_csv(f) for f in files_csv), ignore_index=True)
-        df["mode_readable"] = df["mode"].replace(mode_mapping)
+        df["mode_readable"] = df["mode"].replace(visc.mode_mapping)
 
         # categorize testcases
         df["tc_cat"] = [
@@ -132,15 +85,7 @@ def create_boxplot(df, pdf, pdf_name):
     x_ticks = np.arange(0, 100 + 1, 10)
     x_levels = np.concatenate(([-5], x_ticks, [105]), axis=None)
 
-    # Forward: value -> position
-    def forward(x):
-        return np.interp(x, x_levels, np.arange(len(x_levels)))
-
-    # Inverse: position -> value
-    def inverse(x):
-        return np.interp(x, np.arange(len(x_levels)), x_levels)
-
-    ax.set_xscale(FuncScale(ax, (forward, inverse)))
+    ax.set_xscale(VISC.get_level_scale(ax, x_levels))
     ax.set_xticks(x_levels)
     ax.set_xticklabels(x_levels)
     ax.set_xlim(-1, 101)
@@ -155,8 +100,8 @@ def create_boxplot(df, pdf, pdf_name):
         x="df_value_count",
         y="testcase",
         hue="mode_readable",
-        hue_order=mode_order,
-        palette=mode_to_color_plot,
+        hue_order=visc.mode_order,
+        palette=visc.mode_to_color_plot,
     )
     ax.set_title(f"DataRaceBench ({pdf_name}): Accuracy")
     ax.set_xlabel("Detection Percentage (in %)")
@@ -295,8 +240,8 @@ def get_heatmap(df):
     get_heatmap_files(df, file_name)
 
     stan_mapping_text = {}
-    for mm in mode_mapping:
-        text = mode_mapping[mm]
+    for mm in visc.mode_mapping:
+        text = visc.mode_mapping[mm]
         if mm.startswith("slicing+"):
             stan_mapping_text[text] = "TSAN + slicing + static analysis"
         elif "+" in mm or mm == "loop" or mm == "merge" or mm == "single":
