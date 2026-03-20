@@ -27,7 +27,10 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO/GlobalDCE.h"
 #include "llvm/Transforms/IPO/ModuleInliner.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
+#include "llvm/Transforms/Scalar/EarlyCSE.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
@@ -66,13 +69,16 @@ static bool run_optimization_passes(
   errs() << opt_msg_success << "\n";
 
   if (cleanup) {
-    errs() << "Run Global DCE Pass\n";
-    auto dce = llvm::GlobalDCEPass();
-    dce.run(M, AM);
-
-    errs() << "Run inliner Pass\n";
-    auto inliner = llvm::ModuleInlinerPass();
-    inliner.run(M, AM);
+    errs() << "Run Cleanup\n";
+    llvm::ModulePassManager MPM;
+    llvm::FunctionPassManager FPM;
+    // FPM.addPass(llvm::EarlyCSEPass());
+    // FPM.addPass(llvm::InstCombinePass());
+    FPM.addPass(llvm::SimplifyCFGPass());
+    MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
+    MPM.addPass(llvm::GlobalDCEPass());
+    MPM.addPass(llvm::ModuleInlinerPass());
+    MPM.run(M, AM);
 #ifndef NDEBUG
     has_error = verifyModule(M, &errs(), nullptr);
     assert(not has_error);
@@ -359,7 +365,7 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
       if (stanEnabledModes.contains(MERGE))
         run_optimization_passes(M, AM, combine_tsan_calls, false);
       if (stanEnabledModes.contains(SINGLE)) {
-        // HPCCG does not detect data race when this runs before slicing
+        // precompute (slicing) segfaults when this executes first
         run_optimization_passes(M, AM, remove_all_single_thread_regions);
         // needs single threaded removal + needs analysis_results
         run_optimization_passes(M, AM, eliminate_only_in_critical);
@@ -370,8 +376,7 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
     }
 
     // try to eliminate even more things
-    if (not DisableSlicing)
-      MPM.run(M, AM);
+    MPM.run(M, AM);
 
     delete analysis_results;
     return PreservedAnalyses::none();

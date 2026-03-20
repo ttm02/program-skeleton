@@ -109,12 +109,12 @@ static void collect_and_cleanup(Module &M, unsigned *removed_tsan_calls) {
     if (parallel_functions.contains(&Func))
       continue;
 
-    DenseSet<Instruction *> to_be_erased;
+    SmallVector<Instruction *> to_be_erased;
     for (BasicBlock &BB : Func)
       for (Instruction &Inst : BB)
         if (auto *call = dyn_cast<CallBase>(&Inst))
           if (isAcceptableTsanCall(call))
-            to_be_erased.insert(call);
+            to_be_erased.push_back(call);
 
     for (auto *Inst : to_be_erased) {
       (*removed_tsan_calls)++;
