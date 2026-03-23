@@ -349,10 +349,12 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
 
     // static analysis before slicing
     {
-      if (stanEnabledModes.contains(MERGE))
-        run_optimization_passes(M, AM, combine_tsan_calls, false);
       if (stanEnabledModes.contains(SINGLE))
         run_optimization_passes(M, AM, wrap_non_openmp_tsan_calls);
+      if (stanEnabledModes.contains(MERGE))
+        run_optimization_passes(M, AM, combine_tsan_calls, false);
+      if (stanEnabledModes.contains(LOOP))
+        run_optimization_passes(M, AM, optimize_loops);
     }
 
     // slicing or no slicing?
@@ -362,15 +364,15 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
 
     // static analysis after slicing
     {
-      if (stanEnabledModes.contains(MERGE))
-        run_optimization_passes(M, AM, combine_tsan_calls, false);
       if (stanEnabledModes.contains(SINGLE)) {
         // precompute (slicing) segfaults when this executes first
         run_optimization_passes(M, AM, remove_all_single_thread_regions);
         // needs single threaded removal + needs analysis_results
         run_optimization_passes(M, AM, eliminate_only_in_critical);
       }
-      // precomputation (slicing) does not allow int2ptr casts
+      // rerun
+      if (stanEnabledModes.contains(MERGE))
+        run_optimization_passes(M, AM, combine_tsan_calls, false);
       if (stanEnabledModes.contains(LOOP))
         run_optimization_passes(M, AM, optimize_loops);
     }
