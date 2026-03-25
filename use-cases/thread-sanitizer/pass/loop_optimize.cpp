@@ -352,11 +352,12 @@ prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
     return {};
   }
 
-  // only if contingous address range
+  // only if contigous address range
   auto *stepConstant = dyn_cast<SCEVConstant>(addRec->getStepRecurrence(*SE));
   if (not stepConstant)
     return {};
-  if (stepConstant->getAPInt().abs() != data.tsan_size->getValue())
+  // TSAN calls can be overlapping, but they have to be adjacent
+  if (data.tsan_size->getValue().ult(stepConstant->getAPInt().abs()))
     return {};
 
   if (1 < chunk_size) {
