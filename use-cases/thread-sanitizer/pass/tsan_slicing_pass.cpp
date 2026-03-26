@@ -351,30 +351,20 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
         stanEnabledModes.insert(clsm);
     }
 
-    // static analysis before slicing
-    {
-      if (stanEnabledModes.contains(SINGLE))
-        run_optimization_passes(M, AM, wrap_non_openmp_tsan_calls);
-      if (stanEnabledModes.contains(MERGE))
-        run_optimization_passes(M, AM, combine_tsan_calls, false);
-      if (stanEnabledModes.contains(LOOP))
-        run_optimization_passes(M, AM, optimize_loops);
-    }
-
     // slicing or no slicing?
     if (not DisableSlicing)
       if (not run_slicing())
         return PreservedAnalyses::all();
 
     // static analysis after slicing
+    // running this before slicing might not allow certain optimizations
+    // and performance for e.g. HPCCG is a lot worse
     {
       if (stanEnabledModes.contains(SINGLE)) {
-        // precompute (slicing) segfaults when this executes first
         run_optimization_passes(M, AM, remove_all_single_thread_regions);
-        // needs single threaded removal + needs analysis_results
+        run_optimization_passes(M, AM, wrap_non_openmp_tsan_calls);
         run_optimization_passes(M, AM, eliminate_only_in_critical);
       }
-      // rerun
       if (stanEnabledModes.contains(MERGE))
         run_optimization_passes(M, AM, combine_tsan_calls, false);
       if (stanEnabledModes.contains(LOOP))
