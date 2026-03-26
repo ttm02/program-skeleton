@@ -26,6 +26,7 @@
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO/GlobalDCE.h"
+#include "llvm/Transforms/IPO/Internalize.h"
 #include "llvm/Transforms/IPO/ModuleInliner.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
@@ -138,6 +139,7 @@ static std::string run_tsan(Module &M, ModuleAnalysisManager &AM) {
         // -fsanitize=thread flag
       }
       tsan_pass.run(*f, *FAM);
+      // no need to instrument again after each step
       f->removeFnAttr(Attribute::SanitizeThread);
     }
     return "Successfully instrumented code with TSAN";
@@ -255,13 +257,9 @@ static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
   // remove other non-precompute functions now
   std::vector<Function *> to_delete;
   for (Function &func : M) {
-    if (precalcuation->is_func_part_of_precompute_phase(&func)) {
-      // the TSAN calls are already part of precompute,
-      // no need to instrumente them again
-      func.removeFnAttr(Attribute::SanitizeThread);
-    } else if ((not func.isDeclaration()) && &func != main_func &&
-               (not func.getName().starts_with("__tsan")) &&
-               (not is_func_from_std(&func))) {
+    if ((not func.isDeclaration()) && &func != main_func &&
+        (not func.getName().starts_with("__tsan")) &&
+        (not is_func_from_std(&func))) {
       // not used: remove
       if (func.hasExternalLinkage())
         func.setLinkage(GlobalValue::InternalLinkage);
@@ -272,6 +270,12 @@ static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
   remove_noinline_from_module(M);
   analysis_results->invalidate(*precomputed_main);
   analysis_results->invalidate(*main_func);
+
+  llvm::ModulePassManager MPM;
+  // remove old function duplicates
+  MPM.addPass(
+      InternalizePass([&](const GlobalValue &GV) { return &GV == main_func; }));
+  MPM.run(M, AM);
 
   return "Successfully computed the precomputation";
 }
