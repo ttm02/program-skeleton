@@ -64,6 +64,10 @@ def create_lineplot(df, pdf, show_legend=False):
         hue="mode_readable",
         hue_order=visc.mode_order,
         palette=visc.mode_to_color_plot,
+        linewidth=1,
+        medianprops=dict(color="black"),
+        showfliers=False,  # do not show circles for strong derivations
+        boxprops=dict(edgecolor="none"),  # no outline -> better color visibility
     )
 
     ax.set_title("Sample Apps: Compile Time")
