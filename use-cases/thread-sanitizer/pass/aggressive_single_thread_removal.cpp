@@ -98,6 +98,33 @@ static void collectAllParallelFunctions(Function *func, bool parallel = false) {
   }
 }
 
+static bool cleanup_call_with_chain(Instruction *inst) {
+  auto *call = dyn_cast<CallBase>(inst);
+  assert(call);
+  auto func_name = getCallName(call);
+
+  auto &M = *call->getModule();
+  auto *ctx = &call->getContext();
+  auto ptrTy = PointerType::get(*ctx, 0);
+  auto int32Ty = Type::getInt32Ty(*ctx);
+  auto int64Ty = Type::getInt64Ty(*ctx);
+
+  FunctionCallee func;
+  if (func_name == "__tsan_memset")
+    func = M.getOrInsertFunction("memset", ptrTy, ptrTy, int32Ty, int64Ty);
+  else if (func_name == "__tsan_memcpy")
+    func = M.getOrInsertFunction("memcpy", ptrTy, ptrTy, ptrTy, int64Ty);
+  else
+    return false;
+
+  IRBuilder<> builder(call);
+  SmallVector<Value *, 4> args(call->args());
+  auto *newCall = builder.CreateCall(func, args);
+  call->replaceAllUsesWith(newCall);
+  remove_inst_from_func(call);
+  return true;
+}
+
 static void collect_and_cleanup(Module &M, unsigned *removed_tsan_calls) {
   // assert(not parallel_functions.empty());
   for (Function &Func : M) {
@@ -113,10 +140,15 @@ static void collect_and_cleanup(Module &M, unsigned *removed_tsan_calls) {
     for (BasicBlock &BB : Func)
       for (Instruction &Inst : BB)
         if (auto *call = dyn_cast<CallBase>(&Inst))
-          if (isAcceptableTsanCall(call))
-            to_be_erased.push_back(call);
+          if (getCallName(call)->starts_with("__tsan"))
+            if (not getCallName(call)->starts_with("__tsan_func_"))
+              to_be_erased.push_back(call);
 
     for (auto *Inst : to_be_erased) {
+      if (cleanup_call_with_chain(Inst)) {
+        (*removed_tsan_calls)++;
+        continue;
+      }
       (*removed_tsan_calls)++;
       remove_inst_from_func(Inst);
     }
