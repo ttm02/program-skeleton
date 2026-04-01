@@ -107,7 +107,7 @@ public:
 
   bool can_except_in_precompute(llvm::CallBase *call) const;
 
-  std::vector<llvm::Function *>
+  llvm::DenseSet<llvm::Function *>
   get_possible_call_targets(llvm::CallBase *call) const;
 
   llvm::Function *get_entry_point() const { return entry_point; }

@@ -24,6 +24,18 @@ using namespace llvm;
 
 static DenseSet<Function *> parallel_functions;
 
+void get_called_functions(CallBase *call,
+                          SmallDenseSet<Function *> &functions) {
+  auto *called_func = call->getCalledFunction();
+  if (called_func) {
+    functions.insert(called_func);
+  } else {
+    auto func_targets =
+        precalculation_analysis->get_possible_call_targets(call);
+    functions.insert_range(func_targets);
+  }
+}
+
 static bool check_module(Module &M) {
   // might be a library -> calls from other functions outside the scope possible
   if (not M.getFunction("main"))
@@ -31,19 +43,25 @@ static bool check_module(Module &M) {
 
   for (Function &Func : M) {
     // ignore tsan itself
-    if (Func.getName().starts_with("tsan"))
+    if (Func.getName().starts_with("tsan."))
+      continue;
+    if (Func.isDeclaration())
       continue;
 
     for (BasicBlock &BB : Func) {
       for (Instruction &Inst : BB) {
         if (auto call = dyn_cast<CallBase>(&Inst)) {
-          Function *called_func = call->getCalledFunction();
-          if (not called_func)
-            continue;
+          SmallDenseSet<Function *> function_list;
+          get_called_functions(call, function_list);
+          for (auto *called_func : function_list) {
+            assert(called_func);
+            if (called_func->isDeclaration())
+              continue;
 
-          if (is_thread_function(called_func))
-            if (not is_omp_function(called_func))
-              return false;
+            if (is_thread_function(called_func))
+              if (not is_omp_function(called_func))
+                return false;
+          }
         }
       }
     }
@@ -52,45 +70,51 @@ static bool check_module(Module &M) {
   return true;
 }
 
-static void collectAllParallelFunctions(Function *func, bool parallel = false) {
+#define capf(f, p) collectAllParallelFunctions(call_graph, f, p)
 
+static void collectAllParallelFunctions(DenseSet<Function *> &call_graph,
+                                        Function *func, bool parallel = false) {
+
+  if (func->isDeclaration())
+    return;
   if (parallel_functions.contains(func))
     return;
-  if (parallel)
+  if (parallel) {
     parallel_functions.insert(func);
+  } else {
+    if (call_graph.contains(func))
+      return;
+    call_graph.insert(func);
+  }
+
+#ifndef NDEBUG
+  if (func->getName().contains(".omp_outlined")) {
+    if (not parallel && 1 < call_graph.size()) {
+      errs() << func->getName() << "\n";
+      llvm_unreachable("All OpenMP regions should be parallel");
+    }
+  }
+#endif
 
   for (auto &bb : *func) {
     for (auto &inst : bb) {
       if (auto *call = dyn_cast<CallBase>(&inst)) {
-        auto *called_func = call->getCalledFunction();
-        if (parallel) {
-          if (called_func) {
-            if (is_thread_function(called_func)) {
-              for (Use &a : call->args())
-                if (auto target_func = dyn_cast<Function>(a.get()))
-                  collectAllParallelFunctions(target_func, parallel);
-            } else {
-              collectAllParallelFunctions(called_func, parallel);
-            }
-          } else {
-            // TODO function pointer? indirect calls?
-            for (auto *ct : DevirtAnalysis::get_possible_call_targets(call)) {
-              assert(ct);
-              collectAllParallelFunctions(ct, parallel);
-            }
-          }
-        } else {
-          if (not called_func)
-            continue;
-          if (not is_thread_function(called_func))
-            continue;
 
-          if (is_omp_function(called_func)) {
+        SmallDenseSet<Function *> function_list;
+        get_called_functions(call, function_list);
+        assert(not function_list.empty());
+
+        for (auto *ct : function_list) {
+          assert(ct);
+          if (is_thread_function(ct)) {
+            bool isOMP = is_omp_function(ct);
             for (Use &a : call->args())
               if (auto omp_target_func = dyn_cast<Function>(a.get()))
-                collectAllParallelFunctions(omp_target_func, true);
+                capf(omp_target_func, isOMP ? true : parallel);
           } else {
-            llvm_unreachable("did someone change check_module()?");
+            bool is_thread_func = is_thread_function(ct);
+            assert(not is_thread_func);
+            capf(ct, is_thread_func ? true : parallel);
           }
         }
       }
@@ -131,6 +155,8 @@ static void collect_and_cleanup(Module &M, unsigned *removed_tsan_calls) {
     // ignore tsan itself
     if (Func.getName().starts_with("tsan."))
       continue;
+    if (Func.isDeclaration())
+      continue;
 
     // remove TSAN calls only in single-threaded functions
     if (parallel_functions.contains(&Func))
@@ -165,7 +191,8 @@ std::string remove_all_single_thread_regions(Module &M,
     // ignore tsan itself
     if (func.getName().starts_with("tsan"))
       continue;
-    collectAllParallelFunctions(&func);
+    DenseSet<Function *> call_graph;
+    collectAllParallelFunctions(call_graph, &func);
   }
 
   unsigned removed_tsan_calls = 0;

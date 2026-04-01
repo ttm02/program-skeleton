@@ -33,10 +33,12 @@
 #include "llvm/Transforms/Scalar/EarlyCSE.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include <memory>
 
 using namespace llvm;
 
 RequiredAnalysisResults *analysis_results;
+std::shared_ptr<PrecalculationAnalysis> precalculation_analysis;
 
 // removes attribute noinline from every func
 // we previously set it to make analysis easier
@@ -47,13 +49,6 @@ static void remove_noinline_from_module(Module &M) {
       F.removeFnAttr(Attribute::NoInline);
     }
   }
-}
-
-static void reset_analysis_results(Module &M, ModuleAnalysisManager &AM) {
-  static bool alreadySetup = false;
-  if (not alreadySetup)
-    analysis_results = new RequiredAnalysisResults(AM, M);
-  alreadySetup = true;
 }
 
 static bool run_optimization_passes(
@@ -193,8 +188,12 @@ collectForPrecompute(Instruction &inst, DenseSet<Value *> &to_precompute,
   }
 }
 
-static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
-  PrecomputeFunctions::create_instance(M);
+static void reset_analysis_results(Module &M, ModuleAnalysisManager &AM) {
+  static bool alreadySetup = false;
+  if (alreadySetup)
+    return;
+
+  analysis_results = new RequiredAnalysisResults(AM, M);
 
   auto *main_func = M.getFunction("main");
   assert(main_func);
@@ -214,18 +213,22 @@ static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
 
   errs() << "Statistics: locations: " << precompute_locations.size()
          << " values: " << to_precompute.size() << "\n";
-
   // no tsan found
-  if (precompute_locations.empty()) {
-    // no modification
-    return "";
-  }
+  assert(not precompute_locations.empty());
 
-  auto precalcuation = std::make_shared<PrecomputeInsertion>(
-      M,
-      std::make_shared<PrecalculationAnalysis>(M, main_func, to_precompute,
-                                               precompute_locations),
-      false);
+  precalculation_analysis = std::make_shared<PrecalculationAnalysis>(
+      M, main_func, to_precompute, precompute_locations);
+
+  alreadySetup = true;
+}
+
+static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
+  auto *main_func = M.getFunction("main");
+  assert(main_func);
+
+  PrecomputeFunctions::create_instance(M);
+  auto precalcuation =
+      std::make_shared<PrecomputeInsertion>(M, precalculation_analysis, false);
 
   // do NOT call clean_precompute() as we want the tsan calls to stick around
 

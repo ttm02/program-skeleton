@@ -365,26 +365,22 @@ void PrecalculationAnalysis::visit_phi(
 
 void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
 
-      // TODO clang tidy repeated branch body (the v->visited = true part)
+  // TODO clang tidy repeated branch body (the v->visited = true part)
 
-      if (isa<Constant>(v->v)) {
+  if (isa<Constant>(v->v)) {
     // nothing to do for constant
     v->set_visited();
-  }
-  else if (auto load = dyn_cast<LoadInst>(v->v)) {
+  } else if (auto load = dyn_cast<LoadInst>(v->v)) {
     auto loaded_from = insert_tainted_value(load->getPointerOperand(), v);
     visit_load(v, loaded_from);
-  }
-  else if (auto *alloc = dyn_cast<AllocaInst>(v->v)) {
+  } else if (auto *alloc = dyn_cast<AllocaInst>(v->v)) {
     // visit_ptr_usages is called on all ptrs anyway
     // need to calculate allocation size
     insert_tainted_value(alloc->getArraySize(), v);
     v->set_visited();
-  }
-  else if (auto store = dyn_cast<StoreInst>(v->v)) {
+  } else if (auto store = dyn_cast<StoreInst>(v->v)) {
     visit_store(v, store->getPointerOperand(), store->getValueOperand());
-  }
-  else if (auto *op = dyn_cast<BinaryOperator>(v->v)) {
+  } else if (auto *op = dyn_cast<BinaryOperator>(v->v)) {
     // arithmetic
     // TODO do we need to exclude some opcodes?
     assert(op->getNumOperands() == 2);
@@ -392,23 +388,20 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
     insert_tainted_value(op->getOperand(0), v);
     insert_tainted_value(op->getOperand(1), v);
     v->set_visited();
-  }
-  else if (auto *uop = dyn_cast<UnaryOperator>(v->v)) {
+  } else if (auto *uop = dyn_cast<UnaryOperator>(v->v)) {
     // arithmetic
     // TODO do we need to exclude some opcodes?
     assert(uop->getNumOperands() == 1);
     assert(not uop->getType()->isPointerTy());
     insert_tainted_value(uop->getOperand(0), v);
     v->set_visited();
-  }
-  else if (auto *cmp = dyn_cast<CmpInst>(v->v)) {
+  } else if (auto *cmp = dyn_cast<CmpInst>(v->v)) {
     // cmp
     assert(cmp->getNumOperands() == 2);
     insert_tainted_value(cmp->getOperand(0), v);
     insert_tainted_value(cmp->getOperand(1), v);
     v->set_visited();
-  }
-  else if (auto *select = dyn_cast<SelectInst>(v->v)) {
+  } else if (auto *select = dyn_cast<SelectInst>(v->v)) {
     insert_tainted_value(select->getCondition(), v);
     auto true_val = insert_tainted_value(select->getTrueValue(), v);
     auto false_val = insert_tainted_value(select->getFalseValue(), v);
@@ -420,17 +413,13 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
       v->ptr_info->add_ptr_info_user(false_val);
     }
     v->set_visited();
-  }
-  else if (isa<Argument>(v->v)) {
+  } else if (isa<Argument>(v->v)) {
     visit_arg(v);
-  }
-  else if (isa<CallBase>(v->v)) {
+  } else if (isa<CallBase>(v->v)) {
     visit_call(v);
-  }
-  else if (isa<PHINode>(v->v)) {
+  } else if (isa<PHINode>(v->v)) {
     visit_phi(v);
-  }
-  else if (auto *cast = dyn_cast<CastInst>(v->v)) {
+  } else if (auto *cast = dyn_cast<CastInst>(v->v)) {
     // cast TO ptr is not allowed
     assert(not cast->getType()->isPointerTy() &&
            "Casting an integer to a ptr is not supported");
@@ -439,13 +428,11 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
 
     insert_tainted_value(cast->getOperand(0), v);
     v->set_visited();
-  }
-  else if (auto *gep = dyn_cast<GetElementPtrInst>(v->v)) {
+  } else if (auto *gep = dyn_cast<GetElementPtrInst>(v->v)) {
     visit_gep(v);
     assert(is_tainted(gep->getPointerOperand()));
     v->set_visited();
-  }
-  else if (auto *br = dyn_cast<BranchInst>(v->v)) {
+  } else if (auto *br = dyn_cast<BranchInst>(v->v)) {
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     v->set_visited();
     if (br->isConditional()) {
@@ -453,70 +440,58 @@ void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
     } else {
       // nothing to do
     }
-  }
-  else if (auto *sw = dyn_cast<SwitchInst>(v->v)) {
+  } else if (auto *sw = dyn_cast<SwitchInst>(v->v)) {
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     v->set_visited();
     insert_tainted_value(sw->getCondition(), v);
-  }
-  else if (auto *resume = dyn_cast<ResumeInst>(v->v)) {
+  } else if (auto *resume = dyn_cast<ResumeInst>(v->v)) {
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     // resume exception: nothing to do just keep it
     insert_tainted_value(resume->getOperand(0), v);
     v->set_visited();
-  }
-  else if (auto *ret = dyn_cast<ReturnInst>(v->v)) {
+  } else if (auto *ret = dyn_cast<ReturnInst>(v->v)) {
     insert_tainted_value(ret->getOperand(0), v);
     v->set_visited();
-  }
-  else if (isa<LandingPadInst>(v->v)) {
+  } else if (isa<LandingPadInst>(v->v)) {
     // nothing to do, just keep around
     assert(v->getReason() & TaintReason::CONTROL_FLOW);
     v->set_visited();
-  }
-  else if (auto *ext = dyn_cast<ExtractValueInst>(v->v)) {
+  } else if (auto *ext = dyn_cast<ExtractValueInst>(v->v)) {
     insert_tainted_value(ext->getAggregateOperand(), v);
     v->set_visited();
-  }
-  else if (auto *ptoi = dyn_cast<PtrToIntInst>(v->v)) {
+  } else if (auto *ptoi = dyn_cast<PtrToIntInst>(v->v)) {
     // conversion of ptr TO int e.g. for comparison or alignment check is
     // allowed
     insert_tainted_value(ptoi->getPointerOperand(), v);
     v->set_visited();
-  }
-  else if (isa<ShuffleVectorInst>(v->v) || isa<ExtractElementInst>(v->v) ||
-           isa<InsertElementInst>(v->v)) {
+  } else if (isa<ShuffleVectorInst>(v->v) || isa<ExtractElementInst>(v->v) ||
+             isa<InsertElementInst>(v->v)) {
     for (auto *operand : llvm::cast<Instruction>(v->v)->operand_values()) {
       insert_tainted_value(operand, v);
     }
     v->set_visited();
-  }
-  else if (auto *atomic = dyn_cast<AtomicRMWInst>(v->v)) {
+  } else if (auto *atomic = dyn_cast<AtomicRMWInst>(v->v)) {
     // a load and store to ptr
     visit_store(v, atomic->getPointerOperand(), atomic->getValOperand());
     visit_load(v, get_taint_info(atomic->getPointerOperand()));
-  }
-  else if (auto *insertvalue = dyn_cast<InsertValueInst>(v->v)) {
+  } else if (auto *insertvalue = dyn_cast<InsertValueInst>(v->v)) {
     // a load and store to ptr
     insert_tainted_value(insertvalue->getAggregateOperand(), v);
     insert_tainted_value(insertvalue->getInsertedValueOperand(), v);
     // indices are constants
     // I mean an integral part of the instruction, not even llvm::ConstantInt
     v->set_visited();
-  }
-  else if (auto *insertelem = dyn_cast<InsertElementInst>(v->v)) {
+  } else if (auto *insertelem = dyn_cast<InsertElementInst>(v->v)) {
     // a load and store to ptr
     insert_tainted_value(insertelem->getOperand(0), v); // vector
     insert_tainted_value(insertelem->getOperand(1), v); // insterted elem
     insert_tainted_value(insertelem->getOperand(2), v); // index
     v->set_visited();
-  }
-  else if (auto *freeze = dyn_cast<FreezeInst>(v->v)) {
+  } else if (auto *freeze = dyn_cast<FreezeInst>(v->v)) {
     // essentially a no-op on valid values
     insert_tainted_value(freeze->getOperand(0), v);
     v->set_visited();
-  }
-  else {
+  } else {
 
     errs() << "Support for analyzing this Value is not implemented yet\n";
     v->v->dump();
@@ -1208,8 +1183,6 @@ void PrecalculationAnalysis::visit_call(
   assert(!call_info->is_visited());
   call_info->set_visited();
 
-  std::vector<Function *> possible_targets = get_possible_call_targets(call);
-
   bool need_return_val = is_retval_of_call_needed(call);
   if (need_return_val) {
     visit_call_for_retval(call_info);
@@ -1236,7 +1209,6 @@ void PrecalculationAnalysis::visit_call(
     func_ptr_info->ptr_info->setIsCalled(true);
     include_value_in_precompute(func_ptr_info);
   }
-
 
   // analyze if call to str read/writes ptr
   if (is_call_to_std(call) && !is_thread_fork_call(call)) {
@@ -1949,9 +1921,9 @@ void PrecalculationAnalysis::insert_necessary_control_flow(Value *v) {
   }
 }
 
-std::vector<llvm::Function *>
+llvm::DenseSet<llvm::Function *>
 PrecalculationAnalysis::get_possible_call_targets(llvm::CallBase *call) const {
-  std::vector<llvm::Function *> possible_targets;
+  llvm::DenseSet<llvm::Function *> possible_targets;
   if (call->isIndirectCall()) {
     possible_targets = DevirtAnalysis::get_possible_call_targets(call);
   } else {
@@ -1959,13 +1931,13 @@ PrecalculationAnalysis::get_possible_call_targets(llvm::CallBase *call) const {
     if (call->getCalledFunction() == nullptr) {
       // happens when function is casted
       if (auto *func = dyn_cast<Function>(call->getCalledOperand())) {
-        possible_targets.push_back(func);
+        possible_targets.insert(func);
       } else {
         call->dump();
         assert(0 && "Could not determine targets of call");
       }
     } else {
-      possible_targets.push_back(call->getCalledFunction());
+      possible_targets.insert(call->getCalledFunction());
     }
     return possible_targets;
   }
@@ -1983,7 +1955,7 @@ PrecalculationAnalysis::get_possible_call_targets(llvm::CallBase *call) const {
       auto func = pair.second;
       if (func->is_func_ptr_captured) {
         if (func->func->getFunctionType() == call->getFunctionType())
-          possible_targets.push_back(func->func);
+          possible_targets.insert(func->func);
       }
     }
     // TODO can we check that we will not be able to get a ptr to a function
