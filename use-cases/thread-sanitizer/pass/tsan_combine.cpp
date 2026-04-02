@@ -798,14 +798,6 @@ static void wrap_BB_replace(replace_func_t replace_func, Module &M,
   }
 }
 
-static inline void opt_cleanup(Module &M, ModuleAnalysisManager &AM) {
-  auto inliner = llvm::ModuleInlinerPass();
-  inliner.run(M, AM);
-
-  auto dce = llvm::GlobalDCEPass();
-  dce.run(M, AM);
-}
-
 #define wBBr(wrapper_func)                                                     \
   wrap_BB_replace(wrapper_func, M, &removed_tsan_calls, &added_tsan_calls)
 
@@ -823,7 +815,7 @@ std::string combine_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
     wBBr(same_wrapper);
     wBBr(struct_wrapper);
     wBBr(array_wrapper);
-    opt_cleanup(M, AM);
+    run_cleanup(M, AM);
   } while (old_removed != removed_tsan_calls || old_added != added_tsan_calls);
 
   // print statistics

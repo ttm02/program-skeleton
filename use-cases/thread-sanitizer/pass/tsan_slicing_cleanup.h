@@ -29,6 +29,8 @@ std::string remove_all_single_thread_regions(llvm::Module &M,
 std::string wrap_non_openmp_tsan_calls(llvm::Module &M,
                                        llvm::ModuleAnalysisManager &AM);
 
+void run_cleanup(llvm::Module &M, llvm::ModuleAnalysisManager &AM);
+
 llvm::CallInst *createTSANrange(llvm::Module &M, llvm::IRBuilder<> &builder,
                                 llvm::Value *base_ptr, llvm::Value *struct_size,
                                 const bool isWrite);

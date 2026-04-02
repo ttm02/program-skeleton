@@ -51,6 +51,19 @@ static void remove_noinline_from_module(Module &M) {
   }
 }
 
+void run_cleanup(Module &M, ModuleAnalysisManager &AM) {
+  errs() << "Run Cleanup\n";
+  llvm::ModulePassManager MPM;
+  llvm::FunctionPassManager FPM;
+  // FPM.addPass(llvm::EarlyCSEPass());
+  // FPM.addPass(llvm::InstCombinePass());
+  FPM.addPass(llvm::SimplifyCFGPass());
+  MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
+  MPM.addPass(llvm::GlobalDCEPass());
+  MPM.addPass(llvm::ModuleInlinerPass());
+  MPM.run(M, AM);
+}
+
 static bool run_optimization_passes(
     Module &M, ModuleAnalysisManager &AM,
     std::string (*opt_pass_func)(Module &M, ModuleAnalysisManager &AM),
@@ -67,16 +80,7 @@ static bool run_optimization_passes(
   errs() << opt_msg_success << "\n";
 
   if (cleanup) {
-    errs() << "Run Cleanup\n";
-    llvm::ModulePassManager MPM;
-    llvm::FunctionPassManager FPM;
-    // FPM.addPass(llvm::EarlyCSEPass());
-    // FPM.addPass(llvm::InstCombinePass());
-    FPM.addPass(llvm::SimplifyCFGPass());
-    MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
-    MPM.addPass(llvm::GlobalDCEPass());
-    MPM.addPass(llvm::ModuleInlinerPass());
-    MPM.run(M, AM);
+    run_cleanup(M, AM);
 #ifndef NDEBUG
     has_error = verifyModule(M, &errs(), nullptr);
     assert(not has_error);
