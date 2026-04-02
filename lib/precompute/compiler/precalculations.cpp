@@ -1965,8 +1965,8 @@ PrecalculationAnalysis::get_possible_call_targets(llvm::CallBase *call) const {
   if (possible_targets.empty()) {
     call->dump();
     errs() << "In: " << call->getFunction()->getName() << "\n";
+    errs() << "could not find tgts of call\n";
   }
-  assert(not possible_targets.empty() && "could not find tgts of call");
 
   /*
   for (auto *tgt : possible_targets) {

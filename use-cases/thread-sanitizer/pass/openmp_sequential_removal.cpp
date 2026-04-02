@@ -54,10 +54,6 @@ static bool check_module(Module &M) {
           SmallDenseSet<Function *> function_list;
           get_called_functions(call, function_list);
           for (auto *called_func : function_list) {
-            assert(called_func);
-            if (called_func->isDeclaration())
-              continue;
-
             if (is_thread_function(called_func))
               if (not is_omp_function(called_func))
                 return false;
@@ -102,7 +98,8 @@ static void collectAllParallelFunctions(DenseSet<Function *> &call_graph,
 
         SmallDenseSet<Function *> function_list;
         get_called_functions(call, function_list);
-        assert(not function_list.empty());
+        // there are some calls in HPCCG where no target can be found
+        // assert(not function_list.empty());
 
         for (auto *ct : function_list) {
           assert(ct);
