@@ -110,32 +110,33 @@ std::string wrap_non_openmp_tsan_calls(Module &M, ModuleAnalysisManager &AM) {
 
   unsigned wrapped_tsan_calls = 0;
 
-  if (not ParallelCalls.empty()) {
-    auto *ctx = &M.getContext();
-    auto *int64Ty = Type::getInt64Ty(*ctx);
-    ThreadCounter = new llvm::GlobalVariable(
-        M, int64Ty, /*isConstant=*/false, GlobalValue::PrivateLinkage,
-        ConstantInt::get(int64Ty, 0),
-        "PRECOMPUTE_STATIC_ANALYSIS_INTERNAL_THREAD_COUNTER");
+  if (ParallelCalls.empty())
+    return "";
 
-    for (auto &func : M) {
-      DenseSet<CallBase *> tsan_calls;
-      for (auto &bb : func)
-        for (auto &inst : bb)
-          if (auto *call = dyn_cast<CallBase>(&inst))
-            if (isAcceptableTsanCall(call))
-              tsan_calls.insert(call);
+  auto *ctx = &M.getContext();
+  auto *int64Ty = Type::getInt64Ty(*ctx);
+  ThreadCounter = new llvm::GlobalVariable(
+      M, int64Ty, /*isConstant=*/false, GlobalValue::PrivateLinkage,
+      ConstantInt::get(int64Ty, 0),
+      "PRECOMPUTE_STATIC_ANALYSIS_INTERNAL_THREAD_COUNTER");
 
-      if (not tsan_calls.empty()) {
-        wrap_tsan_calls(tsan_calls);
-        wrapped_tsan_calls += tsan_calls.size();
-      }
+  for (auto &func : M) {
+    DenseSet<CallBase *> tsan_calls;
+    for (auto &bb : func)
+      for (auto &inst : bb)
+        if (auto *call = dyn_cast<CallBase>(&inst))
+          if (isAcceptableTsanCall(call))
+            tsan_calls.insert(call);
+
+    if (not tsan_calls.empty()) {
+      wrap_tsan_calls(tsan_calls);
+      wrapped_tsan_calls += tsan_calls.size();
     }
-
-    if (wrapped_tsan_calls != 0)
-      wrap_parallel_calls();
   }
 
-  return "wrapped possible single-threaded TSAN calls: " +
+  if (wrapped_tsan_calls != 0)
+    wrap_parallel_calls();
+
+  return "Wrapped possible single-threaded TSAN calls: " +
          std::to_string(wrapped_tsan_calls);
 }

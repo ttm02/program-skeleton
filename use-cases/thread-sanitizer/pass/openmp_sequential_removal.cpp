@@ -180,7 +180,7 @@ static void collect_and_cleanup(Module &M, unsigned *removed_tsan_calls) {
 
 std::string remove_all_single_thread_regions(Module &M,
                                              ModuleAnalysisManager &AM) {
-  errs() << "Aggressivly remove all single-threaded TSAN calls\n";
+  errs() << "Sequential OpenMP Removal\n";
   if (not check_module(M))
     return "";
 

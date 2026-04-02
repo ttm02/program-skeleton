@@ -56,8 +56,10 @@ static bool run_optimization_passes(
     std::string (*opt_pass_func)(Module &M, ModuleAnalysisManager &AM),
     bool cleanup = true) {
   std::string opt_msg_success = opt_pass_func(M, AM);
-  if (opt_msg_success.empty())
+  if (opt_msg_success.empty()) {
+    errs() << "aborted ..\n\n";
     return false;
+  }
 #ifndef NDEBUG
   bool has_error = verifyModule(M, &errs(), nullptr);
   assert(not has_error);
