@@ -445,15 +445,14 @@ bool mightInfluenceHappensBefore(Function *func,
 bool mightInfluenceHappensBefore(Instruction *inst,
                                  DenseSet<Function *> &alreadyVisited) {
   if (auto *call = dyn_cast<CallBase>(inst)) {
-    auto *called_func = call->getCalledFunction();
-    if (not called_func)
-      return false; // fingers crossed ....
-
-    if (is_thread_function(called_func))
-      return true;
-
-    if (mightInfluenceHappensBefore(called_func, alreadyVisited))
-      return true;
+    SmallDenseSet<Function *> function_list;
+    get_called_functions(call, function_list);
+    for (auto *called_func : function_list) {
+      if (is_thread_function(called_func))
+        return true;
+      if (mightInfluenceHappensBefore(called_func, alreadyVisited))
+        return true;
+    }
   }
 
   return false;
