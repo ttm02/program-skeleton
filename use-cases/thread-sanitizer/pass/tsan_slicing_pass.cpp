@@ -213,8 +213,8 @@ static void reset_analysis_results(Module &M, ModuleAnalysisManager &AM) {
 
   errs() << "Statistics: locations: " << precompute_locations.size()
          << " values: " << to_precompute.size() << "\n";
-  // no tsan found
-  assert(not precompute_locations.empty());
+  // DRB083 does not like that
+  // assert(not precompute_locations.empty());
 
   precalculation_analysis = std::make_shared<PrecalculationAnalysis>(
       M, main_func, to_precompute, precompute_locations);
@@ -223,6 +223,9 @@ static void reset_analysis_results(Module &M, ModuleAnalysisManager &AM) {
 }
 
 static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
+  if (precalculation_analysis->get_locations_to_precompute().empty())
+    return "";
+
   auto *main_func = M.getFunction("main");
   assert(main_func);
 
