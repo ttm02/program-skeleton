@@ -428,6 +428,22 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
   return removed_tsan_calls;
 }
 
+static std::vector<std::string> func_names_whitelist = {
+    "__kmpc_dispatch_next", "__kmpc_global_", "__kmpc_master",
+    "__kmpc_single",        "omp_get_",       "omp_set_dynamic",
+    "omp_set_num_threads",  "pthread_create",
+};
+
+static bool mightInfluenceHappensBefore(Function *func) {
+  assert(is_thread_function(func));
+  auto func_name = func->getName();
+  assert(not func_name.empty());
+  for (auto fn : func_names_whitelist)
+    if (func_name.starts_with(fn))
+      return false;
+  return true;
+}
+
 bool mightInfluenceHappensBefore(Function *func,
                                  DenseSet<Function *> &alreadyVisited) {
   if (alreadyVisited.contains(func))
@@ -449,7 +465,10 @@ bool mightInfluenceHappensBefore(Instruction *inst,
     get_called_functions(call, function_list);
     for (auto *called_func : function_list) {
       if (is_thread_function(called_func))
-        return true;
+        if (mightInfluenceHappensBefore(called_func))
+          return true;
+      if (called_func->isDeclaration())
+        continue;
       if (mightInfluenceHappensBefore(called_func, alreadyVisited))
         return true;
     }
