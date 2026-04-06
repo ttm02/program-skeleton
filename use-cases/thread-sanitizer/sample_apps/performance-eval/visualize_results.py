@@ -24,7 +24,6 @@ def main():
 
     visualize_lulesh()
     visualize_hpccg()
-    visualize_miniamr()
     visualize_tealeaf()
     visualize_kripke()
 

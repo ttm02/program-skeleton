@@ -96,8 +96,7 @@ def visualize_runtime():
 
         df_lulesh = df[df["app"] == "lulesh"]
         df_hpccg = df[df["app"] == "hpccg"]
-        df_miniamr = df[df["app"] == "miniamr"]
-        df_1 = pd.concat((df_lulesh, df_hpccg, df_miniamr))
+        df_1 = pd.concat((df_lulesh, df_hpccg))
         create_lineplot(df_1, pdf)
 
         df_tealeaf = df[df["app"] == "tealeaf"]
