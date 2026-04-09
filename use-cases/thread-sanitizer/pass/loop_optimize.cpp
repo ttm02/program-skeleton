@@ -50,79 +50,7 @@ static inline CallBase *getCallInFunc(Function *func,
   return nullptr;
 }
 
-template <typename T>
-static bool isRecUser(Instruction *inst, DenseSet<Instruction *> &visited) {
-  if (isa<T>(inst))
-    return true;
-  if (visited.contains(inst))
-    return false;
-  visited.insert(inst);
-  for (auto *u : inst->users())
-    if (auto i = dyn_cast<Instruction>(u))
-      if (isRecUser<T>(i, visited))
-        return true;
-  return false;
-}
-
-static Value *getBoundStore(Value *omp_bound, LoadInst *first) {
-  auto *ptr = first->getPointerOperand();
-
-  Value *second = nullptr;
-  for (auto *u : omp_bound->users()) {
-    if (auto *store = dyn_cast<StoreInst>(u)) {
-      auto *storeVal = store->getValueOperand();
-      if (auto *ci = dyn_cast<ConstantInt>(storeVal)) {
-        assert(not second);
-        second = ConstantInt::get(ci->getType(), ci->getValue());
-        // TODO non constant bounds
-        /*
-        } else if (auto *sv = dyn_cast<Instruction>(storeVal);
-                   not isRecOperand(sv, ptr)) {
-          assert(not second);
-          auto svClone = sv->clone();
-          svClone->insertAfter(sv);
-          second = svClone;
-        */
-      } else {
-        continue;
-      }
-    }
-  }
-  return second;
-}
-
-static void getBoundLoadStoreReplacement(
-    Value *omp_bound,
-    DenseMap<Value *, SmallDenseSet<Use *>> &boundReplacement) {
-  DenseSet<LoadInst *> loadSet;
-  for (auto *u : omp_bound->users()) {
-    DenseSet<Instruction *> visited;
-    if (auto *load = dyn_cast<LoadInst>(u))
-      if (isRecUser<BranchInst>(load, visited))
-        loadSet.insert(load);
-  }
-  if (loadSet.empty())
-    return;
-
-  for (auto *load : loadSet) {
-    auto origVal = getBoundStore(omp_bound, load);
-    // TODO non constant bounds
-    if (not origVal)
-      continue;
-
-    SmallDenseSet<Use *> useSet;
-    for (Use &u : load->uses()) {
-      useSet.insert(&u);
-      u.set(origVal);
-    }
-    boundReplacement[load] = useSet;
-  }
-}
-
-static uint64_t
-openMPboundFix(Function *func,
-               DenseMap<Value *, SmallDenseSet<Use *>> &boundReplacement,
-               Loop **loop) {
+static uint64_t openMPboundFix(Function *func, Loop **loop) {
   if (not func->getName().contains(".omp_outlined."))
     return 0;
 
@@ -148,13 +76,7 @@ openMPboundFix(Function *func,
   if (cs != 1)
     return cs;
 
-  // TODO chunk size of 1
-  // TODO non-constant iteration counts
   return 0;
-  auto omp_lower = omp_for_static->getArgOperand(4);
-  getBoundLoadStoreReplacement(omp_lower, boundReplacement);
-  auto omp_upper = omp_for_static->getArgOperand(5);
-  getBoundLoadStoreReplacement(omp_upper, boundReplacement);
 }
 
 void splitBBexecOnce(
@@ -391,8 +313,7 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
   unsigned removed_tsan_calls = 0;
 
   auto *func = loop->getHeader()->getParent();
-  DenseMap<Value *, SmallDenseSet<Use *>> boundReplacement;
-  auto chunk_size = openMPboundFix(func, boundReplacement, &loop);
+  auto chunk_size = openMPboundFix(func, &loop);
 
   BasicBlock *incoming;
   BasicBlock *backedge;
@@ -417,13 +338,6 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
   for (auto d : data)
     if (create_tsan_replacement(M, d, SE, chunk_size))
       removed_tsan_calls++;
-
-  // Rollback: Do not break OpenMP thread handling
-  for (auto br : boundReplacement) {
-    auto *load = br.getFirst();
-    for (Use *u : br.getSecond())
-      u->set(load);
-  }
 
   return removed_tsan_calls;
 }
