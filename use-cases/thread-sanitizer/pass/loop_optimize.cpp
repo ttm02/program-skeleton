@@ -107,18 +107,27 @@ void splitBBexecOnce(
   insertIntoTsanBB(tsanBuilder);
 }
 
+enum loopTSANtype {
+  RANGE,
+  INVARIANT,
+  RESERVED,
+};
+
 struct loopTSANdata {
+  loopTSANtype type;
   bool isWrite;
   Value *val_min;
   Value *call_arg_0;
   CallBase *call;
   ConstantInt *tsan_size;
   const SCEV *tripCount;
+  SCEVExpander *seExpander;
 
   bool operator==(const loopTSANdata &other) const {
-    return isWrite == other.isWrite && val_min == other.val_min &&
-           call_arg_0 == other.call_arg_0 && call == other.call &&
-           tsan_size == other.tsan_size && tripCount == other.tripCount;
+    return type == other.type && isWrite == other.isWrite &&
+           val_min == other.val_min && call_arg_0 == other.call_arg_0 &&
+           call == other.call && tsan_size == other.tsan_size &&
+           tripCount == other.tripCount && seExpander == other.seExpander;
   }
 };
 
@@ -127,8 +136,8 @@ template <> struct DenseMapInfo<loopTSANdata> {
   static inline loopTSANdata getTombstoneKey() { return {}; }
 
   static unsigned getHashValue(const loopTSANdata &V) {
-    return llvm::hash_combine(V.isWrite, V.val_min, V.call_arg_0, V.call,
-                              V.tsan_size, V.tripCount);
+    return llvm::hash_combine(V.type, V.isWrite, V.val_min, V.call_arg_0,
+                              V.call, V.tsan_size, V.tripCount, V.seExpander);
   }
 
   static bool isEqual(const loopTSANdata &LHS, const loopTSANdata &RHS) {
@@ -143,9 +152,6 @@ static bool create_tsan_replacement(Module &M, const loopTSANdata data,
   auto ptrTy = PointerType::get(*ctx, 0);
   auto int64Ty = Type::getInt64Ty(*ctx);
   auto constOne = ConstantInt::get(int64Ty, 1);
-
-  SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
-  seExpander.setInsertPoint(data.call);
 
   auto runTSANonlyOnce =
       [&](std::function<void(IRBuilder<> & tsanBuilder)> tsanInserter) {
@@ -200,34 +206,50 @@ static bool create_tsan_replacement(Module &M, const loopTSANdata data,
   CallBase *newCall = nullptr;
   auto createTSANcall = [&](IRBuilder<> &builder, Value *base_ptr) {
     // length = size_of(element) * (abs(last - base) + 1)
-    seExpander.setInsertPoint(builder.GetInsertPoint());
-    auto *iter_count = seExpander.expandCodeFor(data.tripCount, int64Ty);
+    data.seExpander->setInsertPoint(builder.GetInsertPoint());
+    auto *iter_count = data.seExpander->expandCodeFor(data.tripCount, int64Ty);
     auto *count_full = builder.CreateAdd(iter_count, constOne);
     auto *range_full = builder.CreateMul(count_full, data.tsan_size);
     newCall = createTSANrange(M, builder, base_ptr, range_full, data.isWrite);
   };
 
+  auto fixSCEVinsertDomination = [&](IRBuilder<> &tsanBuilder) {
+    auto *tsanBB = tsanBuilder.GetInsertBlock();
+    auto SEinsertedList = data.seExpander->getAllInsertedInstructions();
+    if (not SEinsertedList.empty()) {
+      auto *valInst = dyn_cast<Instruction>(data.val_min);
+      assert(valInst);
+      auto *valBB = valInst->getParent();
+      for (auto *inst : SEinsertedList)
+        if (inst->getParent() != valBB)
+          return;
+      sort(SEinsertedList,
+           [](Instruction *A, Instruction *B) { return A->comesBefore(B); });
+      tsanBB->splice(tsanBuilder.GetInsertPoint(), valBB,
+                     SEinsertedList.front()->getIterator(),
+                     std::next(SEinsertedList.back()->getIterator()));
+    }
+  };
+
   Value *base_ptr;
-  if (1 < chunk_size) {
+  if (data.type == INVARIANT) {
+    auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
+      data.call->moveAfter(tsanBuilder.GetInsertPoint());
+    };
+    runTSANonlyOnce(tsanInserter);
+    return true;
+  } else if (1 < chunk_size) {
     // only first iteration of chunk range
     auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
+      fixSCEVinsertDomination(tsanBuilder);
       base_ptr = tsanBuilder.CreateIntToPtr(data.val_min, ptrTy);
       createTSANcall(tsanBuilder, base_ptr);
     };
     runTSANonlyOnce(tsanInserter);
   } else {
-    // TODO unroll whole loop (if chunk size is 1)
+    assert(data.type == RANGE);
+    assert(chunk_size <= 1);
     return false;
-
-    auto origInserter = [&](IRBuilder<> &origBuilder) {
-      base_ptr = origBuilder.CreateIntToPtr(data.val_min, ptrTy);
-      Value *isEQ = origBuilder.CreateICmpEQ(data.call_arg_0, base_ptr);
-      return isEQ;
-    };
-    auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
-      createTSANcall(tsanBuilder, base_ptr);
-    };
-    splitBBexecOnce(data.call, origInserter, tsanInserter);
   }
 
   newCall->setDebugLoc(data.call->getDebugLoc());
@@ -248,6 +270,7 @@ prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
   data.isWrite = func_name.starts_with("__tsan_write") ||
                  func_name.starts_with("__tsan_unaligned_write");
 
+  data.type = RANGE;
   data.call_arg_0 = call->getArgOperand(0);
   data.tsan_size = get_size_of_tsan_access(call);
   if (not data.tsan_size)
@@ -255,11 +278,8 @@ prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
 
   // TODO;
   if (loop->isLoopInvariant(data.call_arg_0)) {
-    auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
-      call->moveAfter(tsanBuilder.GetInsertPoint());
-    };
-    // runTSANonlyOnce(tsanInserter);
-    return {};
+    data.type = INVARIANT;
+    return data;
   }
 
   auto scev = SE->getSCEV(data.call_arg_0);
@@ -297,13 +317,15 @@ prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
   auto *start = addRec->getStart();
   auto *stop = addRec->evaluateAtIteration(data.tripCount, *SE);
 
-  SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
-  seExpander.setInsertPoint(call);
+  data.seExpander = new SCEVExpander(*SE, M.getDataLayout(), "scev");
+  data.seExpander->setInsertPoint(call);
 
   auto *lower_bound = stepConstant->getAPInt().isNegative() ? stop : start;
-  data.val_min = seExpander.expandCodeFor(lower_bound, int64Ty);
-  if (isa<PoisonValue>(data.val_min))
+  data.val_min = data.seExpander->expandCodeFor(lower_bound, int64Ty);
+  if (isa<PoisonValue>(data.val_min)) {
+    delete data.seExpander;
     return {};
+  }
 
   return data;
 }
@@ -417,8 +439,11 @@ std::string optimize_loops(Module &M, ModuleAnalysisManager &AM) {
   for (auto &f : M) {
     if (not f.isDeclaration() && not is_func_from_std(&f)) {
       auto li = analysis_results->getLoopInfo(f);
+      unsigned old_removed_count = removed_tsan_calls;
       for (auto *loop : li->getLoopsInPreorder())
         loopWrapper(&removed_tsan_calls, M, loop);
+      if (old_removed_count != removed_tsan_calls)
+        analysis_results->invalidate(f);
     }
   }
 
