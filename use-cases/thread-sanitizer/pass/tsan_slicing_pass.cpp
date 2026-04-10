@@ -364,9 +364,17 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
     }
 
     // slicing or no slicing?
-    if (not DisableSlicing)
+    if (not DisableSlicing) {
       if (not run_slicing())
         return PreservedAnalyses::all();
+    } else {
+      remove_noinline_from_module(M);
+      run_cleanup(M, AM);
+#ifndef NDEBUG
+      bool has_error = verifyModule(M, &errs(), nullptr);
+      assert(not has_error);
+#endif
+    }
 
     // static analysis after slicing
     // running this before slicing might not allow certain optimizations
@@ -384,6 +392,7 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
     }
 
     // try to eliminate even more things
+    errs() << "Run O2 Passes\n";
     MPM.run(M, AM);
 
     delete analysis_results;
