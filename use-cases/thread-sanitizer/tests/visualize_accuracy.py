@@ -121,7 +121,7 @@ def create_boxplot(df, pdf, pdf_name):
     plt.close()
 
 
-def create_heat(df, pdf, all_labels=True, y_labels=True):
+def create_heat(df, pdf, all_labels=True, y_labels=True, ax_title=""):
     df = df.copy()
     fig_height = 4.2 if all_labels else 2.2
     fig_width = 7.25 if y_labels else 4.7
@@ -175,9 +175,12 @@ def create_heat(df, pdf, all_labels=True, y_labels=True):
         cbar=False,
     )
 
-    tc_name = df["testcase"].iloc[0]
+    if ax_title == "":
+        tc_name = df["testcase"].iloc[0]
+        ax.set_title(f"{tc_name}:")
+    else:
+        ax.set_title(ax_title)
 
-    ax.set_title(f"{tc_name}:")
     ax.set_xlabel("Thread Count")
     ax.set_ylabel("")
 
@@ -224,19 +227,37 @@ def get_boxplot(df, cat_name, pdf_name):
 
 
 def get_heatmap_files(df, file_name, all_labels=True):
-    with PdfPages(file_name + ".pdf") as pdf:
-        for df_chunk in split_dataframe(df, 1):
-            create_heat(df_chunk, pdf, all_labels, True)
-        print(f"Saving {file_name}.pdf")
+    iter_tc = file_name.startswith("DRB_Accuracy_all_all_heatmap")
+    mean_tfi = " "
+    if "_yes_" in file_name:
+        mean_tfi = " yes "
+    elif "_no_" in file_name:
+        mean_tfi = " no "
+    mean_text = f"Mean over all{mean_tfi}Testcases"
 
-    with PdfPages(file_name + "_no_desc" + ".pdf") as pdf:
-        for df_chunk in split_dataframe(df, 1):
-            create_heat(df_chunk, pdf, all_labels, False)
-        print(f"Saving {file_name}_no_desc.pdf")
+    if iter_tc:
+        with PdfPages(file_name + ".pdf") as pdf:
+            for df_chunk in split_dataframe(df, 1):
+                create_heat(df_chunk, pdf, all_labels, True)
+            print(f"Saving {file_name}.pdf")
+
+    with PdfPages(file_name + "_mean" + ".pdf") as pdf:
+        create_heat(df, pdf, all_labels, True, mean_text)
+        print(f"Saving {file_name}_mean.pdf")
+
+    if iter_tc:
+        with PdfPages(file_name + "_no_desc" + ".pdf") as pdf:
+            for df_chunk in split_dataframe(df, 1):
+                create_heat(df_chunk, pdf, all_labels, False)
+            print(f"Saving {file_name}_no_desc.pdf")
+
+    with PdfPages(file_name + "_mean" + "_no_desc" + ".pdf") as pdf:
+        create_heat(df, pdf, all_labels, False, mean_text)
+        print(f"Saving {file_name}_mean_no_desc.pdf")
 
 
-def get_heatmap(df):
-    file_name = "DRB_Accuracy_all_all_heatmap"
+def get_heatmap(df, name):
+    file_name = f"DRB_Accuracy_{name}_all_heatmap"
     get_heatmap_files(df, file_name)
 
     stan_mapping_text = {}
@@ -317,7 +338,9 @@ def visualize_accuracy():
 
     df_all = pd.concat([df_yes, df_no], ignore_index=True)
     df_all = df_all.sort_values(by="testcase")
-    get_heatmap(df_all)
+    get_heatmap(df_all, "all")
+    get_heatmap(df_yes, "yes")
+    get_heatmap(df_no, "no")
 
 
 if __name__ == "__main__":
