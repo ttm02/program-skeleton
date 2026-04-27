@@ -156,7 +156,10 @@ static inline bool check_path_to_base_ptr(const Instruction *inst,
     return true;
   if (auto *gep = dyn_cast<GetElementPtrInst>(inst)) {
     auto ptr = gep->getPointerOperand();
-    return base_ptr == ptr;
+    if (base_ptr == ptr)
+      return true;
+    else
+      return check_path_to_base_ptr(dyn_cast<Instruction>(ptr), base_ptr);
   }
   if (not isa<CastInst>(inst)) {
     for (auto &u : inst->operands())
@@ -669,9 +672,8 @@ remove_wrapper(replace_func_t replace_func, Module &M,
     if (replace_func == same_wrapper) {
       base_ptr_to_call[arg0].insert(ts);
     } else {
-      if (Instruction *inst0 = dyn_cast<Instruction>(arg0))
-        collect_base_ptr_to_tsan_call(base_ptr_to_call, call_to_base_ptr, ts,
-                                      inst0);
+      collect_base_ptr_to_tsan_call(base_ptr_to_call, call_to_base_ptr, ts,
+                                    arg0);
     }
   }
 
