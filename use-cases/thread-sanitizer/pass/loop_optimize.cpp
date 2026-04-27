@@ -276,7 +276,6 @@ prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
   if (not data.tsan_size)
     return {};
 
-  // TODO;
   if (loop->isLoopInvariant(data.call_arg_0)) {
     data.type = INVARIANT;
     return data;
@@ -330,9 +329,11 @@ prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
   return data;
 }
 
-static unsigned perform_tsan_licm(Module &M, Loop *loop,
-                                  const std::vector<CallBase *> &tsan_in_loop) {
+static std::pair<unsigned, unsigned>
+perform_tsan_licm(Module &M, Loop *loop,
+                  const std::vector<CallBase *> &tsan_in_loop) {
   unsigned removed_tsan_calls = 0;
+  unsigned invariant_calls = 0;
 
   auto *func = loop->getHeader()->getParent();
   auto chunk_size = openMPboundFix(func, &loop);
@@ -340,7 +341,7 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
   BasicBlock *incoming;
   BasicBlock *backedge;
   if (not loop->getIncomingAndBackEdge(incoming, backedge))
-    return 0;
+    std::make_pair(0, 0);
 
   auto *SE = analysis_results->getSE(*func);
   SmallDenseSet<loopTSANdata, 8> data;
@@ -357,11 +358,16 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
 
   // then apply transformation
   // this avoids destroying analysis data of other TSAN calls
-  for (auto d : data)
-    if (create_tsan_replacement(M, d, SE, chunk_size))
-      removed_tsan_calls++;
+  for (auto d : data) {
+    if (create_tsan_replacement(M, d, SE, chunk_size)) {
+      if (d.type == RANGE)
+        removed_tsan_calls++;
+      else
+        invariant_calls++;
+    }
+  }
 
-  return removed_tsan_calls;
+  return std::make_pair(removed_tsan_calls, invariant_calls);
 }
 
 static std::vector<std::string> func_names_whitelist = {
@@ -413,7 +419,8 @@ bool mightInfluenceHappensBefore(Instruction *inst,
   return false;
 }
 
-static void loopWrapper(unsigned *removed_tsan_calls, Module &M, Loop *loop) {
+static void loopWrapper(unsigned *removed_tsan_calls, unsigned *invariant_calls,
+                        Module &M, Loop *loop) {
   std::vector<llvm::CallBase *> tsan_calls;
 
   for (auto &bb : loop->getBlocks()) {
@@ -429,24 +436,54 @@ static void loopWrapper(unsigned *removed_tsan_calls, Module &M, Loop *loop) {
     }
   }
 
-  (*removed_tsan_calls) += perform_tsan_licm(M, loop, tsan_calls);
+  auto ptl_pair = perform_tsan_licm(M, loop, tsan_calls);
+  (*removed_tsan_calls) += ptl_pair.first;
+  (*invariant_calls) += ptl_pair.second;
+}
+
+static bool processLoopsInFunc(Module &M, Function &F,
+                               unsigned *removed_tsan_calls,
+                               unsigned *invariant_calls) {
+  unsigned old_removed_count = *removed_tsan_calls;
+  auto li = analysis_results->getLoopInfo(F);
+  SmallVector<Loop *> loopList;
+  for (auto *loop : li->getLoopsInPreorder())
+    loopList.push_back(loop);
+
+  auto byNestingDepth = [&](const Loop *LHS, const Loop *RHS) {
+    assert(LHS && RHS);
+    auto LHS_depth = LHS->getLoopDepth();
+    auto RHS_depth = RHS->getLoopDepth();
+    return LHS_depth > RHS_depth;
+  };
+  sort(loopList, byNestingDepth);
+
+  for (auto *loop : loopList) {
+    loopWrapper(removed_tsan_calls, invariant_calls, M, loop);
+    if (old_removed_count != *removed_tsan_calls) {
+      analysis_results->cleanup(F);
+      return true;
+    }
+  }
+  return false;
 }
 
 std::string optimize_loops(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Optimize Loops\n";
   unsigned removed_tsan_calls = 0;
+  unsigned invariant_calls = 0;
 
-  for (auto &f : M) {
-    if (not f.isDeclaration() && not is_func_from_std(&f)) {
-      auto li = analysis_results->getLoopInfo(f);
-      unsigned old_removed_count = removed_tsan_calls;
-      for (auto *loop : li->getLoopsInPreorder())
-        loopWrapper(&removed_tsan_calls, M, loop);
-      if (old_removed_count != removed_tsan_calls)
-        analysis_results->invalidate(f);
-    }
+  for (auto &F : M) {
+    if (F.isDeclaration() || is_func_from_std(&F))
+      continue;
+
+    bool again = false;
+    do {
+      again = processLoopsInFunc(M, F, &removed_tsan_calls, &invariant_calls);
+    } while (again);
   }
 
   // print statistics
-  return "invariant/unrolled TSAN calls: " + std::to_string(removed_tsan_calls);
+  return "unrolled TSAN calls: " + std::to_string(removed_tsan_calls) + "\n" +
+         "invariant TSAN calls: " + std::to_string(invariant_calls);
 }

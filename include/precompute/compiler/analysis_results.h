@@ -28,7 +28,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 class RequiredAnalysisResults {
 public:
   RequiredAnalysisResults(llvm::ModuleAnalysisManager &MAM, llvm::Module &M);
-  ~RequiredAnalysisResults(){};
+  ~RequiredAnalysisResults() {};
   llvm::AAResults *getAAResults(llvm::Function &f);
   llvm::LoopInfo *getLoopInfo(llvm::Function &f);
   llvm::ScalarEvolution *getSE(llvm::Function &f);
@@ -40,6 +40,8 @@ public:
 
   // invalidate All analysis for a specific function if something changes
   void invalidate(llvm::Function &f);
+  // simplify and dce
+  void cleanup(llvm::Function &f);
 
 private:
   llvm::FunctionAnalysisManager *FAM;
