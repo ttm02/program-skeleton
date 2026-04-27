@@ -29,7 +29,6 @@ def main():
 app_mapping = {
     "lulesh": "LULESH",
     "hpccg": "HPCCG",
-    "miniamr": "miniAMR",
     "tealeaf": "TeaLeaf",
     "kripke": "Kripke",
 }
@@ -49,6 +48,62 @@ def data_from_csv():
     df["app_readable"] = df["app"].replace(app_mapping)
     df["time"] = df["time"].astype(float)
     return df
+
+
+def create_heatmap(df, pdf):
+    df = df.copy()
+    fig, ax = plt.subplots(figsize=(10.3, 3.45))
+
+    heatmap_data = df.pivot_table(
+        index="app_readable",
+        columns="mode_readable",
+        values="time",
+        aggfunc="mean",
+        observed=True,
+    )
+    heatmap_data = heatmap_data.reindex(
+        columns=visc.mode_order, index=app_mapping.values()
+    )
+
+    annot = heatmap_data.copy()
+    annot = annot.map(lambda x: f"{x:.1f}")
+
+    heatmap_norm = heatmap_data.apply(
+        lambda c: (c - c.min()) / (c.max() - c.min()), axis=1
+    )
+
+    sns.heatmap(
+        heatmap_norm,
+        fmt="",
+        annot=annot,
+        annot_kws={"va": "center", "ha": "center"},
+        cmap="viridis_r",  # cmap="RdYlGn"
+        cbar=False,
+    )
+
+    ax.set_title("")  # Mean Compilation Time (in seconds)
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+
+    ax.xaxis.tick_top()
+    ax.xaxis.set_label_position("top")
+    ax.tick_params(axis="x", length=0)
+    for label in ax.get_xticklabels():
+        label.set_rotation(50)
+        label.set_ha("left")
+        label.set_rotation_mode("anchor")
+
+    ax.yaxis.tick_left()
+    ax.yaxis.set_label_position("left")
+    ax.tick_params(axis="y", left=False, labelleft=True)
+    for label in ax.get_yticklabels():
+        label.set_rotation(0)
+        label.set_ha("right")
+        label.set_rotation_mode("anchor")
+
+    plt.tight_layout()
+    pdf.savefig(fig, bbox_inches="tight", pad_inches=0.05)
+    plt.close()
 
 
 def create_lineplot(df, pdf, show_legend=False):
@@ -89,7 +144,13 @@ def create_lineplot(df, pdf, show_legend=False):
 
 def visualize_runtime():
     df = data_from_csv()
-    file_name = f"CompileTime_boxplot.pdf"
+
+    file_name = "CompileTime_heatmap.pdf"
+    with PdfPages(file_name) as pdf:
+        create_heatmap(df, pdf)
+        print(f"Saving {file_name}")
+
+    file_name = "CompileTime_boxplot.pdf"
     with PdfPages(file_name) as pdf:
         create_lineplot(df, pdf, True)
         create_lineplot(df, pdf)
