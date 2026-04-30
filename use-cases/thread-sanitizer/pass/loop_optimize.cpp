@@ -30,6 +30,7 @@ using namespace llvm;
 static inline CallBase *getCallInFunc(Function *func,
                                       std::string func_target_name,
                                       bool starts_with = false) {
+  CallBase *callVal = nullptr;
   for (BasicBlock &bb : *func) {
     for (Instruction &inst : bb) {
       if (auto *call = dyn_cast<CallBase>(&inst)) {
@@ -38,19 +39,27 @@ static inline CallBase *getCallInFunc(Function *func,
           continue;
         auto func_name = call_name.value();
         if (starts_with) {
-          if (func_name.starts_with(func_target_name))
-            return call;
+          if (func_name.starts_with(func_target_name)) {
+            if (callVal)
+              return nullptr;
+            else
+              callVal = call;
+          }
         } else {
-          if (func_name == func_target_name)
-            return call;
+          if (func_name == func_target_name) {
+            if (callVal)
+              return nullptr;
+            else
+              callVal = call;
+          }
         }
       }
     }
   }
-  return nullptr;
+  return callVal;
 }
 
-static uint64_t openMPboundFix(Function *func, Loop **loop) {
+static uint64_t getOpenMPbounds(Function *func, Loop **loop) {
   if (not func->getName().contains(".omp_outlined."))
     return 0;
 
@@ -331,12 +340,15 @@ prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
 
 static std::pair<unsigned, unsigned>
 perform_tsan_licm(Module &M, Loop *loop,
-                  const std::vector<CallBase *> &tsan_in_loop) {
+                  const std::vector<CallBase *> &tsan_in_loop,
+                  bool multipleLoopsInFunc) {
   unsigned removed_tsan_calls = 0;
   unsigned invariant_calls = 0;
 
   auto *func = loop->getHeader()->getParent();
-  auto chunk_size = openMPboundFix(func, &loop);
+  auto chunk_size = 0;
+  if (not multipleLoopsInFunc)
+    chunk_size = getOpenMPbounds(func, &loop);
 
   BasicBlock *incoming;
   BasicBlock *backedge;
@@ -420,7 +432,7 @@ bool mightInfluenceHappensBefore(Instruction *inst,
 }
 
 static void loopWrapper(unsigned *removed_tsan_calls, unsigned *invariant_calls,
-                        Module &M, Loop *loop) {
+                        Module &M, Loop *loop, bool mlif) {
   std::vector<llvm::CallBase *> tsan_calls;
 
   for (auto &bb : loop->getBlocks()) {
@@ -436,7 +448,7 @@ static void loopWrapper(unsigned *removed_tsan_calls, unsigned *invariant_calls,
     }
   }
 
-  auto ptl_pair = perform_tsan_licm(M, loop, tsan_calls);
+  auto ptl_pair = perform_tsan_licm(M, loop, tsan_calls, mlif);
   (*removed_tsan_calls) += ptl_pair.first;
   (*invariant_calls) += ptl_pair.second;
 }
@@ -449,6 +461,8 @@ static bool processLoopsInFunc(Module &M, Function &F,
   SmallVector<Loop *> loopList;
   for (auto *loop : li->getLoopsInPreorder())
     loopList.push_back(loop);
+  if (loopList.empty())
+    return false;
 
   auto byNestingDepth = [&](const Loop *LHS, const Loop *RHS) {
     assert(LHS && RHS);
@@ -458,8 +472,18 @@ static bool processLoopsInFunc(Module &M, Function &F,
   };
   sort(loopList, byNestingDepth);
 
+  unsigned zeroDepthLoops = 0;
+  for (auto *loop : llvm::reverse(loopList)) {
+    if (loop->getLoopDepth() == 1) // 1 is smallest depth
+      zeroDepthLoops++;
+    else
+      break;
+  }
+  // TODO support multiple loops in OpenMP parallel regions
+  bool mlif = 1 < zeroDepthLoops; // multiple loops in function
+
   for (auto *loop : loopList) {
-    loopWrapper(removed_tsan_calls, invariant_calls, M, loop);
+    loopWrapper(removed_tsan_calls, invariant_calls, M, loop, mlif);
     if (old_removed_count != *removed_tsan_calls) {
       analysis_results->cleanup(F);
       return true;
