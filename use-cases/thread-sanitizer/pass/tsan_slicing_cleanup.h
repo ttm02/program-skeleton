@@ -5,6 +5,8 @@
 #ifndef TSAN_PRECOMPUTE_CLEANUP_H
 #define TSAN_PRECOMPUTE_CLEANUP_H
 
+#include "precompute/compiler/precalculation.h"
+
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
@@ -12,6 +14,10 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+
+#include <memory>
+
+extern std::shared_ptr<PrecalculationAnalysis> precalculation_analysis;
 
 std::string optimize_loops(llvm::Module &M, llvm::ModuleAnalysisManager &AM);
 std::string combine_tsan_calls(llvm::Module &M,
@@ -23,12 +29,17 @@ std::string remove_all_single_thread_regions(llvm::Module &M,
 std::string wrap_non_openmp_tsan_calls(llvm::Module &M,
                                        llvm::ModuleAnalysisManager &AM);
 
+void run_cleanup(llvm::Module &M, llvm::ModuleAnalysisManager &AM);
+
 llvm::CallInst *createTSANrange(llvm::Module &M, llvm::IRBuilder<> &builder,
                                 llvm::Value *base_ptr, llvm::Value *struct_size,
                                 const bool isWrite);
 llvm::CallInst *createTSANrange(llvm::Module &M, llvm::Instruction *base_ptr,
                                 const unsigned struct_size, const bool isWrite);
 void remove_inst_from_func(llvm::Instruction *inst);
+
+void get_called_functions(llvm::CallBase *call,
+                          llvm::SmallDenseSet<llvm::Function *> &functions);
 
 bool mightInfluenceHappensBefore(
     llvm::Function *func, llvm::DenseSet<llvm::Function *> &alreadyVisisted);

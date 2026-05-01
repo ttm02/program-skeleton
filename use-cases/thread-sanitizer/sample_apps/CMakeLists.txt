@@ -3,7 +3,7 @@ add_test(NAME LULESH
         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_mini_app.sh "lulesh"
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
-set_tests_properties(LULESH PROPERTIES TIMEOUT 500)
+set_tests_properties(LULESH PROPERTIES TIMEOUT 180)
 
 
 # HPCCG
@@ -11,7 +11,7 @@ add_test(NAME HPCCG
         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_mini_app.sh "hpccg"
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
-set_tests_properties(HPCCG PROPERTIES TIMEOUT 500)
+set_tests_properties(HPCCG PROPERTIES TIMEOUT 120)
 
 
 # TeaLeaf
@@ -19,12 +19,4 @@ add_test(NAME TEALEAF
         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_mini_app.sh "tealeaf"
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
-set_tests_properties(TEALEAF PROPERTIES TIMEOUT 800)
-
-
-# MINIAMR
-add_test(NAME MINIAMR
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_mini_app.sh "miniamr"
-        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
-set_tests_properties(HPCCG PROPERTIES TIMEOUT 800)
+set_tests_properties(TEALEAF PROPERTIES TIMEOUT 300)

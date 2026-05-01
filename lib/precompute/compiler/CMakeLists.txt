@@ -14,10 +14,10 @@ add_library(precomputation_compiler_lib SHARED
         Openmp_region.cpp
 )
 
-#TODO cmake is complaining about boost
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
+cmake_minimum_required(VERSION 3.30)
 find_package(Boost 1.66.0 REQUIRED)
 
 include_directories(${Boost_INCLUDE_DIRS})

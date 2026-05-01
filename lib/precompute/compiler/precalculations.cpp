@@ -1244,8 +1244,6 @@ void PrecalculationAnalysis::visit_call(
   assert(!call_info->is_visited());
   call_info->set_visited();
 
-  std::vector<Function *> possible_targets = get_possible_call_targets(call);
-
   bool need_return_val = is_retval_of_call_needed(call);
   if (need_return_val) {
     visit_call_for_retval(call_info);
@@ -2040,9 +2038,9 @@ void PrecalculationAnalysis::insert_necessary_control_flow(Value *v) {
   }
 }
 
-std::vector<llvm::Function *>
+llvm::DenseSet<llvm::Function *>
 PrecalculationAnalysis::get_possible_call_targets(llvm::CallBase *call) const {
-  std::vector<llvm::Function *> possible_targets;
+  llvm::DenseSet<llvm::Function *> possible_targets;
   if (call->isIndirectCall()) {
     possible_targets = DevirtAnalysis::get_possible_call_targets(call);
   } else {
@@ -2050,13 +2048,13 @@ PrecalculationAnalysis::get_possible_call_targets(llvm::CallBase *call) const {
     if (call->getCalledFunction() == nullptr) {
       // happens when function is casted
       if (auto *func = dyn_cast<Function>(call->getCalledOperand())) {
-        possible_targets.push_back(func);
+        possible_targets.insert(func);
       } else {
         call->dump();
         assert(0 && "Could not determine targets of call");
       }
     } else {
-      possible_targets.push_back(call->getCalledFunction());
+      possible_targets.insert(call->getCalledFunction());
     }
     return possible_targets;
   }
@@ -2092,7 +2090,7 @@ PrecalculationAnalysis::get_possible_call_targets(llvm::CallBase *call) const {
         if (func->func->getFunctionType() == call->getFunctionType() ||
             do_types_match(func->func->getFunctionType(),
                            call->getFunctionType()))
-          possible_targets.push_back(func->func);
+          possible_targets.insert(func->func);
       }
     }
     // TODO can we check that we will not be able to get a ptr to a function
@@ -2111,8 +2109,8 @@ PrecalculationAnalysis::get_possible_call_targets(llvm::CallBase *call) const {
   if (possible_targets.empty()) {
     call->dump();
     errs() << "In: " << call->getFunction()->getName() << "\n";
+    errs() << "could not find tgts of call\n";
   }
-  assert(not possible_targets.empty() && "could not find tgts of call");
 
   /*
   for (auto *tgt : possible_targets) {

@@ -9,19 +9,17 @@ if ! grep -q "$BUILD_DIR" "$SETUP_ENV_FILE"; then
 fi
 
 source "${SETUP_ENV_FILE}"
+
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-export OMP_PLACES=cores
+export OMP_PROC_BIND="close"
+export OMP_PLACES="cores"
 
 # get config parameter
-PARAMETER_FILE="${SCRIPT_DIR}/parameters_${APPNAME_LOWER}.txt"
+PARAMETER_FILE="${SCRIPT_DIR}/../${APPNAME_LOWER}/parameters.txt"
 APP_PARAMS=$(sed -n "${APP_PARAM_LINE}p" "$PARAMETER_FILE")
 
-if [ "$SLURM_ARRAY_TASK_ID" = "17" ]; then
-    MODE="vanilla"
-else
-    source "${SCRIPT_DIR}/../../tests/static_analysis_mode.sh"
-    MODE="$MY_STAN_PASS_MODE"
-fi
+source "${SCRIPT_DIR}/../../tests/static_analysis_mode.sh"
+MODE="$MY_STAN_PASS_MODE"
 
 APP_LOG_NAME="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 APP_PARAMS_ESCAPED=$(echo "$APP_PARAMS" | tr ' ' '_' | tr '-' '_' | tr ',' '_')
@@ -56,6 +54,7 @@ run_test_container() {
         --mount "type=bind,source=${REAL_HOME},destination=${REAL_HOME}" \
         --mount "type=bind,source=${HPC_SCRATCH},destination=${HPC_SCRATCH}" \
         --env-file "${CONTAINER_IMAGE_PATH}.env" \
+        --env TSAN_OPTIONS="ignore_noninstrumented_modules=1:report_bugs=0" \
         "${CONTAINER_IMAGE_PATH}.sif" \
         /usr/bin/env time -f '%e' \
         -o "$LOG_FILE" \

@@ -32,12 +32,13 @@ enqueue_sbatch() {
         --cpus-per-task "$TC" \
         --job-name="${APPNAME_UPPER}_${TC}_${LINE}" \
         --export=APPNAME_LOWER="$APPNAME_LOWER",APPNAME_UPPER="$APPNAME_UPPER",SCRIPT_DIR="$SCRIPT_DIR",APP_PARAM_LINE="$LINE" \
-        "${SCRIPT_DIR}/job_script_${APPNAME_LOWER}.sh"
+        "${SCRIPT_DIR}/../${APPNAME_LOWER}/job_script.sh"
 }
 
 enqueue_app() {
     TC="$1"
-    APPNAME_PARAM_LINES_COUNT=$(wc -l "${SCRIPT_DIR}/parameters_${APPNAME_LOWER}.txt" | cut -d' ' -f1) # --total=only
+    PARAMETER_FILE="${SCRIPT_DIR}/../${APPNAME_LOWER}/parameters.txt"
+    APPNAME_PARAM_LINES_COUNT=$(wc -l "$PARAMETER_FILE" | cut -d' ' -f1) # --total=only
     if [ -z "$APPNAME_PARAM_LINES_COUNT" ]; then
         exit 2
     fi
@@ -57,7 +58,7 @@ enqueue_app() {
 if [[ "$THREAD_COUNT" =~ ^[0-9]+$ ]]; then
     enqueue_app "$THREAD_COUNT"
 else
-    for i in 1 2 3 4 6 8 10 12 14 16 20 24 28 32 40 48 56 64 80 96; do
+    for i in 1 2 3 4 5 6 8 10 12 16 24 32 48 64 80 96; do
         echo ""
         date
         echo "Trying to queue slurm job for $APPNAME_UPPER with $TC threads."

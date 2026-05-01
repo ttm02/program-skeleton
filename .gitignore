@@ -35,6 +35,7 @@ Testing/Temporary
 # backup data from older measurements
 visualization/mearurement_*.tar.gz
 # more in visualization
+__pycache__/
 scratch/
 output/
 timing.csv

@@ -7,13 +7,13 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-from matplotlib.scale import FuncScale
 from matplotlib.backends.backend_pdf import PdfPages
 from io import StringIO
 from glob import glob
 
-DATAPATH = sys.argv[1]
-files_DRB = DATAPATH + "/DRB"
+from visualize_common import visualize_common as VISC
+
+visc = VISC()
 df = None
 
 
@@ -26,52 +26,10 @@ def main():
     if len(sys.argv) != 2:
         usage()
 
+    global files_DRB
+    DATAPATH = sys.argv[1]
+    files_DRB = DATAPATH + "/DRB"
     visualize_accuracy()
-
-
-colors = [
-    "#FF0000",
-    "#00FF00",
-    "#0000FF",
-    "#FFFF00",
-    "#00FFFF",
-    "#FF00FF",
-    "#FFA500",
-    "#800080",
-    "#008080",
-    "#FF69B4",
-    "#00BFFF",
-    "#7FFF00",
-    "#FFD700",
-    "#FF7F50",
-    "#BA55D3",
-]
-
-mode_list = [
-    "loop",
-    "merge",
-    "merge+loop",
-    "single",
-    "single+merge",
-    "single+merge+loop",
-    "slicing",
-    "slicing+loop",
-    "slicing+merge",
-    "slicing+merge+loop",
-    "slicing+single",
-    "slicing+single+merge",
-    "slicing+single+merge+loop",
-]
-mode_mapping = {
-    "orig": "TSAN",
-    "passthrough": "TSAN (pass, but all disabled)",
-}
-for ml in mode_list:
-    mode_mapping[ml] = "TSAN + " + ml.replace("+", " + ")
-
-mode_order = list(mode_mapping.values())
-mode_to_color = dict(zip(mode_mapping.keys(), colors))
-mode_to_color_plot = dict(zip(mode_order, colors))
 
 
 def data_from_csv():
@@ -83,7 +41,7 @@ def data_from_csv():
     else:
         files_csv = glob(files_DRB + "/*.csv")
         df = pd.concat((pd.read_csv(f) for f in files_csv), ignore_index=True)
-        df["mode_readable"] = df["mode"].replace(mode_mapping)
+        df["mode_readable"] = df["mode"].replace(visc.mode_mapping)
 
         # categorize testcases
         df["tc_cat"] = [
@@ -121,21 +79,13 @@ def split_dataframe(df, chunk_size):
 def create_boxplot(df, pdf, pdf_name):
     df_tc_count = df["testcase"].nunique()
     fig_factor = max(1 - df_tc_count * 0.05, 0)
-    fig_height = df_tc_count * (1.11 + fig_factor * 0.04) + (0.03 + fig_factor * 0.05)
+    fig_height = df_tc_count * (1.125 + fig_factor * 0.04) + (0.03 + fig_factor * 0.05)
     fig, ax = plt.subplots(figsize=(7.6, fig_height))
 
     x_ticks = np.arange(0, 100 + 1, 10)
     x_levels = np.concatenate(([-5], x_ticks, [105]), axis=None)
 
-    # Forward: value -> position
-    def forward(x):
-        return np.interp(x, x_levels, np.arange(len(x_levels)))
-
-    # Inverse: position -> value
-    def inverse(x):
-        return np.interp(x, np.arange(len(x_levels)), x_levels)
-
-    ax.set_xscale(FuncScale(ax, (forward, inverse)))
+    ax.set_xscale(VISC.get_level_scale(ax, x_levels))
     ax.set_xticks(x_levels)
     ax.set_xticklabels(x_levels)
     ax.set_xlim(-1, 101)
@@ -150,8 +100,8 @@ def create_boxplot(df, pdf, pdf_name):
         x="df_value_count",
         y="testcase",
         hue="mode_readable",
-        hue_order=mode_order,
-        palette=mode_to_color_plot,
+        hue_order=visc.mode_order,
+        palette=visc.mode_to_color_plot,
     )
     ax.set_title(f"DataRaceBench ({pdf_name}): Accuracy")
     ax.set_xlabel("Detection Percentage (in %)")
@@ -171,9 +121,9 @@ def create_boxplot(df, pdf, pdf_name):
     plt.close()
 
 
-def create_heat(df, pdf, all_labels=True, y_labels=True):
+def create_heat(df, pdf, all_labels=True, y_labels=True, ax_title=""):
     df = df.copy()
-    fig_height = 4.0 if all_labels else 2.1
+    fig_height = 4.2 if all_labels else 2.2
     fig_width = 7.25 if y_labels else 4.7
     if not all_labels:
         fig_width *= 0.88
@@ -225,9 +175,12 @@ def create_heat(df, pdf, all_labels=True, y_labels=True):
         cbar=False,
     )
 
-    tc_name = df["testcase"].iloc[0]
+    if ax_title == "":
+        tc_name = df["testcase"].iloc[0]
+        ax.set_title(f"{tc_name}:")
+    else:
+        ax.set_title(ax_title)
 
-    ax.set_title(f"{tc_name}:")
     ax.set_xlabel("Thread Count")
     ax.set_ylabel("")
 
@@ -274,24 +227,42 @@ def get_boxplot(df, cat_name, pdf_name):
 
 
 def get_heatmap_files(df, file_name, all_labels=True):
-    with PdfPages(file_name + ".pdf") as pdf:
-        for df_chunk in split_dataframe(df, 1):
-            create_heat(df_chunk, pdf, all_labels, True)
-        print(f"Saving {file_name}.pdf")
+    iter_tc = file_name.startswith("DRB_Accuracy_all_all_heatmap")
+    mean_tfi = " "
+    if "_yes_" in file_name:
+        mean_tfi = " yes "
+    elif "_no_" in file_name:
+        mean_tfi = " no "
+    mean_text = f"Mean over all{mean_tfi}Testcases"
 
-    with PdfPages(file_name + "_no_desc" + ".pdf") as pdf:
-        for df_chunk in split_dataframe(df, 1):
-            create_heat(df_chunk, pdf, all_labels, False)
-        print(f"Saving {file_name}_no_desc.pdf")
+    if iter_tc:
+        with PdfPages(file_name + ".pdf") as pdf:
+            for df_chunk in split_dataframe(df, 1):
+                create_heat(df_chunk, pdf, all_labels, True)
+            print(f"Saving {file_name}.pdf")
+
+    with PdfPages(file_name + "_mean" + ".pdf") as pdf:
+        create_heat(df, pdf, all_labels, True, mean_text)
+        print(f"Saving {file_name}_mean.pdf")
+
+    if iter_tc:
+        with PdfPages(file_name + "_no_desc" + ".pdf") as pdf:
+            for df_chunk in split_dataframe(df, 1):
+                create_heat(df_chunk, pdf, all_labels, False)
+            print(f"Saving {file_name}_no_desc.pdf")
+
+    with PdfPages(file_name + "_mean" + "_no_desc" + ".pdf") as pdf:
+        create_heat(df, pdf, all_labels, False, mean_text)
+        print(f"Saving {file_name}_mean_no_desc.pdf")
 
 
-def get_heatmap(df):
-    file_name = "DRB_Accuracy_all_all_heatmap"
+def get_heatmap(df, name):
+    file_name = f"DRB_Accuracy_{name}_all_heatmap"
     get_heatmap_files(df, file_name)
 
     stan_mapping_text = {}
-    for mm in mode_mapping:
-        text = mode_mapping[mm]
+    for mm in visc.mode_mapping:
+        text = visc.mode_mapping[mm]
         if mm.startswith("slicing+"):
             stan_mapping_text[text] = "TSAN + slicing + static analysis"
         elif "+" in mm or mm == "loop" or mm == "merge" or mm == "single":
@@ -367,7 +338,9 @@ def visualize_accuracy():
 
     df_all = pd.concat([df_yes, df_no], ignore_index=True)
     df_all = df_all.sort_values(by="testcase")
-    get_heatmap(df_all)
+    get_heatmap(df_all, "all")
+    get_heatmap(df_yes, "yes")
+    get_heatmap(df_no, "no")
 
 
 if __name__ == "__main__":

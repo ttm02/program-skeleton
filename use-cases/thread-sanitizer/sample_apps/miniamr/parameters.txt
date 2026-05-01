@@ -1,0 +1,6 @@
+--num_refine 3 --refine_freq 5 --max_blocks 500 --num_tsteps 200 --nx 2 --ny 2 --nz 2
+--num_refine 3 --refine_freq 5 --max_blocks 500 --num_tsteps 200 --nx 4 --ny 4 --nz 4
+--num_refine 3 --refine_freq 5 --max_blocks 500 --num_tsteps 200 --nx 8 --ny 8 --nz 8
+--num_refine 3 --refine_freq 5 --max_blocks 500 --num_tsteps 200 --nx 16 --ny 16 --nz 16
+--num_refine 3 --refine_freq 5 --max_blocks 500 --num_tsteps 200 --nx 24 --ny 24 --nz 24
+--num_refine 3 --refine_freq 5 --max_blocks 500 --num_tsteps 200 --nx 32 --ny 32 --nz 32

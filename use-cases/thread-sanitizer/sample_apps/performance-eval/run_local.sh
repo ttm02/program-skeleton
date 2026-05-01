@@ -54,8 +54,8 @@ export APPNAME="$1"
 APPNAME_LOWER=$(echo "$APPNAME" | tr '[:upper:]' '[:lower:]')
 APPNAME_UPPER=$(echo "$APPNAME" | tr '[:lower:]' '[:upper:]')
 
-PARAMETER_FILE="${SCRIPT_DIR}/parameters_${APPNAME_LOWER}.txt"
-APPNAME_PARAM_LINES_COUNT=$(wc -l "${SCRIPT_DIR}/parameters_${APPNAME_LOWER}.txt" | cut -d' ' -f1)
+PARAMETER_FILE="${SCRIPT_DIR}/../${APPNAME_LOWER}/parameters.txt"
+APPNAME_PARAM_LINES_COUNT=$(wc -l "$PARAMETER_FILE" | cut -d' ' -f1) # --total=only
 if [ "$APP_PARAM_LINE" -lt 1 ] || [ "$APPNAME_PARAM_LINES_COUNT" -lt "$APP_PARAM_LINE" ]; then
 	echo "--line is out of range [1, $APPNAME_PARAM_LINES_COUNT]"
 	exit 1

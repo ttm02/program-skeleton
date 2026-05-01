@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 
 #SBATCH --ntasks 1
-#SBATCH --exclusive
 #SBATCH --array 0-16
-#SBATCH --mem-per-cpu=128
+#SBATCH --mem-per-cpu=2G
 #SBATCH -o /dev/null
 #SBATCH -e /dev/null
 #SBATCH --time 00:15:00
@@ -67,14 +66,22 @@ else
   export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
   export OMP_PLACES=cores
 
+  APP_LOG_NAME="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+
   cd "$TMPDIR" || exit 23
   apptainer run \
     --mount "type=bind,source=${TMPDIR},destination=${HPC_SCRATCH}/tmp" \
     --mount "type=bind,source=${REAL_HOME},destination=${REAL_HOME}" \
-    --mount "type=bind,source=${HPC_SCRATCH},destination=${HPC_SCRATCH}" \
     --env-file "${CONTAINER_IMAGE_PATH}.env" \
+    --env APP_LOG_NAME="$APP_LOG_NAME" \
     "${CONTAINER_IMAGE_PATH}.sif" \
     "${SCRIPT_DIR}/cluster_run_wrapper.sh" "${SCRIPT_DIR}/compare_performance.sh"
+
+  LOG_DIR="${HPC_SCRATCH}/precompute/results/DRB"
+  mkdir -p "$LOG_DIR"
+  mv "${TMPDIR}/results/${APP_LOG_NAME}.csv-acc" "${LOG_DIR}/${APP_LOG_NAME}.csv"
+  mkdir -p "${LOG_DIR}_time"
+  mv "${TMPDIR}/results/${APP_LOG_NAME}.csv-time" "${LOG_DIR}_time/${APP_LOG_NAME}.csv"
 
   rm -fr "${TMPDIR}"
   find /dev/shm -name "__KMP_REGISTERED_LIB_*" -user "$USER" -amin +1 -mmin +1 -delete

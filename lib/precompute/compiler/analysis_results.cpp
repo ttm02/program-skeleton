@@ -17,6 +17,8 @@ Licensed under the Apache License, Version 2.0 (the "License");
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/Pass.h"
+#include "llvm/Transforms/Scalar/DCE.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
 
 #include "precompute/compiler/analysis_results.h"
 
@@ -36,21 +38,18 @@ RequiredAnalysisResults::RequiredAnalysisResults(
 }
 
 llvm::AAResults *RequiredAnalysisResults::getAAResults(llvm::Function &f) {
-
   return &FAM->getResult<AAManager>(f);
 }
 
 llvm::LoopInfo *RequiredAnalysisResults::getLoopInfo(llvm::Function &f) {
-
   return &FAM->getResult<LoopAnalysis>(f);
 }
-llvm::ScalarEvolution *RequiredAnalysisResults::getSE(llvm::Function &f) {
 
+llvm::ScalarEvolution *RequiredAnalysisResults::getSE(llvm::Function &f) {
   return &FAM->getResult<ScalarEvolutionAnalysis>(f);
 }
 
 llvm::DominatorTree *RequiredAnalysisResults::getDomTree(llvm::Function &f) {
-
   return &FAM->getResult<DominatorTreeAnalysis>(f);
 }
 
@@ -62,4 +61,12 @@ llvm::PostDominatorTree *RequiredAnalysisResults::getPostDomTree(Function &f) {
 
 void RequiredAnalysisResults::invalidate(llvm::Function &f) {
   FAM->invalidate(f, PreservedAnalyses::none());
+}
+
+void RequiredAnalysisResults::cleanup(llvm::Function &f) {
+  invalidate(f);
+  llvm::FunctionPassManager FPM;
+  FPM.addPass(llvm::SimplifyCFGPass());
+  FPM.addPass(llvm::DCEPass());
+  FPM.run(f, *FAM);
 }

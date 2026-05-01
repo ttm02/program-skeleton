@@ -26,13 +26,19 @@
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO/GlobalDCE.h"
+#include "llvm/Transforms/IPO/Internalize.h"
 #include "llvm/Transforms/IPO/ModuleInliner.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
+#include "llvm/Transforms/Scalar/EarlyCSE.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include <memory>
 
 using namespace llvm;
 
 RequiredAnalysisResults *analysis_results;
+std::shared_ptr<PrecalculationAnalysis> precalculation_analysis;
 
 // removes attribute noinline from every func
 // we previously set it to make analysis easier
@@ -45,11 +51,17 @@ static void remove_noinline_from_module(Module &M) {
   }
 }
 
-static void reset_analysis_results(Module &M, ModuleAnalysisManager &AM) {
-  static bool alreadySetup = false;
-  if (not alreadySetup)
-    analysis_results = new RequiredAnalysisResults(AM, M);
-  alreadySetup = true;
+void run_cleanup(Module &M, ModuleAnalysisManager &AM) {
+  errs() << "Run Cleanup\n";
+  llvm::ModulePassManager MPM;
+  llvm::FunctionPassManager FPM;
+  // FPM.addPass(llvm::EarlyCSEPass());
+  // FPM.addPass(llvm::InstCombinePass());
+  FPM.addPass(llvm::SimplifyCFGPass());
+  MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
+  MPM.addPass(llvm::GlobalDCEPass());
+  MPM.addPass(llvm::ModuleInlinerPass());
+  MPM.run(M, AM);
 }
 
 static bool run_optimization_passes(
@@ -57,8 +69,10 @@ static bool run_optimization_passes(
     std::string (*opt_pass_func)(Module &M, ModuleAnalysisManager &AM),
     bool cleanup = true) {
   std::string opt_msg_success = opt_pass_func(M, AM);
-  if (opt_msg_success.empty())
+  if (opt_msg_success.empty()) {
+    errs() << "aborted ..\n\n";
     return false;
+  }
 #ifndef NDEBUG
   bool has_error = verifyModule(M, &errs(), nullptr);
   assert(not has_error);
@@ -66,13 +80,7 @@ static bool run_optimization_passes(
   errs() << opt_msg_success << "\n";
 
   if (cleanup) {
-    errs() << "Run inliner Pass\n";
-    auto inliner = llvm::ModuleInlinerPass();
-    inliner.run(M, AM);
-
-    errs() << "Run Global DCE Pass\n";
-    auto dce = llvm::GlobalDCEPass();
-    dce.run(M, AM);
+    run_cleanup(M, AM);
 #ifndef NDEBUG
     has_error = verifyModule(M, &errs(), nullptr);
     assert(not has_error);
@@ -132,14 +140,16 @@ static std::string run_tsan(Module &M, ModuleAnalysisManager &AM) {
         // -fsanitize=thread flag
       }
       tsan_pass.run(*f, *FAM);
+      // no need to instrument again after each step
+      f->removeFnAttr(Attribute::SanitizeThread);
     }
     return "Successfully instrumented code with TSAN";
   }
   return "TSAN instrumentation already available";
 }
 
-static void collectCalls(CallBase *call, std::vector<Value *> &to_precompute,
-                         std::vector<Instruction *> &precompute_locations) {
+static void collectCalls(CallBase *call, DenseSet<Value *> &to_precompute,
+                         DenseSet<Instruction *> &precompute_locations) {
   if (is_func_from_std(call->getFunction())) {
     // dont analyze internals of std, though tsan may instrument them
     return;
@@ -170,13 +180,13 @@ static void collectCalls(CallBase *call, std::vector<Value *> &to_precompute,
   }
 
   for (auto &it_arg : call->args())
-    to_precompute.push_back(it_arg);
-  precompute_locations.push_back(call);
+    to_precompute.insert(it_arg);
+  precompute_locations.insert(call);
 }
 
 static void
-collectForPrecompute(Instruction &inst, std::vector<Value *> &to_precompute,
-                     std::vector<Instruction *> &precompute_locations) {
+collectForPrecompute(Instruction &inst, DenseSet<Value *> &to_precompute,
+                     DenseSet<Instruction *> &precompute_locations) {
   if (auto *call = dyn_cast<CallBase>(&inst)) {
     collectCalls(call, to_precompute, precompute_locations);
   } else {
@@ -184,14 +194,18 @@ collectForPrecompute(Instruction &inst, std::vector<Value *> &to_precompute,
   }
 }
 
-static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
-  PrecomputeFunctions::create_instance(M);
+static void reset_analysis_results(Module &M, ModuleAnalysisManager &AM) {
+  static bool alreadySetup = false;
+  if (alreadySetup)
+    return;
+
+  analysis_results = new RequiredAnalysisResults(AM, M);
 
   auto *main_func = M.getFunction("main");
   assert(main_func);
 
-  std::vector<Value *> to_precompute;
-  std::vector<Instruction *> precompute_locations;
+  DenseSet<Value *> to_precompute;
+  DenseSet<Instruction *> precompute_locations;
 
   for (Function &func : M) {
     // do not instrument tsan itself
@@ -205,20 +219,27 @@ static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
 
   errs() << "Statistics: locations: " << precompute_locations.size()
          << " values: " << to_precompute.size() << "\n";
-
-  // no tsan found
-  if (precompute_locations.empty()) {
-    // no modification
-    return "";
-  }
+  // DRB083 does not like that
+  // assert(not precompute_locations.empty());
 
   std::vector<Instruction *> problematic;
+  precalculation_analysis = std::make_shared<PrecalculationAnalysis>(
+      M, main_func, to_precompute, precompute_locations, problematic, false,
+      false);
+
+  alreadySetup = true;
+}
+
+static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
+  if (precalculation_analysis->get_locations_to_precompute().empty())
+    return "";
+
+  auto *main_func = M.getFunction("main");
+  assert(main_func);
+
+  PrecomputeFunctions::create_instance(M);
   auto precalcuation = std::make_shared<PrecomputeInsertion>(
-      M,
-      std::make_shared<PrecalculationAnalysis>(M, main_func, to_precompute,
-                                               precompute_locations,
-                                               problematic, false, false),
-      false, false);
+      M, precalculation_analysis, false, false);
 
   // do NOT call clean_precompute() as we want the tsan calls to stick around
 
@@ -240,18 +261,15 @@ static std::string perform_slicing(Module &M, ModuleAnalysisManager &AM) {
   builder.CreateCall(precomputed_main, args);
   builder.CreateRet(Constant::getNullValue(main_func->getReturnType()));
 
-  std::vector<Function *> to_delete;
-  for (Function &func : M) {
-    if (precalcuation->is_func_part_of_precompute_phase(&func)) {
-      // the TSAN calls are already part of precompute,
-      // no need to instrumente them again
-      func.removeFnAttr(Attribute::SanitizeThread);
-    }
-  }
-
   remove_noinline_from_module(M);
   analysis_results->invalidate(*precomputed_main);
   analysis_results->invalidate(*main_func);
+
+  llvm::ModulePassManager MPM;
+  // remove old function duplicates
+  MPM.addPass(
+      InternalizePass([&](const GlobalValue &GV) { return &GV == main_func; }));
+  MPM.run(M, AM);
 
   return "Successfully computed the precomputation";
 }
@@ -327,37 +345,37 @@ struct TSANSlicingPass : public PassInfoMixin<TSANSlicingPass> {
         stanEnabledModes.insert(clsm);
     }
 
-    // static analysis before slicing
-    {
-      if (stanEnabledModes.contains(MERGE))
-        run_optimization_passes(M, AM, combine_tsan_calls, false);
-      if (stanEnabledModes.contains(SINGLE))
-        run_optimization_passes(M, AM, wrap_non_openmp_tsan_calls);
-    }
-
     // slicing or no slicing?
-    if (not DisableSlicing)
+    if (not DisableSlicing) {
       if (not run_slicing())
         return PreservedAnalyses::all();
+    } else {
+      remove_noinline_from_module(M);
+      run_cleanup(M, AM);
+#ifndef NDEBUG
+      bool has_error = verifyModule(M, &errs(), nullptr);
+      assert(not has_error);
+#endif
+    }
 
     // static analysis after slicing
+    // running this before slicing might not allow certain optimizations
+    // and performance for e.g. HPCCG is a lot worse
     {
-      if (stanEnabledModes.contains(MERGE))
-        run_optimization_passes(M, AM, combine_tsan_calls, false);
       if (stanEnabledModes.contains(SINGLE)) {
-        // HPCCG does not detect data race when this runs before slicing
         run_optimization_passes(M, AM, remove_all_single_thread_regions);
-        // needs single threaded removal + needs analysis_results
+        run_optimization_passes(M, AM, wrap_non_openmp_tsan_calls);
         run_optimization_passes(M, AM, eliminate_only_in_critical);
       }
-      // precomputation (slicing) does not allow int2ptr casts
+      if (stanEnabledModes.contains(MERGE))
+        run_optimization_passes(M, AM, combine_tsan_calls, false);
       if (stanEnabledModes.contains(LOOP))
         run_optimization_passes(M, AM, optimize_loops);
     }
 
     // try to eliminate even more things
-    if (DisableSlicing)
-      MPM.run(M, AM);
+    errs() << "Run O2 Passes\n";
+    MPM.run(M, AM);
 
     delete analysis_results;
     return PreservedAnalyses::none();

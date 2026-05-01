@@ -26,11 +26,9 @@ remove_tsan_usages_to_var(DenseMap<CallBase *, StringSet<>> &tsan_crit_map,
     auto *call = dyn_cast<CallBase>(u);
     if (not call)
       continue;
-    auto called_func = call->getCalledFunction();
-    if (!called_func)
-      continue;
-    auto func_name = called_func->getName();
-    if (not func_name.starts_with("__tsan"))
+    auto func_name = getCallName(call);
+    if (not func_name.has_value() ||
+        not func_name.value().starts_with("__tsan"))
       continue;
 
     // if TSAN, but not in map -> very risky -> abort

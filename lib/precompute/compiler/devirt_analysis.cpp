@@ -430,7 +430,7 @@ struct DevirtModule {
   // Apply the summary resolution for Slot to all virtual calls in SlotInfo.
   void importResolution(VTableSlot Slot, VTableSlotInfo &SlotInfo);
 
-  llvm::DenseMap<llvm::CallBase *, std::vector<llvm::Function *>> run();
+  llvm::DenseMap<llvm::CallBase *, llvm::DenseSet<llvm::Function *>> run();
 
   // Look up the corresponding ValueInfo entry of `TheFn` in `ExportSummary`.
   //
@@ -570,9 +570,9 @@ return false;
   return !TargetsForSlot.empty();
 }
 
-llvm::DenseMap<llvm::CallBase *, std::vector<llvm::Function *>>
+llvm::DenseMap<llvm::CallBase *, llvm::DenseSet<llvm::Function *>>
 DevirtModule::run() {
-  llvm::DenseMap<llvm::CallBase *, std::vector<llvm::Function *>> result;
+  llvm::DenseMap<llvm::CallBase *, llvm::DenseSet<llvm::Function *>> result;
 
   Function *TypeTestFunc =
       M.getFunction(Intrinsic::getName(Intrinsic::type_test));
@@ -665,14 +665,14 @@ DevirtModule::run() {
                      cast<MDString>(S.first.TypeID)->getString())
                  .WPDRes[S.first.ByteOffset];
 
-    std::vector<Function *> possible_targets = {};
+    llvm::DenseSet<Function *> possible_targets = {};
 
     if (tryFindVirtualCallTargets(TargetsForSlot, TypeMemberInfos,
                                   S.first.ByteOffset, ExportSummary)) {
       // set possible tgts
       for (auto slot : TargetsForSlot) {
         assert(slot.Fn != nullptr);
-        possible_targets.push_back(slot.Fn);
+        possible_targets.insert(slot.Fn);
       }
 
     } else {
@@ -683,7 +683,7 @@ DevirtModule::run() {
         if (is_name_from_std(meta->getString().str())) {
           assert(possible_targets.empty());
           // set it to the std dummy func indicating virtual call to std
-          possible_targets.push_back(get_std_dummy_func(&M));
+          possible_targets.insert(get_std_dummy_func(&M));
         }
       }
     }

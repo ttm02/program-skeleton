@@ -140,16 +140,20 @@ for opt in pass_plugin_opts:
     pass_args += ["-mllvm", opt]
 
 
-def run_command(cmd):
+def run_command(cmd, resume_after=False):
     if debug_wrapper:
         print("RUN:", " ".join(cmd))
     try:
-        result = subprocess.call(cmd)
-        sys.exit(result)
+        subprocess.run(cmd, check=True)
     except KeyboardInterrupt:
         sys.exit(130)
+    except subprocess.CalledProcessError:
+        print("compilation failed")
+        print(cmd)
+        sys.exit(255)
 
-    sys.exit(255)
+    if not resume_after:
+        sys.exit(0)
 
 
 if is_to_obj:
@@ -162,22 +166,29 @@ if is_to_obj:
         print("Compile one by one and link afterwards")
         sys.exit(1)
 
+    print([compiler] + args)
+    subprocess.call([compiler] + args)
+
+    obj_list = []
     cmd = [compiler]
     for i, arg in enumerate(args):
         if arg == "-c":
             cmd += ["-c", "-emit-llvm"]
         elif arg.endswith(".o"):
             # Remove the ".o" suffix and append ".bc"
-            new_file = arg[:-2] + ".bc"
+            arg_basename = arg[:-2]
+            new_file = arg_basename + ".bc"
             cmd.append(new_file)
-            # mimic "touch"
+            # if expected output, actually compile it
             if args[i - 1] == "-o":
-                with open(arg, "a"):
-                    os.utime(arg, None)
+                obj_list.append(arg_basename)
         else:
             cmd.append(arg)
 
-    run_command(cmd)
+    run_command(cmd, True)
+    for obj_base in obj_list:
+        run_command([compiler, "-c", f"{obj_base}.bc", "-o", f"{obj_base}.o"], True)
+    sys.exit(0)
 
 if has_o_files:
     if debug_wrapper:

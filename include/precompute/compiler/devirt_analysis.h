@@ -25,7 +25,7 @@ protected:
   static DevirtAnalysis *instance;
 
 public:
-  static std::vector<llvm::Function *>
+  static llvm::DenseSet<llvm::Function *>
   get_possible_call_targets(llvm::CallBase *call) {
     if (instance == nullptr) {
       // populate the result map
@@ -44,7 +44,7 @@ public:
   void operator=(const DevirtAnalysis &) = delete;
 
 private:
-  llvm::DenseMap<llvm::CallBase *, std::vector<llvm::Function *>> result_map;
+  llvm::DenseMap<llvm::CallBase *, llvm::DenseSet<llvm::Function *>> result_map;
 };
 
 #endif // INCLUDE_GUARD_DEVIRT_ANALYSIS_H

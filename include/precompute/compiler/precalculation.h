@@ -40,8 +40,8 @@ class PrecalculationAnalysis
     : private std::enable_shared_from_this<PrecalculationAnalysis> {
 public:
   PrecalculationAnalysis(llvm::Module &M, llvm::Function *entry_point,
-                         std::vector<llvm::Value *> to_precompute_value,
-                         std::vector<llvm::Instruction *> to_precompute_cfg,
+                         llvm::DenseSet<llvm::Value *> to_precompute_value,
+                         llvm::DenseSet<llvm::Instruction *> to_precompute_cfg,
                          std::vector<llvm::Instruction *> &problematic_calls,
                          bool ignore_MPI_communication,
                          bool add_all_MPI_communication,
@@ -119,15 +119,15 @@ public:
 
   bool can_except_in_precompute(llvm::CallBase *call) const;
 
-  std::vector<llvm::Function *>
+  llvm::DenseSet<llvm::Function *>
   get_possible_call_targets(llvm::CallBase *call) const;
 
   llvm::Function *get_entry_point() const { return entry_point; }
 
-  std::vector<llvm::Value *> get_values_to_precompute() const {
+  llvm::DenseSet<llvm::Value *> get_values_to_precompute() const {
     return to_precompute_value;
   }
-  std::vector<llvm::Instruction *> get_locations_to_precompute() const {
+  llvm::DenseSet<llvm::Instruction *> get_locations_to_precompute() const {
     return to_precompute_cfg;
   }
 
@@ -146,8 +146,8 @@ private:
   llvm::Module &M;
   llvm::Function *entry_point;
 
-  std::vector<llvm::Value *> to_precompute_value;
-  std::vector<llvm::Instruction *> to_precompute_cfg;
+  llvm::DenseSet<llvm::Value *> to_precompute_value;
+  llvm::DenseSet<llvm::Instruction *> to_precompute_cfg;
 
   std::vector<llvm::Instruction *> &problematic_calls;
   bool ignore_MPI_communication;

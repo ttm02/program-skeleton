@@ -2,6 +2,7 @@
 
 # where the wrappers are found
 BINARY_DIR=$1
+source "${BINARY_DIR}/setup_env.sh"
 
 # the testcase to use
 TEST_CASE=$2

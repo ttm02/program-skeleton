@@ -30,6 +30,7 @@ using namespace llvm;
 static inline CallBase *getCallInFunc(Function *func,
                                       std::string func_target_name,
                                       bool starts_with = false) {
+  CallBase *callVal = nullptr;
   for (BasicBlock &bb : *func) {
     for (Instruction &inst : bb) {
       if (auto *call = dyn_cast<CallBase>(&inst)) {
@@ -38,91 +39,27 @@ static inline CallBase *getCallInFunc(Function *func,
           continue;
         auto func_name = call_name.value();
         if (starts_with) {
-          if (func_name.starts_with(func_target_name))
-            return call;
+          if (func_name.starts_with(func_target_name)) {
+            if (callVal)
+              return nullptr;
+            else
+              callVal = call;
+          }
         } else {
-          if (func_name == func_target_name)
-            return call;
+          if (func_name == func_target_name) {
+            if (callVal)
+              return nullptr;
+            else
+              callVal = call;
+          }
         }
       }
     }
   }
-  return nullptr;
+  return callVal;
 }
 
-template <typename T>
-static bool isRecUser(Instruction *inst, DenseSet<Instruction *> &visited) {
-  if (isa<T>(inst))
-    return true;
-  if (visited.contains(inst))
-    return false;
-  visited.insert(inst);
-  for (auto *u : inst->users())
-    if (auto i = dyn_cast<Instruction>(u))
-      if (isRecUser<T>(i, visited))
-        return true;
-  return false;
-}
-
-static Value *getBoundStore(Value *omp_bound, LoadInst *first) {
-  auto *ptr = first->getPointerOperand();
-
-  Value *second = nullptr;
-  for (auto *u : omp_bound->users()) {
-    if (auto *store = dyn_cast<StoreInst>(u)) {
-      auto *storeVal = store->getValueOperand();
-      if (auto *ci = dyn_cast<ConstantInt>(storeVal)) {
-        assert(not second);
-        second = ConstantInt::get(ci->getType(), ci->getValue());
-        // TODO non constant bounds
-        /*
-        } else if (auto *sv = dyn_cast<Instruction>(storeVal);
-                   not isRecOperand(sv, ptr)) {
-          assert(not second);
-          auto svClone = sv->clone();
-          svClone->insertAfter(sv);
-          second = svClone;
-        */
-      } else {
-        continue;
-      }
-    }
-  }
-  return second;
-}
-
-static void getBoundLoadStoreReplacement(
-    Value *omp_bound,
-    DenseMap<Value *, SmallDenseSet<Use *>> &boundReplacement) {
-  DenseSet<LoadInst *> loadSet;
-  for (auto *u : omp_bound->users()) {
-    DenseSet<Instruction *> visited;
-    if (auto *load = dyn_cast<LoadInst>(u))
-      if (isRecUser<BranchInst>(load, visited))
-        loadSet.insert(load);
-  }
-  if (loadSet.empty())
-    return;
-
-  for (auto *load : loadSet) {
-    auto origVal = getBoundStore(omp_bound, load);
-    // TODO non constant bounds
-    if (not origVal)
-      continue;
-
-    SmallDenseSet<Use *> useSet;
-    for (Use &u : load->uses()) {
-      useSet.insert(&u);
-      u.set(origVal);
-    }
-    boundReplacement[load] = useSet;
-  }
-}
-
-static uint64_t
-openMPboundFix(Function *func,
-               DenseMap<Value *, SmallDenseSet<Use *>> &boundReplacement,
-               Loop **loop) {
+static uint64_t getOpenMPbounds(Function *func, Loop **loop) {
   if (not func->getName().contains(".omp_outlined."))
     return 0;
 
@@ -148,13 +85,7 @@ openMPboundFix(Function *func,
   if (cs != 1)
     return cs;
 
-  // TODO chunk size of 1
-  // TODO non-constant iteration counts
   return 0;
-  auto omp_lower = omp_for_static->getArgOperand(4);
-  getBoundLoadStoreReplacement(omp_lower, boundReplacement);
-  auto omp_upper = omp_for_static->getArgOperand(5);
-  getBoundLoadStoreReplacement(omp_upper, boundReplacement);
 }
 
 void splitBBexecOnce(
@@ -185,18 +116,27 @@ void splitBBexecOnce(
   insertIntoTsanBB(tsanBuilder);
 }
 
+enum loopTSANtype {
+  RANGE,
+  INVARIANT,
+  RESERVED,
+};
+
 struct loopTSANdata {
+  loopTSANtype type;
   bool isWrite;
   Value *val_min;
   Value *call_arg_0;
   CallBase *call;
   ConstantInt *tsan_size;
   const SCEV *tripCount;
+  SCEVExpander *seExpander;
 
   bool operator==(const loopTSANdata &other) const {
-    return isWrite == other.isWrite && val_min == other.val_min &&
-           call_arg_0 == other.call_arg_0 && call == other.call &&
-           tsan_size == other.tsan_size && tripCount == other.tripCount;
+    return type == other.type && isWrite == other.isWrite &&
+           val_min == other.val_min && call_arg_0 == other.call_arg_0 &&
+           call == other.call && tsan_size == other.tsan_size &&
+           tripCount == other.tripCount && seExpander == other.seExpander;
   }
 };
 
@@ -205,8 +145,8 @@ template <> struct DenseMapInfo<loopTSANdata> {
   static inline loopTSANdata getTombstoneKey() { return {}; }
 
   static unsigned getHashValue(const loopTSANdata &V) {
-    return llvm::hash_combine(V.isWrite, V.val_min, V.call_arg_0, V.call,
-                              V.tsan_size, V.tripCount);
+    return llvm::hash_combine(V.type, V.isWrite, V.val_min, V.call_arg_0,
+                              V.call, V.tsan_size, V.tripCount, V.seExpander);
   }
 
   static bool isEqual(const loopTSANdata &LHS, const loopTSANdata &RHS) {
@@ -221,9 +161,6 @@ static bool create_tsan_replacement(Module &M, const loopTSANdata data,
   auto ptrTy = PointerType::get(*ctx, 0);
   auto int64Ty = Type::getInt64Ty(*ctx);
   auto constOne = ConstantInt::get(int64Ty, 1);
-
-  SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
-  seExpander.setInsertPoint(data.call);
 
   auto runTSANonlyOnce =
       [&](std::function<void(IRBuilder<> & tsanBuilder)> tsanInserter) {
@@ -246,16 +183,20 @@ static bool create_tsan_replacement(Module &M, const loopTSANdata data,
             getCallInFunc(func, "__kmpc_dispatch_init", true);
         if (omp_for_dynamic) {
           for (auto *u : omp_for_dynamic->getArgOperand(0)->users()) {
-            if (auto *call = dyn_cast<CallBase>(u)) {
-              auto call_name = getCallName(call);
-              if (not call_name.has_value())
-                continue;
-              if (not call_name.value().starts_with("__kmpc_dispatch_next"))
-                continue;
+            auto *call = dyn_cast<CallBase>(u);
+            if (not call)
+              continue;
+            if (call->getFunction() != func)
+              continue;
 
-              IRBuilder<> dispatchBuilder(call);
-              dispatchBuilder.CreateStore(constTrue, flag);
-            }
+            auto call_name = getCallName(call);
+            if (not call_name.has_value())
+              continue;
+            if (not call_name.value().starts_with("__kmpc_dispatch_next"))
+              continue;
+
+            IRBuilder<> dispatchBuilder(call);
+            dispatchBuilder.CreateStore(constTrue, flag);
           }
         }
 
@@ -274,35 +215,50 @@ static bool create_tsan_replacement(Module &M, const loopTSANdata data,
   CallBase *newCall = nullptr;
   auto createTSANcall = [&](IRBuilder<> &builder, Value *base_ptr) {
     // length = size_of(element) * (abs(last - base) + 1)
-    seExpander.setInsertPoint(builder.GetInsertPoint());
-    auto *iter_count = seExpander.expandCodeFor(data.tripCount, int64Ty);
+    data.seExpander->setInsertPoint(builder.GetInsertPoint());
+    auto *iter_count = data.seExpander->expandCodeFor(data.tripCount, int64Ty);
     auto *count_full = builder.CreateAdd(iter_count, constOne);
     auto *range_full = builder.CreateMul(count_full, data.tsan_size);
     newCall = createTSANrange(M, builder, base_ptr, range_full, data.isWrite);
   };
 
+  auto fixSCEVinsertDomination = [&](IRBuilder<> &tsanBuilder) {
+    auto *tsanBB = tsanBuilder.GetInsertBlock();
+    auto SEinsertedList = data.seExpander->getAllInsertedInstructions();
+    if (not SEinsertedList.empty()) {
+      auto *valInst = dyn_cast<Instruction>(data.val_min);
+      assert(valInst);
+      auto *valBB = valInst->getParent();
+      for (auto *inst : SEinsertedList)
+        if (inst->getParent() != valBB)
+          return;
+      sort(SEinsertedList,
+           [](Instruction *A, Instruction *B) { return A->comesBefore(B); });
+      tsanBB->splice(tsanBuilder.GetInsertPoint(), valBB,
+                     SEinsertedList.front()->getIterator(),
+                     std::next(SEinsertedList.back()->getIterator()));
+    }
+  };
+
   Value *base_ptr;
-  if (1 < chunk_size) {
-    return false;
+  if (data.type == INVARIANT) {
+    auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
+      data.call->moveAfter(tsanBuilder.GetInsertPoint());
+    };
+    runTSANonlyOnce(tsanInserter);
+    return true;
+  } else if (1 < chunk_size) {
     // only first iteration of chunk range
     auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
+      fixSCEVinsertDomination(tsanBuilder);
       base_ptr = tsanBuilder.CreateIntToPtr(data.val_min, ptrTy);
       createTSANcall(tsanBuilder, base_ptr);
     };
     runTSANonlyOnce(tsanInserter);
   } else {
-    // TODO unroll whole loop (if chunk size is 1)
+    assert(data.type == RANGE);
+    assert(chunk_size <= 1);
     return false;
-
-    auto origInserter = [&](IRBuilder<> &origBuilder) {
-      base_ptr = origBuilder.CreateIntToPtr(data.val_min, ptrTy);
-      Value *isEQ = origBuilder.CreateICmpEQ(data.call_arg_0, base_ptr);
-      return isEQ;
-    };
-    auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
-      createTSANcall(tsanBuilder, base_ptr);
-    };
-    splitBBexecOnce(data.call, origInserter, tsanInserter);
   }
 
   newCall->setDebugLoc(data.call->getDebugLoc());
@@ -323,18 +279,15 @@ prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
   data.isWrite = func_name.starts_with("__tsan_write") ||
                  func_name.starts_with("__tsan_unaligned_write");
 
+  data.type = RANGE;
   data.call_arg_0 = call->getArgOperand(0);
   data.tsan_size = get_size_of_tsan_access(call);
   if (not data.tsan_size)
     return {};
 
-  // TODO;
   if (loop->isLoopInvariant(data.call_arg_0)) {
-    auto tsanInserter = [&](IRBuilder<> &tsanBuilder) {
-      call->moveAfter(tsanBuilder.GetInsertPoint());
-    };
-    // runTSANonlyOnce(tsanInserter);
-    return {};
+    data.type = INVARIANT;
+    return data;
   }
 
   auto scev = SE->getSCEV(data.call_arg_0);
@@ -349,11 +302,12 @@ prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
     return {};
   }
 
-  // only if contingous address range
+  // only if contigous address range
   auto *stepConstant = dyn_cast<SCEVConstant>(addRec->getStepRecurrence(*SE));
   if (not stepConstant)
     return {};
-  if (stepConstant->getAPInt().abs() != data.tsan_size->getValue())
+  // TSAN calls can be overlapping, but they have to be adjacent
+  if (data.tsan_size->getValue().ult(stepConstant->getAPInt().abs()))
     return {};
 
   if (1 < chunk_size) {
@@ -371,29 +325,35 @@ prepare_tsan_ranges(Module &M, ScalarEvolution *SE, Loop *loop, CallBase *call,
   auto *start = addRec->getStart();
   auto *stop = addRec->evaluateAtIteration(data.tripCount, *SE);
 
-  SCEVExpander seExpander(*SE, M.getDataLayout(), "scev");
-  seExpander.setInsertPoint(call);
+  data.seExpander = new SCEVExpander(*SE, M.getDataLayout(), "scev");
+  data.seExpander->setInsertPoint(call);
 
   auto *lower_bound = stepConstant->getAPInt().isNegative() ? stop : start;
-  data.val_min = seExpander.expandCodeFor(lower_bound, int64Ty);
-  if (isa<PoisonValue>(data.val_min))
+  data.val_min = data.seExpander->expandCodeFor(lower_bound, int64Ty);
+  if (isa<PoisonValue>(data.val_min)) {
+    delete data.seExpander;
     return {};
+  }
 
   return data;
 }
 
-static unsigned perform_tsan_licm(Module &M, Loop *loop,
-                                  const std::vector<CallBase *> &tsan_in_loop) {
+static std::pair<unsigned, unsigned>
+perform_tsan_licm(Module &M, Loop *loop,
+                  const std::vector<CallBase *> &tsan_in_loop,
+                  bool multipleLoopsInFunc) {
   unsigned removed_tsan_calls = 0;
+  unsigned invariant_calls = 0;
 
   auto *func = loop->getHeader()->getParent();
-  DenseMap<Value *, SmallDenseSet<Use *>> boundReplacement;
-  auto chunk_size = openMPboundFix(func, boundReplacement, &loop);
+  auto chunk_size = 0;
+  if (not multipleLoopsInFunc)
+    chunk_size = getOpenMPbounds(func, &loop);
 
   BasicBlock *incoming;
   BasicBlock *backedge;
   if (not loop->getIncomingAndBackEdge(incoming, backedge))
-    return 0;
+    std::make_pair(0, 0);
 
   auto *SE = analysis_results->getSE(*func);
   SmallDenseSet<loopTSANdata, 8> data;
@@ -410,18 +370,32 @@ static unsigned perform_tsan_licm(Module &M, Loop *loop,
 
   // then apply transformation
   // this avoids destroying analysis data of other TSAN calls
-  for (auto d : data)
-    if (create_tsan_replacement(M, d, SE, chunk_size))
-      removed_tsan_calls++;
-
-  // Rollback: Do not break OpenMP thread handling
-  for (auto br : boundReplacement) {
-    auto *load = br.getFirst();
-    for (Use *u : br.getSecond())
-      u->set(load);
+  for (auto d : data) {
+    if (create_tsan_replacement(M, d, SE, chunk_size)) {
+      if (d.type == RANGE)
+        removed_tsan_calls++;
+      else
+        invariant_calls++;
+    }
   }
 
-  return removed_tsan_calls;
+  return std::make_pair(removed_tsan_calls, invariant_calls);
+}
+
+static std::vector<std::string> func_names_whitelist = {
+    "__kmpc_dispatch_next", "__kmpc_global_", "__kmpc_master",
+    "__kmpc_single",        "omp_get_",       "omp_set_dynamic",
+    "omp_set_num_threads",  "pthread_create",
+};
+
+static bool mightInfluenceHappensBefore(Function *func) {
+  assert(is_thread_function(func));
+  auto func_name = func->getName();
+  assert(not func_name.empty());
+  for (auto fn : func_names_whitelist)
+    if (func_name.starts_with(fn))
+      return false;
+  return true;
 }
 
 bool mightInfluenceHappensBefore(Function *func,
@@ -441,21 +415,24 @@ bool mightInfluenceHappensBefore(Function *func,
 bool mightInfluenceHappensBefore(Instruction *inst,
                                  DenseSet<Function *> &alreadyVisited) {
   if (auto *call = dyn_cast<CallBase>(inst)) {
-    auto *called_func = call->getCalledFunction();
-    if (not called_func)
-      return false; // fingers crossed ....
-
-    if (is_thread_function(called_func))
-      return true;
-
-    if (mightInfluenceHappensBefore(called_func, alreadyVisited))
-      return true;
+    SmallDenseSet<Function *> function_list;
+    get_called_functions(call, function_list);
+    for (auto *called_func : function_list) {
+      if (is_thread_function(called_func))
+        if (mightInfluenceHappensBefore(called_func))
+          return true;
+      if (called_func->isDeclaration())
+        continue;
+      if (mightInfluenceHappensBefore(called_func, alreadyVisited))
+        return true;
+    }
   }
 
   return false;
 }
 
-static void loopWrapper(unsigned *removed_tsan_calls, Module &M, Loop *loop) {
+static void loopWrapper(unsigned *removed_tsan_calls, unsigned *invariant_calls,
+                        Module &M, Loop *loop, bool mlif) {
   std::vector<llvm::CallBase *> tsan_calls;
 
   for (auto &bb : loop->getBlocks()) {
@@ -471,21 +448,66 @@ static void loopWrapper(unsigned *removed_tsan_calls, Module &M, Loop *loop) {
     }
   }
 
-  (*removed_tsan_calls) += perform_tsan_licm(M, loop, tsan_calls);
+  auto ptl_pair = perform_tsan_licm(M, loop, tsan_calls, mlif);
+  (*removed_tsan_calls) += ptl_pair.first;
+  (*invariant_calls) += ptl_pair.second;
+}
+
+static bool processLoopsInFunc(Module &M, Function &F,
+                               unsigned *removed_tsan_calls,
+                               unsigned *invariant_calls) {
+  unsigned old_removed_count = *removed_tsan_calls;
+  auto li = analysis_results->getLoopInfo(F);
+  SmallVector<Loop *> loopList;
+  for (auto *loop : li->getLoopsInPreorder())
+    loopList.push_back(loop);
+  if (loopList.empty())
+    return false;
+
+  auto byNestingDepth = [&](const Loop *LHS, const Loop *RHS) {
+    assert(LHS && RHS);
+    auto LHS_depth = LHS->getLoopDepth();
+    auto RHS_depth = RHS->getLoopDepth();
+    return LHS_depth > RHS_depth;
+  };
+  sort(loopList, byNestingDepth);
+
+  unsigned zeroDepthLoops = 0;
+  for (auto *loop : llvm::reverse(loopList)) {
+    if (loop->getLoopDepth() == 1) // 1 is smallest depth
+      zeroDepthLoops++;
+    else
+      break;
+  }
+  // TODO support multiple loops in OpenMP parallel regions
+  bool mlif = 1 < zeroDepthLoops; // multiple loops in function
+
+  for (auto *loop : loopList) {
+    loopWrapper(removed_tsan_calls, invariant_calls, M, loop, mlif);
+    if (old_removed_count != *removed_tsan_calls) {
+      analysis_results->cleanup(F);
+      return true;
+    }
+  }
+  return false;
 }
 
 std::string optimize_loops(Module &M, ModuleAnalysisManager &AM) {
   errs() << "Optimize Loops\n";
   unsigned removed_tsan_calls = 0;
+  unsigned invariant_calls = 0;
 
-  for (auto &f : M) {
-    if (not f.isDeclaration() && not is_func_from_std(&f)) {
-      auto li = analysis_results->getLoopInfo(f);
-      for (auto *loop : li->getLoopsInPreorder())
-        loopWrapper(&removed_tsan_calls, M, loop);
-    }
+  for (auto &F : M) {
+    if (F.isDeclaration() || is_func_from_std(&F))
+      continue;
+
+    bool again = false;
+    do {
+      again = processLoopsInFunc(M, F, &removed_tsan_calls, &invariant_calls);
+    } while (again);
   }
 
   // print statistics
-  return "invariant/unrolled TSAN calls: " + std::to_string(removed_tsan_calls);
+  return "unrolled TSAN calls: " + std::to_string(removed_tsan_calls) + "\n" +
+         "invariant TSAN calls: " + std::to_string(invariant_calls);
 }

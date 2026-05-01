@@ -102,6 +102,7 @@
         python-custom
         rsync
         time
+        util-linux
         # aliases for wrappers
         (wrapper-alias "clang_wrap_cc"  "CLANG_WRAP_CC")
         (wrapper-alias "clang_wrap_cxx" "CLANG_WRAP_CXX")

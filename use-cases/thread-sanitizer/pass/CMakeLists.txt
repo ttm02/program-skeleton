@@ -1,8 +1,8 @@
 add_library(tsan_slicing_pass MODULE
         # List your source files here.
-        aggressive_single_thread_removal.cpp
         critical_region_cleanup.cpp
         loop_optimize.cpp
+        openmp_sequential_removal.cpp
         pthread_mitigation.cpp
         tsan_combine.cpp
         tsan_slicing_pass.cpp
