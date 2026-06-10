@@ -1,10 +1,14 @@
+# asm and LLVM IR (text)
+*.ll
+*.s
+
 # objis
 *.o
 *.bc
 # executables
 
 # cmake build dirs
-build/*
+build*/
 cmake-build-debug/*
 
 #executables
@@ -28,9 +32,13 @@ IMB-ASYNC/output/
 *LastTest.log
 Testing/Temporary
 
-# backupo data from older measurements
-visualization/mearurement_2022_05_16.tar.gz
+# backup data from older measurements
+visualization/mearurement_*.tar.gz
 # more in visualization
+__pycache__/
+scratch/
+output/
+timing.csv
 cache.csv
 *.pdf
 
@@ -39,4 +47,8 @@ cache.csv
 .cproject
 .settings
 .idea
+.cache
+*.kate-swp
 
+# Nix result links
+result*

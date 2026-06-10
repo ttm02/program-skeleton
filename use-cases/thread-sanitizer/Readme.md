@@ -3,22 +3,26 @@
 This Repository contains the llvm pass that removes computation from an application, while retaining the Tsan
 instrumentation, leading to a program skeleton that has only the data race detection.
 
+All commands in code blocks below are executed in the root directory of this repository.
+ut not all files or directories meantioned in the text are relativ that. Some are relativ to the directory where this ReadMe is located in.
+
 ## Prerequisites
 
+`clang` with `libclang-rt`(asan) and `openmp` support and possibly `boost`.
+Other C/C++ might not work. And later you will need `clang` to use the wrapper (loading the pass plugin).
+
 For this Project, we used clang/`llvm 21.1.0`
-The cmake configure step will download DataRaceBench (https://github.com/LLNL/dataracebench) for testing
+The `cmake` configure step will download [DataRaceBench](https://github.com/LLNL/dataracebench) for testing
 
 ## Building
 
 Building with cmake is straight forward:
-
+```bash
+cmake -B 'build' -S . -G 'Ninja' -DMPI_USE_CASE='off'
+cmake --build build
 ```
-mkdir build && cd build
-cmake ..
-make -j
-source setup_env.sh
-ctest --timeout 3 # run the tests to check if build was successful
-```
+Without `-G` it defaults to "Unix Makefiles", but "Ninja" is the hot shit to use with LLVM.
+If you want to also use the MPI usecase, do not disable it (`MPI_USE_CASE`).
 
 ## Usage
 
@@ -38,8 +42,103 @@ The ctest tests check the detection accuracy against the original tsan implement
 As the data race affected testcases include nondeterministic behaviour, it is expected, that some tests may fail.
 In particular, `DRB185-barrier1-yes` fails 99% of the time due to a limitation in the Tsan implementation.
 
-## Performance
+Just running the tests:
+```bash
+cmake --build build -- test
+```
+This equivilent to running
+```bash
+ctest --test-dir build
+```
+Optionally add `--timeout 5` to the arguments
 
-sample_apps/performance_evaluation contains the scripts ew used for performance evaluation.
+Rerun and check why tests failed:
+```bash
+ctest --test-dir build --timeout 5 --rerun-failed --output-on-failure
+```
+If reason "Timeout" remove the arguments. 
+
+Run single test:
+```bash
+ctest --test-dir build --output-on-failure -R "DRB027-taskdependmissing-orig-yes"
+```
+Run multiple tests with regex:
+```bash
+ctest --test-dir build --output-on-failure -R 'pthread*'
+```
+
+### Running individual test manually
+
+Setup environment variables:
+```bash
+source build/use-cases/thread-sanitizer/setup_env.sh
+```
+
+Compile example testcase:
+```bash
+build/use-cases/thread-sanitizer/clang_wrap_cc -O2 -g -fopenmp -fsanitize=thread -fuse-ld=lld -flto -fwhole-program-vtables -fno-inline -o ./a.out example.cpp
+```
+
+### Performance 
+
+For the DRB tests you can run:
+```bash
+use-cases/thread-sanitizer/tests/compare_performance.sh build
+```
+The parameter is optional, but it is possible to select another `build` directory.
+This uses a timeout of 300 seconds per tests and outputs the runtime of the program itself into `timing.csv`.
+
+To setup and use the "sample_apps" you can run:
+```bash
+use-cases/thread-sanitizer/sample_apps/performance-eval/setup_sample_apps.sh
+```
+This downloads and compiles all sample apps into `build-perf-tests/use-cases/thread-sanitizer/sample_apps`.
+Then all apps are ready you could submit sbatch jobs on the cluster with
+```bash
+use-cases/thread-sanitizer/sample_apps/performance-eval/sbatch_wrapper.sh 'LULESH'
+```
+or run all of this locally with for example LULESH:
+```bash
+use-cases/thread-sanitizer/sample_apps/performance-eval/run_local.sh 'LULESH'
+use-cases/thread-sanitizer/sample_apps/performance-eval/run_local.sh --help
+```
+Just look into the `--help` output and find out what to do.
+The numbers for what which line is and what which mode is, can be found in adjacent files.
+Your system might start swapping a lot when running the program compiled with the pass if you selected a line of the end the file.
+
+#### Lichtenberg Cluster
+
+As we are now using LLVM/Clang 21.1 and the Lichtenberg clusters module systems newest LLVM version is 17 or 18.
+We will make use of the container system. For this we first have to create an image with all prerequisites.
+Luckily our Nix DevShell already has everything and the only need to convert it into a container image and copy it to the clusters HOME directory.
+If you do not have Nix on your system refer to https://nixos.org/download/
+```bash
+nix build -L .'#'packages.x86_64-linux.docker-image
+rsync -ze ssh $(realpath ./result) lcluster:precompute-devshell.tar.gz
+```
+On the cluster itself we are not allowed to run docker/podman containers directly.
+Thus, we need to "convert" the image to get a shell inside the container image environment.
+For this a prepared a little script. But the HRZ also has some documentation for this: https://www.hrz.tu-darmstadt.de/hlr/betrieb_hlr/software_hlr/container/index.en.jsp
+```bash
+use-cases/thread-sanitizer/sample_apps/performance-eval/lcluster-setup-image.sh ~/precompute-devshell.tar.gz
+```
+Then this is finished we can launch the environment with:
+```bash
+apptainer shell ~/myCont/precompute-devshell.sif
+```
+
+Queueing the jobs is possible through a wrapper script that constantly tries to submit jobs with 1 to 96 threads.
+It tries that without getting suppressed by the MaxJobLimit enforced by our slurm partition.
+Therefore, it might be useful to detach this script into the background (e.g. `screen` or `tmux`).
+```bash
+use-cases/thread-sanitizer/sample_apps/performance-eval/sbatch_wrapper.sh LULESH
+use-cases/thread-sanitizer/sample_apps/performance-eval/sbatch_wrapper.sh HPCCG
+```
+Optionally, the second parameter limits it to a specific thread count instead of iterating from 1 to 96 threads.
+
+Similarly with accuracy benchmarking. Running DRB a few times with different amounts of threads.
+```bash
+use-cases/thread-sanitizer/tests/sbatch_drc_accuracy.sh
+```
 
 

@@ -12,7 +12,7 @@ void* increment(void* arg) {
 
 int main() {
   pthread_t t1, t2;
-  int* counter = malloc(sizeof(int));
+  int *counter = (int *) malloc(sizeof(int));
   *counter = 0;
 
   pthread_create(&t1, NULL, increment, counter);

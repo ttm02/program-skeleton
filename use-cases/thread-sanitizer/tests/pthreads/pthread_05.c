@@ -41,7 +41,7 @@ void* worker(void* arg) {
 int main() {
   pthread_t threads[NTHREADS];
   ThreadData threadData[NTHREADS];
-  int* array = malloc(sizeof(int) * ARRAY_SIZE);
+  int *array = (int *)malloc(sizeof(int) * ARRAY_SIZE);
 
   pthread_barrier_t barrier;
   pthread_barrier_init(&barrier, NULL, NTHREADS);

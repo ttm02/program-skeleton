@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 source ~/llvm_install/setup_env.sh
 source ~/ucx_install/setup_env.sh

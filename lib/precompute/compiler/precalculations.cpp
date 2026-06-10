@@ -1,0 +1,2326 @@
+/*
+Copyright 2023 Tim Jammer
+
+Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
+#include <regex>
+
+#include "precompute/compiler/Precompute_insertion.h"
+#include "precompute/compiler/debug.h"
+#include "precompute/compiler/devirt_analysis.h"
+#include "precompute/compiler/mpi_functions.h"
+#include "precompute/compiler/openmp_runtime_functions.h"
+#include "precompute/compiler/precalculation.h"
+#include "precompute/compiler/precalculation_function_analysis.h"
+#include "precompute/compiler/std_funcs.h"
+
+#include "llvm/Analysis/CFG.h"
+#include "llvm/Demangle/Demangle.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/Support/Casting.h"
+
+#include "alloc_tracking_utils.h"
+
+// for more scrutiny under testing:
+// the order of visiting the values should make no difference
+// #define SHUFFLE_VALUES_FOR_TESTING
+#ifdef SHUFFLE_VALUES_FOR_TESTING
+#include <random>
+#endif
+
+using namespace llvm;
+
+void print_needs(const std::shared_ptr<TaintedValue> &parent,
+                 unsigned int indent = 0) {
+  if (indent > 10 || parent == nullptr || parent->v == nullptr)
+    return;
+
+  for (unsigned int i = 0; i < indent; ++i) {
+    errs() << "\t";
+  }
+  parent->v->dump();
+  for (const auto &c : parent->needs) {
+    print_needs(c, indent + 1);
+  }
+}
+
+void print_needed_for(const std::shared_ptr<TaintedValue> &child,
+                      unsigned int indent = 0) {
+  if (indent > 4 || child == nullptr || child->v == nullptr)
+    return;
+
+  for (unsigned int i = 0; i < indent; ++i) {
+    errs() << "\t";
+  }
+  child->v->dump();
+  for (const auto &p : child->needed_for) {
+    print_needed_for(p, indent + 1);
+  }
+}
+
+// TODO move code?
+void PrecalculationAnalysis::analyze_functions() {
+  // create
+  for (auto &f : M.functions()) {
+    function_analysis[&f] =
+        std::make_shared<PrecalculationFunctionAnalysis>(&f, this);
+  }
+  // need to populate std dummy func, so that it is available as a call target
+  auto *std_dummy = get_std_dummy_func(&M);
+  function_analysis[std_dummy] =
+      std::make_shared<PrecalculationFunctionAnalysis>(std_dummy, this);
+
+  // populate callees and callsites
+  for (auto &f : M.functions()) {
+    if (not is_func_from_std(&f)) {
+      // dont analyze std's internals
+      for (auto I = inst_begin(f), E = inst_end(f); I != E; ++I) {
+        if (auto *call = dyn_cast<CallBase>(&*I)) {
+          // errs() << "Call targets for\n";
+          // call->dump();
+          auto targets = get_possible_call_targets(call);
+          // errs() << "got targets\n";
+          for (auto *target : targets) {
+            assert(target != nullptr);
+            if (target == get_omp_functions(M)->kmpc_fork_call) {
+              // for openmp call: the openmp runtime will call the parallel
+              // function
+              assert(isa<Function>(call->getArgOperand(2)) &&
+                     "Indirect call to ompoutlined is not supported");
+              auto *ompoutlined_func = cast<Function>(call->getArgOperand(2));
+              assert(function_analysis[ompoutlined_func]->is_openmp_parallel);
+              function_analysis[ompoutlined_func]->callsites.insert(call);
+              function_analysis[call->getFunction()]->callees.insert(
+                  function_analysis[ompoutlined_func]);
+            }
+            if (target == get_omp_functions(M)->kmpc_omp_task_alloc) {
+              auto *ompoutlined_func = cast<Function>(call->getArgOperand(5));
+              assert(isa<Function>(call->getArgOperand(5)) &&
+                     "Indirect call to ompoutlined is not supported");
+              assert(function_analysis[ompoutlined_func]->is_openmp_task);
+              for (auto *omp_task_call : get_task_scheduling_calls(call)) {
+                function_analysis[ompoutlined_func]->callsites.insert(
+                    omp_task_call);
+                function_analysis[call->getFunction()]->callees.insert(
+                    function_analysis[ompoutlined_func]);
+              }
+            }
+
+            function_analysis[target]->callsites.insert(call);
+            function_analysis[call->getFunction()]->callees.insert(
+                function_analysis[target]);
+          }
+        }
+      }
+    }
+  }
+
+  for (const auto &pair : function_analysis) {
+    pair.second->analyze_can_except_in_precompute(this);
+  }
+}
+
+bool PrecalculationAnalysis::is_invoke_exception_case_needed(
+    llvm::InvokeInst *invoke) const {
+  assert(invoke);
+
+  auto *unwindBB = invoke->getUnwindDest();
+  std::set<Instruction *> in_unwind;
+  for (auto &i : *unwindBB) {
+    in_unwind.insert(&i);
+    // need to put it into set for sorting
+  }
+  if (is_none_tainted(in_unwind)) {
+    return false;
+    // exception handling is not needed;
+  }
+
+  bool all_exception_free = true;
+  for (auto *tgt : get_possible_call_targets(invoke)) {
+    if (get_function_analysis(tgt)->can_except_in_precompute) {
+      all_exception_free = false;
+      break;
+    }
+  }
+  if (all_exception_free) {
+    // cannot yield exception
+    return false;
+  }
+  // may yield an exception
+  return true;
+}
+
+// True if callee needs to be called as it contains tainted instructions
+// or True if callee can raise an exception and the exception handling code is
+// actually tainted if exception handling is not tainted, we don't need to
+// handle the exception anyway and abortion is fine in this case
+bool PrecalculationAnalysis::is_invoke_necessary_for_control_flow(
+    llvm::InvokeInst *invoke) const {
+  assert(invoke);
+
+  // calling into something we need
+  for (auto *tgt : get_possible_call_targets(invoke)) {
+    if (function_analysis.at(tgt)->include_in_precompute) {
+      return true;
+    }
+  }
+
+  // check if the exception part is needed
+  return is_invoke_exception_case_needed(invoke);
+}
+
+void PrecalculationAnalysis::remove_mpi_error_checks() {
+  std::vector<CallBase *> mpi_calls;
+
+  // collect MPI calls
+  for (auto &F : M) {
+    for (auto &I : llvm::instructions(F)) {
+      if (auto *call = dyn_cast<CallBase>(&I)) {
+        if (is_mpi_call(call)) {
+          if (mpi_func->mpi_wtime != NULL &&
+              mpi_func->mpi_wtime == call->getCalledFunction()) {
+            continue;
+            // wtime don't return error code but the time instead
+          }
+          mpi_calls.push_back(call);
+        }
+      }
+    }
+  }
+
+  // replace with MPI_SUCCESS
+  for (auto *call : mpi_calls) {
+    if (isa<InvokeInst>(call)) {
+      assert(false && "Not implemented"); // should not happen
+      // add unconditional branch to invoke success target
+    }
+    auto *value = ConstantInt::get(call->getType(), 0); // MPI_SUCCESS
+    call->replaceAllUsesWith(value);
+  }
+  // TODO should now run some other transform passes to simplify CFG?
+}
+
+void PrecalculationAnalysis::analyze() {
+  // Before Analysis: replace all return of MPI functions with MPI_SUCCES
+  // as MPI implementation can consider any error as fatal anyway
+  // this reduces analysis complexity
+  if (remove_mpi_error_checking) {
+    remove_mpi_error_checks();
+  }
+
+  analyze_functions();
+
+  for (const auto &val : this->to_precompute_value) {
+    auto val_info = insert_tainted_value(val, TaintReason::COMPUTE_TAG);
+    include_value_in_precompute(val_info);
+    if (auto *inst = dyn_cast<Instruction>(val)) {
+      auto func_info = get_function_analysis(inst->getFunction());
+      func_info->include_all_callsites = true;
+      func_info->re_visit_callsites(); // not strictly necessary here, but
+                                       // whenever something changes, we should
+                                       // re-visit the callsites
+    }
+  }
+  for (const auto &val : this->to_precompute_cfg) {
+    auto val_info = insert_tainted_value(val, TaintReason::CONTROL_FLOW);
+    include_value_in_precompute(val_info);
+    val_info->set_visited(); // don't need to visit value, it only is used for
+                             // control flow
+    auto func_info = get_function_analysis(val->getFunction());
+    func_info->include_all_callsites = true;
+    func_info->re_visit_callsites(); // if one of the values tainted for cfg is
+                                     // a call to this func
+  }
+
+  find_all_tainted_vals();
+
+#ifndef NDEBUG
+  auto has_error = verifyModule(M, &errs(), nullptr);
+  assert(!has_error && "Module Error introduced during analysis part???");
+#endif
+}
+
+std::set<std::shared_ptr<PrecalculationFunctionAnalysis>>
+PrecalculationAnalysis::getFunctionsToInclude() const {
+  std::set<std::shared_ptr<PrecalculationFunctionAnalysis>> result;
+  for (const auto &pair : function_analysis) {
+    if (pair.second->include_in_precompute) {
+      result.insert(pair.second);
+    }
+  }
+  return result;
+}
+
+void PrecalculationAnalysis::find_all_tainted_vals() {
+  std::vector<std::shared_ptr<TaintedValue>> to_visit;
+
+  do {
+    to_visit.clear();
+    std::copy_if(tainted_values.begin(), tainted_values.end(),
+                 std::back_inserter(to_visit),
+                 [](const auto &v) { return !v->is_visited(); });
+
+#ifdef SHUFFLE_VALUES_FOR_TESTING
+    // for more scrutiny under testing:
+    // the order of visiting the values should make no difference
+    std::shuffle(to_visit.begin(), to_visit.end(),
+                 std::mt19937(std::random_device()()));
+#endif
+
+    for (const auto &v : to_visit) {
+      visit_val(v);
+    }
+  } while (!to_visit.empty());
+  // done calculating
+
+#ifdef VERBOSE_DEBUG_PRINTING
+  print_analysis_result_remarks();
+#endif
+
+  // if tags or control flow depend on argc or argv MPI_Init will be tainted
+  // (as it writes argc and argv)
+
+  auto pos = std::find_if(
+      tainted_values.begin(), tainted_values.end(), [this](auto v) -> bool {
+        if (auto call = dyn_cast<CallBase>(v->v)) {
+          if (call->getCalledFunction() &&
+              (call->getCalledFunction() == this->mpi_func->mpi_init ||
+               call->getCalledFunction() == this->mpi_func->mpi_init_thread)) {
+            return true;
+          }
+        }
+        return false;
+      });
+
+  tainted_values.erase(*pos);
+  // done removing of MPI init
+}
+
+void PrecalculationAnalysis::visit_load(
+    const std::shared_ptr<TaintedValue> &load_info,
+    const std::shared_ptr<TaintedValue> &ptr_operand) {
+  load_info->set_visited();
+
+  ptr_operand->ptr_info->setIsReadFrom(cast<Instruction>(load_info->v), this);
+
+  if (load_info->is_pointer()) {
+    ptr_operand->ptr_info->setIsUsedDirectly(true, load_info->ptr_info);
+  } else {
+    ptr_operand->ptr_info->setIsUsedDirectly(true);
+  }
+}
+
+void PrecalculationAnalysis::visit_store(
+    const std::shared_ptr<TaintedValue> &store_info, llvm::Value *ptr,
+    llvm::Value *store_val) {
+  store_info->set_visited();
+
+  auto ptr_info = insert_tainted_value(ptr, store_info, true);
+  std::shared_ptr<PtrUsageInfo> stored_val_ptr_info =
+      nullptr; // null if stored value is no ptr
+  if (store_val->getType()->isPointerTy()) {
+    auto stored_info = insert_tainted_value(store_val, store_info, true);
+    stored_val_ptr_info = stored_info->ptr_info;
+  }
+  ptr_info->ptr_info->setIsUsedDirectly(true, stored_val_ptr_info);
+  ptr_info->ptr_info->setIsWrittenTo(cast<Instruction>(store_info->v), this);
+
+  auto func =
+      get_function_analysis(cast<Instruction>(store_info->v)->getFunction());
+  func->add_ptr_write(ptr_info->ptr_info);
+
+  if (is_store_important(cast<Instruction>(store_info->v),
+                         ptr_info->ptr_info)) {
+    // we need to include all 3: the ptr, the store, and the stored val
+    auto val = insert_tainted_value(store_val, store_info, true);
+    include_value_in_precompute(val);
+    include_value_in_precompute(store_info);
+    include_value_in_precompute(ptr_info);
+  }
+}
+
+void PrecalculationAnalysis::visit_gep(
+    const std::shared_ptr<TaintedValue> &gep_info) {
+  assert(not gep_info->is_visited());
+  gep_info->set_visited();
+  auto *gep = dyn_cast<GetElementPtrInst>(gep_info->v);
+  assert(gep);
+
+  auto gep_ptr_info = insert_tainted_value(gep->getPointerOperand(), gep_info);
+
+  gep_ptr_info->ptr_info->add_important_member(gep, gep_info->ptr_info);
+
+  // taint all values needed for calculating idx
+  for (auto &idx : cast<GetElementPtrInst>(gep_info->v)->indices()) {
+    auto *v = dyn_cast<Value>(idx);
+    insert_tainted_value(v, gep_info);
+  }
+}
+
+void PrecalculationAnalysis::visit_phi(
+    const std::shared_ptr<TaintedValue> &phi_info) {
+  auto *phi = dyn_cast<PHINode>(phi_info->v);
+  assert(phi);
+
+  if (phi->getType()->isPointerTy()) {
+    auto ptr_info = phi_info->ptr_info;
+    if (not ptr_info) {
+      phi_info->ptr_info = std::make_shared<PtrUsageInfo>(phi_info, &M);
+      ptr_info = phi_info->ptr_info;
+    }
+    for (unsigned int i = 0; i < phi->getNumOperands(); ++i) {
+      auto *vv = phi->getIncomingValue(i);
+      auto new_val = insert_tainted_value(vv, phi_info);
+
+      if (new_val->ptr_info) {
+        ptr_info->merge_with(new_val->ptr_info);
+      } else {
+        new_val->ptr_info = ptr_info;
+        ptr_info->add_ptr_info_user(new_val);
+      }
+    }
+  } else {
+    // no ptr
+    for (unsigned int i = 0; i < phi->getNumOperands(); ++i) {
+      auto *vv = phi->getIncomingValue(i);
+      auto new_val = insert_tainted_value(vv, phi_info);
+    }
+  }
+
+  phi_info->set_visited();
+}
+
+void PrecalculationAnalysis::visit_val(const std::shared_ptr<TaintedValue> &v) {
+
+  // TODO clang tidy repeated branch body (the v->visited = true part)
+
+  if (isa<Constant>(v->v)) {
+    // nothing to do for constant
+    v->set_visited();
+  } else if (auto load = dyn_cast<LoadInst>(v->v)) {
+    auto loaded_from = insert_tainted_value(load->getPointerOperand(), v);
+    visit_load(v, loaded_from);
+  } else if (auto *alloc = dyn_cast<AllocaInst>(v->v)) {
+    // visit_ptr_usages is called on all ptrs anyway
+    // need to calculate allocation size
+    insert_tainted_value(alloc->getArraySize(), v);
+    v->set_visited();
+  } else if (auto store = dyn_cast<StoreInst>(v->v)) {
+    visit_store(v, store->getPointerOperand(), store->getValueOperand());
+  } else if (auto *op = dyn_cast<BinaryOperator>(v->v)) {
+    // arithmetic
+    // TODO do we need to exclude some opcodes?
+    assert(op->getNumOperands() == 2);
+    assert(not op->getType()->isPointerTy());
+    insert_tainted_value(op->getOperand(0), v);
+    insert_tainted_value(op->getOperand(1), v);
+    v->set_visited();
+  } else if (auto *uop = dyn_cast<UnaryOperator>(v->v)) {
+    // arithmetic
+    // TODO do we need to exclude some opcodes?
+    assert(uop->getNumOperands() == 1);
+    assert(not uop->getType()->isPointerTy());
+    insert_tainted_value(uop->getOperand(0), v);
+    v->set_visited();
+  } else if (auto *cmp = dyn_cast<CmpInst>(v->v)) {
+    // cmp
+    assert(cmp->getNumOperands() == 2);
+    insert_tainted_value(cmp->getOperand(0), v);
+    insert_tainted_value(cmp->getOperand(1), v);
+    v->set_visited();
+  } else if (auto *select = dyn_cast<SelectInst>(v->v)) {
+    insert_tainted_value(select->getCondition(), v);
+    auto true_val = insert_tainted_value(select->getTrueValue(), v);
+    auto false_val = insert_tainted_value(select->getFalseValue(), v);
+    if (select->getType()->isPointerTy()) {
+      assert(v->ptr_info);
+      true_val->ptr_info = v->ptr_info;
+      false_val->ptr_info = v->ptr_info;
+      v->ptr_info->add_ptr_info_user(true_val);
+      v->ptr_info->add_ptr_info_user(false_val);
+    }
+    v->set_visited();
+  } else if (isa<Argument>(v->v)) {
+    visit_arg(v);
+  } else if (isa<CallBase>(v->v)) {
+    visit_call(v);
+  } else if (isa<PHINode>(v->v)) {
+    visit_phi(v);
+  } else if (auto *cast = dyn_cast<CastInst>(v->v)) {
+    // cast TO ptr is not allowed
+    assert(not cast->getType()->isPointerTy() &&
+           "Casting an integer to a ptr is not supported");
+    // cast from ptr is allowed (e.g. to check if a ptr is aligned with a
+    // modulo operation) as long as it is not casted back into a ptr
+
+    insert_tainted_value(cast->getOperand(0), v);
+    v->set_visited();
+  } else if (auto *gep = dyn_cast<GetElementPtrInst>(v->v)) {
+    visit_gep(v);
+    assert(is_tainted(gep->getPointerOperand()));
+    v->set_visited();
+  } else if (auto *br = dyn_cast<BranchInst>(v->v)) {
+    assert(v->getReason() & TaintReason::CONTROL_FLOW);
+    v->set_visited();
+    if (br->isConditional()) {
+      insert_tainted_value(br->getCondition(), v);
+    } else {
+      // nothing to do
+    }
+  } else if (auto *sw = dyn_cast<SwitchInst>(v->v)) {
+    assert(v->getReason() & TaintReason::CONTROL_FLOW);
+    v->set_visited();
+    insert_tainted_value(sw->getCondition(), v);
+  } else if (auto *resume = dyn_cast<ResumeInst>(v->v)) {
+    assert(v->getReason() & TaintReason::CONTROL_FLOW);
+    // resume exception: nothing to do just keep it
+    insert_tainted_value(resume->getOperand(0), v);
+    v->set_visited();
+  } else if (auto *ret = dyn_cast<ReturnInst>(v->v)) {
+    insert_tainted_value(ret->getOperand(0), v);
+    v->set_visited();
+  } else if (isa<LandingPadInst>(v->v)) {
+    // nothing to do, just keep around
+    assert(v->getReason() & TaintReason::CONTROL_FLOW);
+    v->set_visited();
+  } else if (auto *ext = dyn_cast<ExtractValueInst>(v->v)) {
+    insert_tainted_value(ext->getAggregateOperand(), v);
+    v->set_visited();
+  } else if (auto *ptoi = dyn_cast<PtrToIntInst>(v->v)) {
+    // conversion of ptr TO int e.g. for comparison or alignment check is
+    // allowed
+    insert_tainted_value(ptoi->getPointerOperand(), v);
+    v->set_visited();
+  } else if (isa<ShuffleVectorInst>(v->v) || isa<ExtractElementInst>(v->v) ||
+             isa<InsertElementInst>(v->v)) {
+    for (auto *operand : llvm::cast<Instruction>(v->v)->operand_values()) {
+      insert_tainted_value(operand, v);
+    }
+    v->set_visited();
+  } else if (auto *atomic = dyn_cast<AtomicRMWInst>(v->v)) {
+    // a load and store to ptr
+    visit_store(v, atomic->getPointerOperand(), atomic->getValOperand());
+    visit_load(v, get_taint_info(atomic->getPointerOperand()));
+  } else if (auto *insertvalue = dyn_cast<InsertValueInst>(v->v)) {
+    // a load and store to ptr
+    insert_tainted_value(insertvalue->getAggregateOperand(), v);
+    insert_tainted_value(insertvalue->getInsertedValueOperand(), v);
+    // indices are constants
+    // I mean an integral part of the instruction, not even llvm::ConstantInt
+    v->set_visited();
+  } else if (auto *insertelem = dyn_cast<InsertElementInst>(v->v)) {
+    // a load and store to ptr
+    insert_tainted_value(insertelem->getOperand(0), v); // vector
+    insert_tainted_value(insertelem->getOperand(1), v); // insterted elem
+    insert_tainted_value(insertelem->getOperand(2), v); // index
+    v->set_visited();
+  } else if (auto *freeze = dyn_cast<FreezeInst>(v->v)) {
+    // essentially a no-op on valid values
+    insert_tainted_value(freeze->getOperand(0), v);
+    v->set_visited();
+  } else {
+
+    errs() << "Support for analyzing this Value is not implemented yet\n";
+    v->v->dump();
+    if (auto *inst = dyn_cast<Instruction>(v->v)) {
+      errs() << "In: " << inst->getFunction()->getName() << "\n";
+      errs() << "Reason:" << v->getReason() << "\n";
+    }
+    assert(false);
+  }
+
+  if (v->is_pointer()) {
+    visit_ptr_usages(v);
+  }
+}
+
+void PrecalculationAnalysis::visit_ptr_load(
+    const std::shared_ptr<TaintedValue> &ptr, Instruction *inst) {
+  if (inst->getType()->isPointerTy()) {
+    // if a ptr is loaded we need to trace its usages
+    if (ptr->ptr_info->isUsedDirectly() &&
+        ptr->ptr_info->getInfoOfDirectUsage()) {
+      if (ptr->ptr_info->getInfoOfDirectUsage()->isReadFrom()) {
+        insert_tainted_value(inst, ptr, false);
+      }
+    }
+  } // else no need to take care about this, reading the val is allowed
+}
+
+void PrecalculationAnalysis::visit_ptr_store(
+    const std::shared_ptr<TaintedValue> &ptr, Instruction *inst) {
+  // visit store from the ptr
+  // store could be an atomic as well, therefore no StoreInst
+  assert(llvm::isa<llvm::StoreInst>(inst) ||
+         llvm::isa<llvm::AtomicRMWInst>(inst));
+  bool is_ptr = false; // is ptr or value operand?
+  if (auto *si = dyn_cast<StoreInst>(inst)) {
+    is_ptr = si->getPointerOperand() == ptr->v;
+    assert(si->getPointerOperand() != si->getValueOperand());
+  } else if (auto *atom = dyn_cast<AtomicRMWInst>(inst)) {
+    is_ptr = atom->getPointerOperand() == ptr->v;
+    assert(atom->getPointerOperand() != atom->getValOperand());
+  }
+
+  // taint the store to analyze if it is important
+  auto store_info = insert_tainted_value(inst, ptr, false);
+  ptr->ptr_info->setIsUsedDirectly(
+      true, store_info->ptr_info); // null if stored value is no ptr
+  ptr->ptr_info->setIsWrittenTo(inst, this);
+  auto func = get_function_analysis(inst->getFunction());
+  func->add_ptr_write(ptr->ptr_info);
+
+  if (is_ptr) {
+    // visit to discover its importance
+    visit_val(store_info);
+  }
+  // else: nothing to do right now: it will be visited when a new alias is
+  // discovered, that is if the value is loaded again
+}
+
+bool PrecalculationAnalysis::visit_ptr_insertvalue_recursive_impl(
+    const std::shared_ptr<TaintedValue> &ptr,
+    llvm::ArrayRef<unsigned> insert_idx, llvm::Instruction *aggregate_inst) {
+
+  bool is_needed = false;
+
+  for (auto *u : aggregate_inst->users()) {
+    if (auto *extract = dyn_cast<ExtractValueInst>(u)) {
+      if (extract->getIndices() == insert_idx) {
+        // match
+        assert(extract->getType() == ptr->v->getType());
+        // add ptr alias
+        auto info = insert_tainted_value(
+            aggregate_inst); // the needed instructions are marked one lvl up in
+        // recursion
+        assert(info->ptr_info);
+        ptr->ptr_info->merge_with(info->ptr_info);
+        is_needed = true;
+      }
+    } else if (auto *insert = dyn_cast<InsertValueInst>(u)) {
+      if (insert->getIndices() == insert_idx) {
+        // element is overridden
+        return false;
+      } else {
+        // new derived compound
+        bool is_needed_down_lvl =
+            visit_ptr_insertvalue_recursive_impl(ptr, insert_idx, insert);
+        if (is_needed_down_lvl) {
+          // the value needed for aggregate_inst is handled by upper recursion
+          // lvl
+          insert_tainted_value(insert, insert_tainted_value(aggregate_inst));
+        }
+        is_needed = is_needed || is_needed_down_lvl;
+      }
+    } else if (isa<ResumeInst>(u)) {
+      // nothing to do
+    } else {
+      u->dump();
+      assert(0 && "this aggregate usage is not supported yet");
+    }
+  }
+  return is_needed;
+}
+
+void PrecalculationAnalysis::visit_ptr_insertvalue(
+    const std::shared_ptr<TaintedValue> &ptr,
+    llvm::InsertValueInst *insert_value_inst) {
+
+  auto inserted_index = insert_value_inst->getIndices();
+
+  for (auto *u : insert_value_inst->users()) {
+    if (auto *inst = dyn_cast<Instruction>(u)) {
+      bool needed =
+          visit_ptr_insertvalue_recursive_impl(ptr, inserted_index, inst);
+      if (needed)
+        insert_tainted_value(inst, ptr);
+    } else {
+      u->dump();
+      assert(0 && "This is not supported");
+    }
+  }
+}
+
+bool PrecalculationAnalysis::visit_ptr_insertelement_recursive_impl(
+    const std::shared_ptr<TaintedValue> &ptr, llvm::ConstantInt *insert_idx,
+    llvm::Instruction *aggregate_inst) {
+
+  bool is_needed = false;
+
+  if (isa<ResumeInst>(aggregate_inst) || isa<CmpInst>(aggregate_inst) ||
+      isa<PtrToIntInst>(aggregate_inst)) {
+    // nothing to do: (cast for) comparison is allowed
+    return false;
+  }
+
+  for (auto *u : aggregate_inst->users()) {
+    if (auto *extract = dyn_cast<ExtractElementInst>(u)) {
+      assert(isa<Constant>(extract->getIndexOperand()) && "not supported");
+      if (extract->getIndexOperand() == insert_idx) {
+        // match
+        assert(extract->getType() == ptr->v->getType());
+        // add ptr alias
+        auto info = insert_tainted_value(
+            aggregate_inst); // the needed instructions are marked one lvl up in
+        // recursion
+        assert(info->ptr_info);
+        ptr->ptr_info->merge_with(info->ptr_info);
+        is_needed = true;
+      }
+    } else if (auto *insert = dyn_cast<InsertElementInst>(u)) {
+      auto new_inserted_index = insert->getOperand(2);
+      // getIndexOperand()
+      assert(new_inserted_index->getType()->isIntegerTy());
+      assert(isa<Constant>(new_inserted_index) && "Not supported");
+      if (new_inserted_index == insert_idx) {
+        // element is overridden
+        return false;
+      } else {
+        // new derived compound
+        bool is_needed_down_lvl =
+            visit_ptr_insertelement_recursive_impl(ptr, insert_idx, insert);
+        if (is_needed_down_lvl) {
+          // the value needed for aggregate_inst is handled by upper recursion
+          // lvl
+          insert_tainted_value(insert, insert_tainted_value(aggregate_inst));
+        }
+        is_needed = is_needed || is_needed_down_lvl;
+      }
+    } else if (isa<ResumeInst>(u) || isa<CmpInst>(u) || isa<PtrToIntInst>(u)) {
+      // nothing to do: (cast for) comparison is allowed
+    } else if (auto *shuffle = dyn_cast<ShuffleVectorInst>(u)) {
+
+      if (aggregate_inst == shuffle->getOperand(1)) {
+        shuffle->commute();
+      }
+      assert(aggregate_inst == shuffle->getOperand(0));
+
+      for (auto idx : shuffle->getShuffleMask()) {
+        if (insert_idx->equalsInt(idx)) {
+          // new derived compound
+          bool is_needed_down_lvl = visit_ptr_insertelement_recursive_impl(
+              ptr, ConstantInt::get(insert_idx->getIntegerType(), idx),
+              shuffle);
+          if (is_needed_down_lvl) {
+            // the value needed for aggregate_inst is handled by upper recursion
+            // lvl
+            insert_tainted_value(shuffle, insert_tainted_value(aggregate_inst));
+          }
+          is_needed = is_needed || is_needed_down_lvl;
+        }
+      }
+    } else {
+      u->dump();
+      assert(0 && "this aggregate usage is not supported yet");
+    }
+  }
+  return is_needed;
+}
+
+void PrecalculationAnalysis::visit_ptr_insertelement(
+    const std::shared_ptr<TaintedValue> &ptr,
+    llvm::InsertElementInst *insertelem_inst) {
+
+  auto inserted_index = insertelem_inst->getOperand(2);
+  // getIndexOperand()
+  assert(inserted_index->getType()->isIntegerTy());
+  assert(isa<Constant>(inserted_index) && "Not supported");
+
+  for (auto *u : insertelem_inst->users()) {
+    if (auto *inst = dyn_cast<Instruction>(u)) {
+      bool needed = visit_ptr_insertelement_recursive_impl(
+          ptr, cast<ConstantInt>(inserted_index), inst);
+      if (needed)
+        insert_tainted_value(inst, ptr);
+    } else {
+      u->dump();
+      assert(0 && "This is not supported");
+    }
+  }
+}
+
+void PrecalculationAnalysis::visit_ptr_usages(
+    const std::shared_ptr<TaintedValue> &ptr) {
+  assert(ptr->is_pointer());
+
+  if (isa<ConstantPointerNull>(ptr->v) || isa<UndefValue>(ptr->v)) {
+    return;
+    // we don't need to trace usages of null to find out if is written or read
+  }
+
+  if (auto *global = dyn_cast<GlobalVariable>(ptr->v)) {
+    if (global == get_mpi_comm_world(M)) {
+      // no need to handle all usages of Comm World as we know it is a static
+      // object
+      return;
+    }
+    if (is_global_from_std(global)) {
+      // don't analyze the usage of std::'s globals in std
+      // TODO we could replace for example std::cout
+      return;
+    }
+
+    if (global->isConstant()) {
+      // we don't need to trace the usages of constant ptrs e.g. constant
+      // string values, one can just use them in precompute as well
+      return;
+    }
+  }
+  if (auto *c = dyn_cast<ConstantExpr>(ptr->v)) {
+    auto *as_inst = c->getAsInstruction();
+    if (auto *gep = dyn_cast<GetElementPtrInst>(as_inst)) {
+      if (is_global_from_std(cast<GlobalValue>(gep->getPointerOperand()))) {
+        // constant gep derived from std
+        // e.g. a vtable entry
+        as_inst->deleteValue();
+        return;
+      }
+      // no alaias analysis for constatn gep necessary, as there should only be
+      // one constatn gep (ptr of constexpr need to be const itself)
+    }
+    as_inst->deleteValue();
+    // don't keep the temporary instruction around
+  }
+
+  // test that this is a supported ptr origin
+  // for these types, the alias analysis is implemented
+  if (not(isa<AllocaInst>(ptr->v) || isa<CallBase>(ptr->v) ||
+          isa<Argument>(ptr->v) || isa<LoadInst>(ptr->v) ||
+          isa<Function>(ptr->v) || isa<GetElementPtrInst>(ptr->v) ||
+          isa<GlobalVariable>(ptr->v) || isa<SelectInst>(ptr->v) ||
+          isa<PHINode>(ptr->v) || isa<ConstantExpr>(ptr->v) ||
+          isa<ExtractValueInst>(ptr->v) || isa<FreezeInst>(ptr->v))) {
+    ptr->v->dump();
+
+    assert(false && "This ptr type is not supported");
+  }
+
+  for (auto *u : ptr->v->users()) {
+    if (auto *inst = dyn_cast<Instruction>(u)) {
+      if (is_func_from_std(inst->getFunction())) {
+        // user may mark functions as "belong to std"
+        // we dont analyze those usages- as user told so
+        continue;
+      }
+    }
+
+    if (auto *store = dyn_cast<StoreInst>(u)) {
+      visit_ptr_store(ptr, store);
+
+      continue;
+    }
+    if (auto *l = dyn_cast<LoadInst>(u)) {
+      visit_ptr_load(ptr, l);
+      continue;
+    }
+    if (auto *call = dyn_cast<CallBase>(u)) {
+      visit_call_from_ptr(call, ptr);
+      continue;
+    }
+    if (auto *gep = dyn_cast<GetElementPtrInst>(u)) {
+      // if gep is relevant
+      if (ptr->ptr_info->is_member_relevant(gep)) {
+        insert_tainted_value(gep, ptr, false);
+      }
+      continue;
+    }
+    if (auto *constant_exp = dyn_cast<ConstantExpr>(u)) {
+      auto *as_inst = constant_exp->getAsInstruction();
+      auto *gep = dyn_cast<GetElementPtrInst>(as_inst);
+      assert(gep &&
+             "Constexpr other than GEP for ptr currently not implemented");
+      // if gep is relevant
+      if (ptr->ptr_info->is_member_relevant(gep)) {
+        insert_tainted_value(constant_exp, ptr, false);
+      }
+      as_inst->deleteValue(); // don't keep temporary instruction
+      continue;
+    }
+    if (isa<ICmpInst>(u)) {
+      // nothing to do
+      // the compare will be tainted if it is necessary for control flow else
+      // we can ignore it
+      continue;
+    }
+    if (auto *phi = dyn_cast<PHINode>(u)) {
+      // follow the phi
+      insert_tainted_value(phi, ptr, false);
+      continue;
+    }
+    if (auto *select = dyn_cast<SelectInst>(u)) {
+      // follow the resulting ptr
+      auto select_info = insert_tainted_value(select, ptr, false);
+      ptr->ptr_info->merge_with(select_info->ptr_info);
+
+      continue;
+    }
+    if (auto *ret = dyn_cast<ReturnInst>(u)) {
+      visit_ptr_ret(ptr, ret);
+      continue;
+    }
+    if (isa<PtrToIntInst>(u)) {
+      // nothing to do cast to int e.g. for comparison is allowed
+      continue;
+    }
+
+    if (auto *lpad = dyn_cast<LandingPadInst>(u)) {
+      bool used_in_catch = false;
+      for (unsigned int i = 0; i < lpad->getNumClauses(); ++i) {
+        if (lpad->getClause(i) == ptr->v) {
+          used_in_catch = true;
+          break;
+        }
+      }
+      assert(used_in_catch);
+      // nothing to do:
+      // we don't care if the typeinfo is used in a catch clause,
+      // as the catch itself does not do anything harmful to the ptr
+      continue;
+    }
+    if (auto *atomic = dyn_cast<AtomicRMWInst>(u)) {
+      assert(atomic->getPointerOperand() == ptr->v);
+      //  currently analysis for performing atomic operations on a ptr type is
+      //  not supported
+      assert(not atomic->getValOperand()->getType()->isPointerTy());
+
+      // is essentially a store to ptr
+      visit_ptr_load(ptr, atomic);
+      // and is essentially a load of ptr
+      visit_ptr_store(ptr, atomic);
+
+      insert_tainted_value(atomic->getValOperand(), get_taint_info(atomic));
+
+      continue;
+    }
+    if (auto *insert_val = dyn_cast<InsertValueInst>(u)) {
+      visit_ptr_insertvalue(ptr, insert_val);
+      continue;
+    }
+    if (auto *insert_val = dyn_cast<InsertElementInst>(u)) {
+      visit_ptr_insertelement(ptr, insert_val);
+      continue;
+    }
+    if (auto *f = dyn_cast<FreezeInst>(u)) {
+      // freeze is a no-op on valid ptrs
+      auto info = insert_tainted_value(f, ptr, false);
+      info->ptr_info->merge_with(ptr->ptr_info);
+      continue;
+    }
+
+    ptr->ptr_info->dump();
+
+    errs() << "constant agg?" << isa<ConstantAggregate>(u) << "\n";
+    errs() << "constant data?" << isa<ConstantData>(u) << "\n";
+    errs() << "Support for analyzing this Value is not implemented yet\n";
+
+    u->dump();
+
+    assert(false);
+  }
+}
+
+void PrecalculationAnalysis::visit_ptr_ret(
+    const std::shared_ptr<TaintedValue> &ptr, llvm::ReturnInst *ret) {
+  assert(ret->getOperand(0) == ptr->v);
+  // need to merge ptr info for the resulting ptr
+
+  // TODO some duplicate code with
+  // visit_arg and taint_all_indirect_call_args
+  auto *func = ret->getFunction();
+  auto fun_to_precalc = function_analysis.at(func);
+
+  for (auto *call : fun_to_precalc->callsites) {
+    auto call_info = insert_tainted_value(call, ptr);
+    assert(call_info->ptr_info != nullptr);
+    ptr->ptr_info->merge_with(call_info->ptr_info);
+  }
+}
+
+void PrecalculationAnalysis::insert_function_to_include(llvm::Function *func) {
+  auto fun_to_precalc = function_analysis.at(func);
+  if (not fun_to_precalc->include_in_precompute) {
+    fun_to_precalc->include_in_precompute = true;
+    for (auto *call : fun_to_precalc->callsites) {
+      auto call_info =
+          insert_tainted_value(call, TaintReason::CONTROL_FLOW_CALLEE_NEEDED);
+      call_info->set_need_visit(); // may need to re visit if it was later
+      // discovered that it is important
+
+      if (fun_to_precalc->include_all_callsites) {
+        // propagate include_all_callsites
+        auto parent = function_analysis.at(call->getFunction());
+        parent->include_all_callsites = true;
+        insert_function_to_include(call->getFunction());
+
+        include_value_in_precompute(call_info);
+      }
+    }
+  }
+}
+
+// TODO: there is the case, where a CALLSITE to user defnied func is in std??
+void PrecalculationAnalysis::visit_arg(
+    const std::shared_ptr<TaintedValue> &arg_info) {
+  auto *arg = cast<Argument>(arg_info->v);
+  arg_info->set_visited();
+
+  if (is_func_from_std(arg->getParent())) {
+    return;
+    // user may mark functions to exclude
+  }
+  assert(not is_func_from_std(arg->getParent()));
+
+  auto *func = arg->getParent();
+  auto fun_to_precalc = function_analysis.at(func);
+
+  if (fun_to_precalc->args_to_use.find(arg->getArgNo()) ==
+      fun_to_precalc->args_to_use.end()) {
+    // else: nothing to do, this was already visited
+    fun_to_precalc->args_to_use.insert(arg->getArgNo());
+
+    if (fun_to_precalc->is_openmp_parallel) {
+
+      if (arg->getArgNo() == 0) {
+        //%.global_tid.
+        // will be set by omp runtime: nothing to do
+      }
+      if (arg->getArgNo() == 1) {
+        //%.bound_tid.
+        // will be set by omp runtime: nothing to do
+      }
+      if (arg->getArgNo() >= 2) {
+        // shared variables
+        auto in_serial_vec =
+            fun_to_precalc->parallel_region->get_value_in_serial(arg);
+        for (auto *in_serial : in_serial_vec) {
+          auto serial_info = insert_tainted_value(in_serial, arg_info);
+          // create another ptr alias
+          if (arg->getType()->isPointerTy()) {
+            serial_info->ptr_info->merge_with(arg_info->ptr_info);
+          }
+        }
+      }
+
+    } else if (fun_to_precalc->is_openmp_task) {
+      if (arg->getArgNo() == 0) {
+        // will be set by omp runtime: nothing to do
+      } else if (arg->getArgNo() == 1) {
+        assert(arg->getType()->isPointerTy());
+        auto in_serial_vec =
+            fun_to_precalc->parallel_region->get_value_in_serial(arg);
+        for (auto *in_serial : in_serial_vec) {
+          auto serial_info = insert_tainted_value(in_serial, arg_info);
+          // create another ptr alias
+          if (arg->getType()->isPointerTy()) {
+            serial_info->ptr_info->merge_with(arg_info->ptr_info);
+          }
+        }
+        // and directly alias all relevant shared values
+        for (auto *parallel_v : fun_to_precalc->parallel_region
+                                    ->get_shared_variables_in_parallel()) {
+          assert(parallel_v->getType()->isPointerTy());
+          if (is_tainted(parallel_v)) {
+            auto parallel_info = get_taint_info(parallel_v);
+            for (auto *serial_v :
+                 fun_to_precalc->parallel_region->get_value_in_serial(
+                     parallel_v)) {
+              auto serial_info = insert_tainted_value(serial_v, parallel_info);
+              assert(parallel_info->ptr_info);
+              // create another ptr alias
+              serial_info->ptr_info->merge_with(parallel_info->ptr_info);
+            }
+          }
+        }
+      } else {
+        assert(0 && "This form of openmp task is not implemented");
+      }
+    } else {
+
+      for (auto *call : fun_to_precalc->callsites) {
+
+        assert(not is_func_from_std(call->getFunction()));
+        auto *operand = call->getArgOperand(arg->getArgNo());
+        auto new_val = insert_tainted_value(operand, arg_info);
+
+        if (arg_info->is_pointer()) {
+          arg_info->ptr_info->merge_with(new_val->ptr_info);
+        }
+      }
+    }
+  }
+}
+
+bool PrecalculationAnalysis::is_retval_of_call_needed(
+    llvm::CallBase *call) const {
+  // check if this is tainted as the ret val is used
+
+  std::set<Value *> users_of_retval;
+  std::transform(call->user_begin(), call->user_end(),
+                 std::inserter(users_of_retval, users_of_retval.begin()),
+                 [](auto *u) { return dyn_cast<Value>(u); });
+
+  for (auto *v : users_of_retval) {
+    if (is_tainted(v)) {
+      auto taint_info = get_taint_info(v);
+      if (taint_info->getReason() !=
+          TaintReason::CONTROL_FLOW_ONLY_PRESENCE_NEEDED) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool PrecalculationAnalysis::is_ptr_usage_in_std_read(
+    llvm::CallBase *call, const std::shared_ptr<TaintedValue> &ptr_arg_info) {
+  assert(ptr_arg_info->v->getType()->isPointerTy());
+  assert(ptr_arg_info->ptr_info);
+  assert(is_call_to_std(call) || call->getCalledFunction()->isIntrinsic());
+
+  if (is_thread_fork_call(call)) {
+    // TODO determine if parallel region actually reads from shared var
+    return true;
+  }
+
+  if (call->getCalledFunction() &&
+      (call->getCalledFunction()->getName().starts_with("__tsan_read") ||
+       call->getCalledFunction()->getName().starts_with("__tsan_write"))) {
+    // tsan does not read the ptrs content
+    return false;
+  }
+
+  long arg_no = -1;
+
+  for (unsigned i = 0; i < call->arg_size(); ++i) {
+    if (call->getArgOperand(i) == ptr_arg_info->v) {
+      arg_no = i;
+      break;
+    }
+  }
+  assert(arg_no != -1);
+
+  for (auto *tgt : get_possible_call_targets(call)) {
+    assert(tgt);
+    if (tgt->isVarArg() || tgt == get_std_dummy_func(call->getModule())) {
+      return true; // assume it is
+    }
+
+    auto *arg = tgt->getArg(arg_no);
+    if (not arg->hasAttribute(llvm::Attribute::ReadNone)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool PrecalculationAnalysis::is_ptr_usage_in_std_write(
+    llvm::CallBase *call, const std::shared_ptr<TaintedValue> &ptr_arg_info) {
+  assert(ptr_arg_info->v->getType()->isPointerTy());
+  assert(ptr_arg_info->ptr_info);
+  assert(call->getCalledFunction()->isIntrinsic() || is_call_to_std(call));
+
+  if (is_thread_fork_call(call)) {
+    // TODO determine if parallel region actually writes to shared var
+    return true;
+  }
+
+  if (call->getCalledFunction() &&
+      (call->getCalledFunction()->getName().starts_with("__tsan_read") ||
+       call->getCalledFunction()->getName().starts_with("__tsan_write"))) {
+    // tsan does not write to the ptr
+    return false;
+  }
+
+  long arg_no = -1;
+
+  for (unsigned i = 0; i < call->arg_size(); ++i) {
+    if (call->getArgOperand(i) == ptr_arg_info->v) {
+      arg_no = i;
+      break;
+    }
+  }
+  assert(arg_no != -1);
+
+  for (auto *tgt : get_possible_call_targets(call)) {
+    if (tgt->isVarArg() || tgt == get_std_dummy_func(call->getModule())) {
+      return true; // assume it is
+    }
+
+    auto *arg = tgt->getArg(arg_no);
+    if (not arg->hasAttribute(llvm::Attribute::ReadOnly)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool PrecalculationAnalysis::is_ptr_usage_in_std_indirect(
+    llvm::CallBase *call, const std::shared_ptr<TaintedValue> &ptr_arg_info) {
+  assert(ptr_arg_info->v->getType()->isPointerTy());
+  assert(ptr_arg_info->ptr_info);
+  assert(call->getCalledFunction()->isIntrinsic() || is_call_to_std(call));
+  if (not call->getCalledFunction()) {
+    // virtual call, dont know
+    return true;
+  }
+
+  if (is_thread_function(call->getCalledFunction())) {
+    return true;
+    // return
+    // call->getCalledFunction()!=get_omp_functions(*call->getModule())->kmpc_omp_task_with_deps;
+    //  other ptrs are managed by omp runtime anyway
+  }
+  if (call->getCalledFunction()->isIntrinsic()) {
+    return false;
+  }
+
+  return true;
+}
+
+void PrecalculationAnalysis::include_call_to_std(
+    const std::shared_ptr<TaintedValue> &call_info) {
+  assert(isa<CallBase>(call_info->v));
+  auto *call = cast<CallBase>(call_info->v);
+
+  for (auto *func : get_possible_call_targets(call)) {
+    assert((func->isIntrinsic() &&
+            should_call_intrinsic(func->getIntrinsicID())) ||
+           is_func_from_std(func));
+
+    // calling into std is safe, as no side effects will occur (other
+    // than for the given parameters)
+    //  as std is designed to have as few side effects as possible
+    // TODO implement check for exception std::rand and std::cout/cin
+    // we just need to make sure all parameters are given
+
+    for (auto &arg : call->args()) {
+      auto arg_info = insert_tainted_value(arg, call_info);
+
+      // for ptr parameters: we need to respect if the func
+      // reads/writes them
+      if (arg->getType()->isPointerTy()) {
+        if (is_ptr_usage_in_std_read(call, arg_info)) {
+          arg_info->ptr_info->setIsReadFrom(call, this);
+          arg_info->ptr_info->setWholePtrIsRelevant(true);
+        }
+        if (is_ptr_usage_in_std_write(call, arg_info)) {
+          arg_info->ptr_info->setIsWrittenTo(call, this);
+          arg_info->ptr_info->setWholePtrIsRelevant(true);
+        }
+        // TODO more like a hotfix? probably overestimating the instructions to
+        // be included
+        // TODO check if there is another case than operator[] where this is
+        // important
+        if (call->getType()->isPointerTy()) {
+          // if std derives a ptr (e.g. operator[]) we treat it as aliasing to
+          // all input ptrs
+          call_info->ptr_info->merge_with(arg_info->ptr_info);
+        }
+      }
+      // need all args to be present for the call
+      include_value_in_precompute(arg_info);
+    }
+  }
+  include_value_in_precompute(call_info);
+}
+
+void PrecalculationAnalysis::visit_call(
+    const std::shared_ptr<TaintedValue> &call_info) {
+  auto *call = cast<CallBase>(call_info->v);
+  assert(!call_info->is_visited());
+  call_info->set_visited();
+
+  bool need_return_val = is_retval_of_call_needed(call);
+  if (need_return_val) {
+    visit_call_for_retval(call_info);
+  }
+
+  // we need to check the control flow if an exception is raised
+  if (auto *invoke = dyn_cast<InvokeInst>(call)) {
+    if (is_invoke_exception_case_needed(invoke) &&
+        can_except_in_precompute(invoke)) {
+      // if it will not cause an exception, there is no need to have an invoke
+      // in this case control flow will not break if we just skip this
+      // function, as we know that it does not make the flow go away due to an
+      // exception
+
+      visit_invoke_for_exception(call_info);
+    }
+  }
+
+  if (call->isIndirectCall() && call_info->isIncludeInPrecompute()) {
+    // we need to taint the function ptr
+    auto func_ptr_info =
+        insert_tainted_value(call->getCalledOperand(), call_info);
+    func_ptr_info->ptr_info->setIsUsedDirectly(true);
+    func_ptr_info->ptr_info->setIsCalled(true);
+    include_value_in_precompute(func_ptr_info);
+  }
+
+  // analyze if call to str read/writes ptr
+  if (is_call_to_std(call) && !is_thread_fork_call(call)) {
+    for (auto &arg : call->args()) {
+      if (auto *v = dyn_cast<Value>(&arg)) {
+        if (is_tainted(v) && v->getType()->isPointerTy()) {
+          if (is_ptr_usage_in_std_write(call, get_taint_info(v))) {
+            get_taint_info(v)->ptr_info->setIsWrittenTo(call, this);
+            get_function_analysis(call->getFunction())
+                ->add_ptr_write(get_taint_info(v)->ptr_info);
+            // std may write to derived ptrs
+            if (is_ptr_usage_in_std_indirect(call, get_taint_info(v))) {
+              get_taint_info(v)->ptr_info->setDerivedPtrIsRelevant(true);
+            }
+          }
+          if (is_ptr_usage_in_std_read(call, get_taint_info(v))) {
+            get_taint_info(v)->ptr_info->setIsReadFrom(call, this);
+            get_function_analysis(call->getFunction())
+                ->add_ptr_read(get_taint_info(v)->ptr_info);
+            // std may read derived ptrs
+            if (is_ptr_usage_in_std_indirect(call, get_taint_info(v))) {
+              get_taint_info(v)->ptr_info->setDerivedPtrIsRelevant(true);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (is_thread_fork_call(call)) {
+    visit_call_to_parallel(call_info);
+  }
+
+  //  check if we need to include the call
+  if (not call_info->isIncludeInPrecompute()) {
+    if (check_if_call_should_be_included(call_info)) {
+      include_value_in_precompute(call_info);
+    }
+  }
+}
+
+void PrecalculationAnalysis::visit_call_to_parallel(
+    const std::shared_ptr<TaintedValue> &call_info) {
+  auto *call = cast<CallInst>(call_info->v);
+  assert(is_thread_fork_call(call));
+
+  // need to include all calls to omp runtime that set the settings for this
+  // parallel region these calls can only be inside of the same BB before this
+  // call, as they need to be called right before this fork
+
+  for (auto it = call->getParent()->begin(); &*it != call; ++it) {
+    if (auto *other_call = dyn_cast<CallInst>(&*it)) {
+      if (!other_call->isIndirectCall() &&
+          other_call->getCalledFunction() ==
+              get_omp_functions(M)->kmpc_push_num_threads) {
+        // TODO are there other such calls in omp runtime?
+        auto other_call_info = insert_tainted_value(other_call, call_info);
+        for (auto &arg : other_call->args()) {
+          // always need all args for these this calls
+          insert_tainted_value(arg, other_call_info);
+        }
+      }
+    }
+  }
+}
+
+bool PrecalculationAnalysis::check_if_call_should_be_included(
+    const std::shared_ptr<TaintedValue> &call_info) {
+  auto *call = cast<CallBase>(call_info->v);
+
+  for (auto *func : get_possible_call_targets(call)) {
+    auto func_analysis = get_function_analysis(func);
+    if (func_analysis->include_all_callsites) {
+
+      // set it on parent
+      get_function_analysis(call->getFunction())->include_all_callsites = true;
+      return true;
+    }
+    // if it stores an important value
+    for (const auto &ptr : func_analysis->getPtrWritten_recursive()) {
+      if (is_store_important(call, ptr)) {
+        return true;
+      }
+    }
+
+    if (is_func_from_std(func)) {
+      for (auto &arg : call->args()) {
+        if (auto *v = dyn_cast<Value>(&arg)) {
+          if (is_tainted(v) && v->getType()->isPointerTy()) {
+            if (is_ptr_usage_in_std_write(call, get_taint_info(v)) &&
+                is_store_important(call, get_taint_info(v)->ptr_info)) {
+              include_call_to_std(call_info);
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+static void throwInvokeWarning(const std::string msg, const InvokeInst *ivoke,
+                               const std::shared_ptr<TaintedValue> &call_info,
+                               const Function *func) {
+  errs() << "WARNING: " << msg << "\n";
+  errs() << "Reason: " << call_info->getReason() << "\n";
+  errs() << "In: " << ivoke->getFunction()->getName() << "\n";
+  // ivoke->dump();
+  // func->dump();
+  errs() << "\n";
+}
+
+void PrecalculationAnalysis::visit_invoke_for_exception(
+    const std::shared_ptr<TaintedValue> &call_info) {
+  auto *ivoke = cast<InvokeInst>(call_info->v);
+  assert(is_invoke_exception_case_needed(ivoke));
+  for (auto *func : get_possible_call_targets(ivoke)) {
+    if (not get_function_analysis(func)->can_except_in_precompute) {
+      // no exception possible: nothing to do
+      continue;
+    }
+    if (func->isIntrinsic() &&
+        should_ignore_intrinsic(func->getIntrinsicID())) {
+      // ignore intrinsics
+      continue;
+    }
+    if (is_func_from_std(func)) {
+      include_call_to_std(call_info);
+      continue;
+    }
+    if (func->isDeclaration()) {
+      throwInvokeWarning(
+          "cannot analyze if external function may throw an exception", ivoke,
+          call_info, func);
+      continue;
+    }
+    for (auto &bb : *func) {
+      if (auto *res = dyn_cast<ResumeInst>(bb.getTerminator())) {
+        if (call_info->isIncludeInPrecompute()) {
+          auto new_val = insert_tainted_value(res, CONTROL_FLOW);
+          include_value_in_precompute(new_val);
+        } else {
+          throwInvokeWarning("call not known to precompute analysis", ivoke,
+                             call_info, func);
+          continue;
+        }
+      }
+      for (auto &inst : bb)
+        if (auto *cc = dyn_cast<CallBase>(&inst)) {
+          if (can_except_in_precompute(cc)) {
+            // assert(call_info->isIncludeInPrecompute());
+            auto new_val =
+                insert_tainted_value(cc, CONTROL_FLOW_EXCEPTION_NEEDED);
+            include_value_in_precompute(new_val);
+          }
+        }
+    }
+  }
+}
+
+void PrecalculationAnalysis::visit_call_for_retval(
+    const std::shared_ptr<TaintedValue> &call_info) {
+  auto *call = cast<CallBase>(call_info->v);
+  assert(is_retval_of_call_needed(call));
+
+  auto *func = call->getCalledFunction();
+  if (!func and !call->isIndirectCall()) {
+    func = cast<Function>(call->getCalledOperand());
+  }
+
+  call_info->addReason(CONTROL_FLOW_RETURN_VALUE_NEEDED);
+  if (is_allocation(call)) {
+    // nothing to do, just keep this call around, it will later be replaced
+    for (auto &arg : call->args()) {
+      auto arg_info = insert_tainted_value(arg, call_info);
+    }
+  } else if (not call->isIndirectCall() && func->isIntrinsic() &&
+             should_call_intrinsic(func->getIntrinsicID())) {
+    if (not should_ignore_intrinsic(func->getIntrinsicID())) {
+      // consider it same as call to std
+      include_call_to_std(call_info);
+    }
+  } else if (is_call_to_std(call)) {
+    include_call_to_std(call_info);
+  } else {
+    for (auto *func : get_possible_call_targets(call)) {
+      if (func->isDeclaration() && func != mpi_func->mpi_wtime) {
+        errs() << "\n";
+        call->dump();
+        func->dump();
+        errs() << "In: " << call->getFunction()->getName() << " intrinsic? "
+               << func->isIntrinsic() << " MPI? " << is_mpi_call(call)
+               << " users:\n";
+        for (auto *u : call->users()) {
+          u->dump();
+        }
+      }
+      for (auto &bb : *func) {
+        if (auto *ret = dyn_cast<ReturnInst>(bb.getTerminator())) {
+          insert_tainted_value(ret, call_info);
+        }
+      }
+    }
+  }
+}
+
+void PrecalculationAnalysis::visit_call_from_ptr(
+    llvm::CallBase *call, const std::shared_ptr<TaintedValue> &ptr) {
+
+  std::set<unsigned int> ptr_given_as_arg;
+  for (unsigned int i = 0; i < call->arg_size(); ++i) {
+    if (call->getArgOperand(i) == ptr->v) {
+      ptr_given_as_arg.insert(i);
+    }
+  }
+
+  if (call->getCalledOperand() == ptr->v) {
+    // visit from the function ptr: nothing to check
+    assert(ptr_given_as_arg.empty() && "Function ptr getting itself as an "
+                                       "argument is currently not supported");
+    return;
+  }
+
+  // if (not is_store_important(call,ptr->ptr_info)){
+  //  no need to analyze it, if nothing is done with the ptr afterward anyway
+  //  but this func does currently not take into account the GEP members of
+  //  ptr
+  //    return;
+  //  }
+
+  auto *func = call->getCalledFunction();
+  if (func == nullptr && not call->isIndirectCall()) {
+    func = cast<Function>(call->getCalledOperand());
+  }
+  assert(not ptr_given_as_arg.empty());
+  assert(ptr->ptr_info);
+
+  // errs() << "Visit\n";
+  // call->dump();
+
+  if (not call->isIndirectCall()) {
+    if (!ignore_MPI_communication && !add_all_MPI_communication) {
+      // default case: trigger assertion as originally
+
+      // TODO add other MPI funcs such as bcast basically everything that has a
+      // buffer
+      if (func == mpi_func->mpi_send || func == mpi_func->mpi_Isend ||
+          func == mpi_func->mpi_recv || func == mpi_func->mpi_Irecv) {
+        assert(ptr_given_as_arg.size() == 1);
+        if (*ptr_given_as_arg.begin() == 0 &&
+            is_store_important(call, ptr->ptr_info)) {
+          // if communication result is not used, it is not important
+          ptr->v->dump();
+          call->dump();
+          assert(false &&
+                 "Tracking Communication to get the envelope is currently "
+                 "not supported");
+        } else {
+          // we know that the other arguments are not important e.g. not written
+          // to like if the communicator is used
+          return;
+        }
+      }
+    } else if (ignore_MPI_communication) {
+      // This is the first option to deal with MPI Communication.
+      // We want to ignore the MPI communication operation and flag the
+      // problematic call as invalid.
+      if (func &&
+          (func->getName() == "MPI_Recv" || func->getName() == "MPI_Irecv" ||
+           func->getName() == "MPI_Bcast")) {
+        assert(ptr_given_as_arg.size() == 1);
+        if (*ptr_given_as_arg.begin() == 0) {
+          if (ptr->ptr_info->isReadFrom() &&
+              is_store_important(call, ptr->ptr_info)) {
+            llvm::errs() << "\t[AllocTrackerLTOPass::Precompute] ==== TRACKING "
+                            "COMMUNICATION ASSERTION WOULD TRIGGER ====\n";
+
+            ptr->v->dump();
+            call->dump();
+
+            at_utils_collect_problematic_calls(call, ptr, problematic_calls);
+            return;
+          }
+        } else {
+          // we know that the other arguments are not important e.g. not written
+          // to like if the communicator is used
+          return;
+        }
+      }
+    } else if (add_all_MPI_communication) {
+      // This is the second option to deal with MPI Communication.
+      // We want to add all the desired MPI communication operations to the
+      // slice.
+      if (func &&
+          (func->getName() == "MPI_Send" || func->getName() == "MPI_Recv")) {
+        add_all_MPI_Send_and_Recv_to_slice(call, ptr);
+        return;
+      }
+      if (func && func->getName() == "MPI_Bcast") {
+        add_all_MPI_Bcasts_to_slice(call, ptr);
+        return;
+      }
+    }
+    if (not call->isIndirectCall() && is_free(call)) {
+      // the precompute library will take care of free, so no need to taint it
+      return;
+    }
+
+    if (func == mpi_func->mpi_comm_size || func == mpi_func->mpi_comm_rank) {
+      // we know it is safe to execute these "readonly" funcs
+      if (*ptr_given_as_arg.begin() == 0 && ptr_given_as_arg.size() == 1) {
+        // nothing to: do only reads the communicator
+        // ptr is the communicator
+      } else {
+        // the needed value is the result of reading the comm
+        assert(*ptr_given_as_arg.begin() == 1 && ptr_given_as_arg.size() == 1);
+        // treat it like a store to ptr:
+        // value is only necessary it ptr is read
+        ptr->ptr_info->setIsWrittenTo(call, this);
+
+        if (is_store_important(call, ptr->ptr_info)) {
+          auto call_info = insert_tainted_value(call, ptr, false);
+          auto comm_info =
+              insert_tainted_value(call->getArgOperand(0),
+                                   ptr); // we also need to keep the comm
+          include_value_in_precompute(ptr);
+          include_value_in_precompute(call_info);
+          include_value_in_precompute(comm_info);
+        }
+      }
+      return;
+    }
+    if (func == mpi_func->mpi_init || func == mpi_func->mpi_init_thread) {
+      // skip: MPI_Init will only transfer the cmd line args to all processes,
+      // not modify them otherwise
+      return;
+    }
+    if (func == mpi_func->mpi_send_init || func == mpi_func->mpi_recv_init) {
+      // skip: these functions will be managed separately anyway
+      // it may be the case, that e.g. the buffer or request aliases with
+      // something important
+      return;
+    }
+    if (func->getName() == "MPI_Errhandler_set" ||
+        func->getName() == "MPI_Errhandler_create") {
+      // we treat all mpi errors as fatal, no need to set errhandler
+      return;
+    }
+
+    if (is_mpi_function(func)) {
+      // TODO is there anything else in MPI we need to handle special??
+      call->dump();
+      errs() << "In: " << call->getFunction()->getName() << "\n";
+      assert(not is_included_in_precompute(call));
+      return;
+    }
+
+    if (is_allocation(func)) {
+      // skip: alloc needs to be handled differently
+      // but needs to be tainted so it will be replaced later
+      auto call_info = insert_tainted_value(call, ptr, false);
+
+      if (func->getName() == "realloc") {
+        assert(func->arg_size() == 2 && "realloc should have two arguments!");
+        ptr->ptr_info->merge_with(call_info->ptr_info);
+      } else {
+        assert(false && "a ptr given into an allocation call?");
+      }
+      return;
+    }
+
+    if (func->isIntrinsic() &&
+        should_ignore_intrinsic(func->getIntrinsicID())) {
+      // skip
+      return;
+    }
+
+    if ((func->isIntrinsic() &&
+         should_call_intrinsic(func->getIntrinsicID())) ||
+        is_func_from_std(func)) {
+      if (is_ptr_usage_in_std_write(call, ptr)) {
+        ptr->ptr_info->setIsWrittenTo(call, this);
+        ptr->ptr_info->setDerivedPtrIsRelevant(
+            true); // we dont know what part of the ptr is written to by std
+                   // func
+        if (is_store_important(call, ptr->ptr_info)) {
+          auto call_info = insert_tainted_value(call, ptr, false);
+          include_call_to_std(call_info);
+          assert(ptr->ptr_info->isWrittenTo());
+        }
+      }
+      if (is_ptr_usage_in_std_read(call, ptr)) {
+        ptr->ptr_info->setIsReadFrom(call, this);
+        ptr->ptr_info->setDerivedPtrIsRelevant(
+            true); // we dont know what part of the ptr is read by std
+      }
+      return;
+    }
+  }
+
+  if (is_thread_fork_call(call)) {
+    // find parallel region
+    auto parallel_func = cast<Function>(call->getArgOperand(2));
+    auto parallel_region_info =
+        function_analysis[parallel_func]->parallel_region;
+
+    for (auto arg_num : ptr_given_as_arg) {
+      if (arg_num == 0) {
+        // ptr to global managed by omp runtime: nothing to do
+        continue;
+      }
+      assert(arg_num != 2); // function ptr to parallel region
+      auto parallel_info = insert_tainted_value(
+          parallel_region_info->get_value_in_parallel(ptr->v));
+      parallel_info->ptr_info->merge_with(ptr->ptr_info);
+    }
+
+    return;
+  }
+
+  for (auto *func : get_possible_call_targets(call)) {
+    if (func == get_std_dummy_func(&M)) {
+      // todo duplicate code with above case for one func
+      if (is_ptr_usage_in_std_write(call, ptr)) {
+        ptr->ptr_info->setIsWrittenTo(call, this);
+        if (is_store_important(call, ptr->ptr_info)) {
+          auto call_info = insert_tainted_value(call, ptr, false);
+          include_call_to_std(call_info);
+          assert(ptr->ptr_info->isWrittenTo());
+        }
+      }
+    } else {
+      for (auto arg_num : ptr_given_as_arg) {
+        if (arg_num < func->getFunctionType()->getNumParams()) {
+          auto *arg = func->getArg(arg_num);
+          if (!arg->hasAttribute(Attribute::Captures) &&
+              arg->hasAttribute(Attribute::ReadOnly)) {
+            continue; // nothing to do: reading the val is allowed
+            // TODO has foo( int ** array){ array[0][0]=0;} also readonly? as
+            // first ptr lvl is only read
+          }
+        }
+        if (func->isDeclaration()) {
+          if (std::find(to_precompute_cfg.begin(), to_precompute_cfg.end(),
+                        call) == to_precompute_cfg.end()) {
+            // else: user told us to keep that call as they want to precompute
+            // it this means user need to handle this call
+            errs() << "WARNING: Can not analyze usage of external function:\n";
+            ptr->v->dump();
+            call->dump();
+            errs() << "In: " << call->getFunction()->getName() << "\n";
+            errs() << "\n";
+            continue;
+          }
+        } else {
+          if (arg_num < func->getFunctionType()->getNumParams()) {
+            auto *arg = func->getArg(arg_num);
+            auto call_info = insert_tainted_value(call, ptr, false);
+            auto new_val = insert_tainted_value(arg, ptr, false);
+            ptr->ptr_info->merge_with(new_val->ptr_info);
+            assert(new_val->ptr_info == ptr->ptr_info);
+          } else {
+            // arg is one of the var args
+            handle_vararg_ptr_alias(ptr, func);
+          }
+        }
+      }
+    }
+  }
+}
+
+void PrecalculationAnalysis::handle_vararg_ptr_alias(
+    const std::shared_ptr<TaintedValue> &ptr, llvm::Function *func) {
+  // ptr could alias with anything in the vararg list
+  assert(func->isVarArg());
+  assert(not func->isDeclaration());
+
+  // find va arg list
+  auto *va_start = M.getFunction("llvm.va_start");
+  if (not va_start) {
+    // no usage of the varargs: nothing to do
+    return;
+  }
+
+  std::vector<Value *>
+      varargs_list; // one could iterate over vararg multiple times
+  for (auto u : va_start->users()) {
+    if (auto *cb = dyn_cast<CallBase>(u)) {
+      if (cb->getFunction() == func) {
+        varargs_list.push_back(cb->getArgOperand(0));
+      }
+    }
+  }
+  for (auto vararg : varargs_list) {
+    auto va_info = insert_tainted_value(vararg, ptr);
+    va_info->ptr_info->merge_with(ptr->ptr_info);
+    // such that it alias with any of the varargs
+    va_info->ptr_info->setWholePtrIsRelevant(true);
+    va_info->ptr_info->setIsUsedDirectly(true, ptr->ptr_info);
+  }
+}
+
+void PrecalculationAnalysis::include_value_in_precompute(
+    const std::shared_ptr<TaintedValue> &taint_info) {
+  if (not taint_info->isIncludeInPrecompute()) {
+    taint_info->setIncludeInPrecompute();
+
+    if (auto *cc = dyn_cast<StoreInst>(taint_info->v)) {
+      assert(is_store_important(
+          cc, get_taint_info(cc->getPointerOperand())->ptr_info));
+      if (cc->getPointerOperand()->getName() == "NBodies") {
+        // TODO
+        // DEBUG ONLY
+        /*
+        errs() << "Where is inclusion happening?\n";
+        errs() << to_string(boost::stacktrace::stacktrace());
+        assert(is_tainted(cc->getPointerOperand()));
+
+        assert(is_store_important(cc,
+        get_taint_info(cc->getPointerOperand())->ptr_info));
+
+        assert(false);
+         */
+      }
+    }
+
+    if (auto *f = dyn_cast<Function>(taint_info->v)) {
+      function_analysis[f]->include_in_precompute = true;
+    }
+
+    insert_necessary_control_flow(taint_info->v);
+    for (const auto &p : taint_info->needs) {
+      include_value_in_precompute(p);
+    }
+  } // else: already included, nothing to do
+}
+
+std::shared_ptr<TaintedValue>
+PrecalculationAnalysis::insert_tainted_value(llvm::Value *v,
+                                             TaintReason reason) {
+  std::shared_ptr<TaintedValue> inserted_elem = nullptr;
+
+  if (not is_tainted(v)) {
+    // only if not already in set
+    inserted_elem = std::make_shared<TaintedValue>(v);
+    tainted_values.insert(inserted_elem);
+    if (v->getType()->isPointerTy()) {
+      // create empty info
+      inserted_elem->ptr_info =
+          std::make_shared<PtrUsageInfo>(inserted_elem, &M);
+    }
+  } else {
+    // the present value form the set
+    inserted_elem = *std::find_if(tainted_values.begin(), tainted_values.end(),
+                                  [&v](const auto &vv) { return vv->v == v; });
+  }
+  inserted_elem->addReason(reason);
+
+  assert(inserted_elem != nullptr);
+  return inserted_elem;
+}
+
+std::shared_ptr<TaintedValue> PrecalculationAnalysis::insert_tainted_value(
+    llvm::Value *v, const std::shared_ptr<TaintedValue> &from,
+    bool needed_from) {
+  std::shared_ptr<TaintedValue> inserted_elem = nullptr;
+
+  if (not is_tainted(v)) {
+    // only if not already in set
+
+    if (auto *inst = dyn_cast<Instruction>(v)) {
+      // don't analyze std::s internals
+      if (is_func_from_std(inst->getFunction())) {
+        // inst->getFunction()->dump();
+        inst->dump();
+
+        errs() << "In: " << inst->getFunction()->getName() << "\n";
+        errs() << "from:";
+        from->v->dump();
+        if (auto *ii = dyn_cast<Instruction>(from->v)) {
+          errs() << "In: " << ii->getFunction()->getName() << "\n";
+        }
+      }
+      assert(not is_func_from_std(inst->getFunction()));
+    }
+    /*
+    if (auto *arg = dyn_cast<Argument>(v)) {
+      if (is_func_from_std(arg->getParent())) {
+        arg->dump();
+
+        errs() << "In: " << arg->getParent()->getName() << "\n";
+        errs() << "from:";
+        from->v->dump();
+      }
+      assert(not is_func_from_std(arg->getParent()));
+    }*/
+    // TODO user may mark funcs that are presendt as "same as std"
+
+    inserted_elem = std::make_shared<TaintedValue>(v);
+    auto pair = tainted_values.insert(inserted_elem);
+    assert(pair.second); // assert it is newly inserted
+
+    if (v->getType()->isPointerTy()) {
+      // create empty info
+      inserted_elem->ptr_info =
+          std::make_shared<PtrUsageInfo>(inserted_elem, &M);
+    }
+    if (from != nullptr) {
+      // we don't care why the Control flow was tagged for the parent
+      inserted_elem->addReason(from->getReason() &
+                               TaintReason::REASONS_TO_PROPERGATE);
+      if (needed_from) {
+        inserted_elem->needed_for.insert(from);
+        from->needs.insert(inserted_elem);
+        if (from->isIncludeInPrecompute()) {
+          include_value_in_precompute(inserted_elem);
+        }
+      } else {
+        from->needed_for.insert(inserted_elem);
+        inserted_elem->needs.insert(from);
+      }
+    }
+  } else {
+    // already present
+    // the present value form the set
+    inserted_elem = *std::find_if(tainted_values.begin(), tainted_values.end(),
+                                  [&v](const auto &vv) { return vv->v == v; });
+    if (from != nullptr && needed_from) {
+      auto pair = inserted_elem->needed_for.insert(from);
+      from->needs.insert(inserted_elem);
+      if (pair.second) // was inserted
+      {
+        // may need to re-visit if we discover that we need it later
+        inserted_elem->set_need_visit();
+      }
+      // we don't care why the Control flow was tagged for te parent
+      inserted_elem->addReason(from->getReason() &
+                               TaintReason::REASONS_TO_PROPERGATE);
+      if (from->isIncludeInPrecompute()) {
+        include_value_in_precompute(inserted_elem);
+      }
+    }
+    if (from != nullptr && not needed_from) {
+      from->needed_for.insert(inserted_elem);
+      auto pair = inserted_elem->needs.insert(from);
+      // we don't care why the Control flow was tagged for te parent
+      inserted_elem->addReason(from->getReason() &
+                               TaintReason::REASONS_TO_PROPERGATE);
+
+      if (pair.second) // was inserted
+      {
+        // may need to re-visit if we discover that we need it later
+        inserted_elem->set_need_visit();
+      }
+    }
+  }
+
+  /*
+  // this code is asserting that we will visit the call if the retval is
+  // needed
+#ifndef NDEBUG
+  if (auto *cc = dyn_cast<CallBase>(v)) {
+    if (is_retval_of_call_needed(cc) && not cc->isIndirectCall()) {
+      auto *func = cc->getCalledFunction();
+      if (!func and !cc->isIndirectCall()) {
+        func = cast<Function>(cc->getCalledOperand());
+      }
+      // TODO proper management why this is not working as is
+      // TODO this is only a hotfix
+      if (not(get_function_analysis(func)->include_in_precompute ||
+              // part of the special functions which content is not analyzed
+              is_func_from_std(func) || func->isIntrinsic() ||
+              is_mpi_function(func))) {
+        inserted_elem->visited = false;
+      }
+
+      // cc->dump();
+      if (not(get_function_analysis(func)->include_in_precompute ||
+              // part of the special functions which content is not analyzed
+              is_func_from_std(func) || func->isIntrinsic() ||
+              is_mpi_function(func) ||
+              // or we need to visit it in order to analyze the function
+              !inserted_elem->visited)) {
+        // at least one user must be open to be visited in order to discover
+        // that this call is important
+        bool all_retval_users_visited = true;
+        for (auto *u : cc->users()) {
+          if (auto *ii = dyn_cast<Instruction>(u)) {
+            if (is_tainted(ii)) {
+              if (not get_taint_info(ii)->visited ||
+                  get_taint_info(ii)->getReason() ==
+                      TaintReason::CONTROL_FLOW_ONLY_PRESENCE_NEEDED) {
+                // if the other is only tainted for its presence it does not
+                // use the retval
+                all_retval_users_visited = false;
+              }
+            }
+          }
+        }
+        assert(not all_retval_users_visited);
+      }
+    }
+  }
+#endif
+*/
+  assert(inserted_elem != nullptr);
+  return inserted_elem;
+}
+
+void PrecalculationAnalysis::insert_necessary_control_flow(Value *v) {
+  if (auto *inst = dyn_cast<Instruction>(v)) {
+    auto *bb = inst->getParent();
+    if (not bb->isEntryBlock()) {
+      // we need to insert the instruction that lets the control flow go
+      // here
+      for (auto *pred_bb : predecessors(bb)) {
+        auto *term = pred_bb->getTerminator();
+
+        if (auto *invoke = dyn_cast<InvokeInst>(term)) {
+          if (invoke->getUnwindDest() == bb &&
+              can_except_in_precompute(invoke)) {
+            auto new_val =
+                insert_tainted_value(term, TaintReason::CONTROL_FLOW);
+            new_val->addReason(TaintReason::CONTROL_FLOW_EXCEPTION_NEEDED);
+            // it may need to be re-visited if we find out that we do need
+            // the exception path
+            if (!new_val->isIncludeInPrecompute()) {
+              new_val->set_need_visit();
+              include_value_in_precompute(new_val);
+            }
+          } else {
+            if (invoke->getUnwindDest() == bb) {
+              // this exception block cannot be visited in precompute anyway
+              continue;
+            } else {
+              assert(invoke->getNormalDest() == bb);
+              auto new_val =
+                  insert_tainted_value(term, TaintReason::CONTROL_FLOW);
+              if (not can_except_in_precompute(invoke)) {
+                new_val->addReason(
+                    TaintReason::CONTROL_FLOW_ONLY_PRESENCE_NEEDED);
+                // only the normal dest is needed
+                // NOT include_value_in_precompute(new_val);
+                // we dont need the invoke to check if exception is thrown as
+                // we know no meaningful exception can be thrown
+              } else {
+                // can except
+                // include_value_in_precompute(new_val);
+                new_val->addReason(TaintReason::CONTROL_FLOW_EXCEPTION_NEEDED);
+                // if the exception Part is not tainted: remove and ignore any
+                // exception
+              }
+            }
+          }
+        } else {
+          auto new_val = insert_tainted_value(term, TaintReason::CONTROL_FLOW);
+          include_value_in_precompute(new_val);
+        }
+      }
+    } else {
+      // BB is function entry block
+      insert_function_to_include(bb->getParent());
+    }
+  }
+}
+
+llvm::DenseSet<llvm::Function *>
+PrecalculationAnalysis::get_possible_call_targets(llvm::CallBase *call) const {
+  llvm::DenseSet<llvm::Function *> possible_targets;
+  if (call->isIndirectCall()) {
+    possible_targets = DevirtAnalysis::get_possible_call_targets(call);
+  } else {
+
+    if (call->getCalledFunction() == nullptr) {
+      // happens when function is casted
+      if (auto *func = dyn_cast<Function>(call->getCalledOperand())) {
+        possible_targets.insert(func);
+      } else {
+        call->dump();
+        assert(0 && "Could not determine targets of call");
+      }
+    } else {
+      possible_targets.insert(call->getCalledFunction());
+    }
+    return possible_targets;
+  }
+
+  if (is_func_from_std(call->getFunction())) {
+    // we dont need to analyze the sts::'s internals
+    // if std:: calls a user function indirectly it will get a ptr to it
+    // anyway
+    return possible_targets;
+  }
+
+  // functionType operator == does not work with varargs for our context, so we
+  // have this additional check
+  auto do_types_match = [](FunctionType *FT1, FunctionType *FT2) {
+    if (FT1->getReturnType() != FT2->getReturnType())
+      return false;
+    if (FT1->getNumParams() != FT2->getNumParams())
+      return false;
+
+    for (unsigned int i = 0; i < FT1->getNumParams(); ++i) {
+      if (FT1->getParamType(i) != FT2->getParamType(i))
+        return false;
+    }
+
+    return true;
+  };
+
+  if (possible_targets.empty()) {
+    // can call any function with same type that we get a ptr of somewhere
+    for (const auto &pair : function_analysis) {
+      auto func = pair.second;
+      if (func->is_func_ptr_captured) {
+        if (func->func->getFunctionType() == call->getFunctionType() ||
+            do_types_match(func->func->getFunctionType(),
+                           call->getFunctionType()))
+          possible_targets.insert(func->func);
+      }
+    }
+    // TODO can we check that we will not be able to get a ptr to a function
+    // outside of the module?
+  }
+
+  /*
+   If a function pointer is never initialized, e.g. a struct member but never
+   set to point to a concrete function, no potential call targets will be found
+   here and the following assert will be triggered. This is a limitation of the
+   approach. In theory, one could search for such cases beforehand and set the
+   function pointer to NULL then the analysis should be able to handle these
+   cases.
+*/
+
+  if (possible_targets.empty()) {
+    call->dump();
+    errs() << "In: " << call->getFunction()->getName() << "\n";
+    errs() << "could not find tgts of call\n";
+  }
+
+  /*
+  for (auto *tgt : possible_targets) {
+    if ( call->isIndirectCall() && is_func_from_std(tgt)) {
+      call->dump();
+      errs() << "In: " << call->getFunction()->getName() << "\n";
+      errs() << "Indirect calls to std are not supported\n";
+      assert(false);
+    }
+  }*/
+  return possible_targets;
+}
+
+void PrecalculationAnalysis::print_analysis_result_remarks() {
+  for (const auto &v : tainted_values) {
+    if (auto *inst = dyn_cast<Instruction>(v->v)) {
+      errs() << "need for reason: " << v->getReason() << "\n";
+      errs() << inst->getFunction()->getName() << "\n";
+      inst->dump();
+    }
+  }
+  debug_printings();
+}
+
+// TODO: move to debug file?
+void PrecalculationAnalysis::debug_printings() {
+  errs() << "ADDITIONAL DEBUG PRINTING\n";
+
+  // set to dump each info only once (and not for each alias)
+  std::set<std::shared_ptr<PtrUsageInfo>> dumped;
+
+  for (const auto &v : tainted_values) {
+    if (v->ptr_info) {
+      auto pair = dumped.insert(v->ptr_info);
+      if (pair.second) {
+        errs() << "\n";
+        v->ptr_info->dump();
+      }
+    }
+  }
+  errs() << "END ADDITIONAL DEBUG PRINTING\n";
+  // assert(false);
+}
+
+bool PrecalculationAnalysis::can_except_in_precompute(
+    llvm::CallBase *call) const {
+  if (is_interaction_with_cout(call)) {
+    return false;
+  }
+
+  for (auto *f : get_possible_call_targets(call)) {
+    if (function_analysis.at(f)->can_except_in_precompute) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool PrecalculationAnalysis::is_store_important(
+    llvm::Instruction *inst, const std::shared_ptr<PtrUsageInfo> &ptr_info) {
+  assert(isa<StoreInst>(inst) || isa<AtomicRMWInst>(inst) ||
+         isa<CallBase>(inst));
+
+  /*
+  bool interesting = true;
+  if (auto *store = dyn_cast<StoreInst>(inst)) {
+    //interesting = store->getValueOperand()->getName() == "tn.addr";
+    if (interesting) {
+      errs() << "INTERESTING ACCESS:\n";
+      store->dump();
+      errs() << "IN: " << store->getFunction()->getName() << "\n";
+      ptr_info->dump();
+    }
+  }*/
+
+  if (not ptr_info->isReadFrom()) {
+    // errs() << "NOT READ\n";
+    return false;
+  }
+  if (store_happens_after_all_loads(inst, ptr_info)) {
+    // errs() << "AFTER LOAD\n";
+    return false;
+  }
+  // errs() << "IMPORTANT\n";
+  return true;
+}
+
+// TODO better function name
+//  if an instruction in foo is included in the set: the resulting set will
+//  also include all calls to foo
+void PrecalculationAnalysis::get_all_transitive_insts(
+    std::set<llvm::Instruction *> &instrs) {
+  std::set<llvm::Function *> visited;
+
+  // so that iterator over original set does not get broken
+  std::set<Instruction *> to_insert;
+
+  bool grown = true;
+
+  while (grown) {
+    grown = false;
+    for (auto *inst : instrs) {
+      auto pair = visited.insert(inst->getFunction());
+      if (pair.second) {
+        // newly inserted
+        auto func = get_function_analysis(inst->getFunction());
+        for (auto *cc : func->callsites) {
+          to_insert.insert(cc);
+        }
+      }
+    }
+    for (auto *ii : to_insert) {
+      auto pair = instrs.insert(ii);
+      grown = grown | pair.second;
+    }
+  }
+}
+
+bool PrecalculationAnalysis::store_happens_after_all_loads(
+    llvm::Instruction *inst, const std::shared_ptr<PtrUsageInfo> &ptr_info) {
+  auto loads = ptr_info->getLoads();
+  get_all_transitive_insts(loads);
+
+  std::set<Instruction *> stores;
+  stores.insert(inst);
+  get_all_transitive_insts(stores);
+
+  for (auto *l : loads) {
+    for (auto *s : stores) {
+      // TODO include all destructors for debugging only
+      if (l->getFunction() == s->getFunction() && l != s) {
+        // if load and store are the same (aka call to func that loads and
+        // stores): no need to do something, either the ptr usage is not
+        // needed, or it will be loaded afterward (then it is needed)
+        auto *domtree = analysis_results->getDomTree(*l->getFunction());
+        // TODO efficiency: provide LoopInfo?
+        if (llvm::isPotentiallyReachable(s, l, nullptr, domtree, nullptr)) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+void PrecalculationAnalysis::add_all_MPI_Send_and_Recv_to_slice(
+    llvm::CallBase *call, const std::shared_ptr<TaintedValue> &ptr) {
+  ptr->ptr_info->setIsWrittenTo(call, this);
+  ptr->ptr_info->setIsReadFrom(call, this);
+
+  if (is_store_important(call, ptr->ptr_info)) {
+    // llvm::errs() << "[AllocTrackerLTOPass::visit_call_from_ptr] Handling all
+    // MPI_Send or MPI_Recv\n";
+
+    auto call_info = insert_tainted_value(call, ptr, false);
+    include_value_in_precompute(call_info);
+
+    // For all arguments: mark as tainted and add to precompute
+    for (unsigned int i = 0; i < call->arg_size(); ++i) {
+      auto info = insert_tainted_value(call->getArgOperand(i), call_info);
+      include_value_in_precompute(info);
+    }
+
+    // Merge all buffers of all MPI_Bcasts in the application
+    for (auto *to_precompute_I : to_precompute_cfg) {
+      if (auto *call_B = llvm::dyn_cast<llvm::CallBase>(to_precompute_I)) {
+        auto *called_F = call_B->getCalledFunction();
+        if (called_F && (called_F->getName() == "MPI_Send" ||
+                         called_F->getName() == "MPI_Recv")) {
+          auto *buffer_V = call_B->getArgOperand(0);
+
+          // Merge communication buffers
+          auto buffer_tv = insert_tainted_value(buffer_V, ptr);
+          ptr->ptr_info->merge_with(buffer_tv->ptr_info);
+        }
+      }
+    }
+  }
+}
+
+void PrecalculationAnalysis::add_all_MPI_Bcasts_to_slice(
+    llvm::CallBase *call, const std::shared_ptr<TaintedValue> &ptr) {
+  ptr->ptr_info->setIsWrittenTo(call, this);
+  ptr->ptr_info->setIsReadFrom(call, this);
+
+  if (is_store_important(call, ptr->ptr_info)) {
+    // llvm::errs() << "[AllocTrackerLTOPass::visit_call_from_ptr] Handling all
+    // MPI_Bcast\n";
+
+    auto call_info = insert_tainted_value(call, ptr, false);
+    include_value_in_precompute(call_info);
+
+    // For all arguments: mark as tainted and add to precompute
+    for (unsigned int i = 0; i < call->arg_size(); ++i) {
+      auto info = insert_tainted_value(call->getArgOperand(i), call_info);
+      include_value_in_precompute(info);
+    }
+
+    // Merge all buffers of all MPI_Bcasts in the application
+    for (auto *to_precompute_I : to_precompute_cfg) {
+      if (auto *call_B = llvm::dyn_cast<llvm::CallBase>(to_precompute_I)) {
+        auto *called_F = call_B->getCalledFunction();
+        if (called_F && called_F->getName() == "MPI_Bcast") {
+          auto *buffer_V = call_B->getArgOperand(0); // before: call
+
+          // Merge communication buffers
+          auto buffer_tv = insert_tainted_value(buffer_V, ptr);
+          ptr->ptr_info->merge_with(buffer_tv->ptr_info);
+        }
+      }
+    }
+  }
+}

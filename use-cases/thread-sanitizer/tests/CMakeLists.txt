@@ -12,8 +12,8 @@ FetchContent_Declare(
 message("Download DataRaceBench for testing")
 FetchContent_MakeAvailable(drb)
 
-# Find all C files in micro_benches and create tests
-file(GLOB BENCHMARK_SOURCES "${drb_SOURCE_DIR}/micro-benchmarks/*.c")
+# Find all C/C++ files in micro_benches and create tests
+file(GLOB BENCHMARK_SOURCES "${drb_SOURCE_DIR}/micro-benchmarks/DRB*.c*")
 list(LENGTH BENCHMARK_SOURCES LEN_BENCHMARK_SOURCES)
 
 message("Import ${LEN_BENCHMARK_SOURCES} Testcases from DataRaceBench")
@@ -52,5 +52,7 @@ foreach (FORTRAN_TEST_SRC ${FORTRAN_TEST_SOURCES})
 
 endforeach ()
 
-
-
+file(GLOB STATIC_ANALYSIS_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/static_analysis/*.c*")
+foreach (STATIC_ANALYSIS_TEST ${STATIC_ANALYSIS_TEST_SOURCES})
+    add_compare_test(${STATIC_ANALYSIS_TEST})
+endforeach ()
